@@ -969,7 +969,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
 
         {/* Popular Apps Column */}
         <div className={source === "sidebar" ? "mt-4" : ""}>
-          <h4 className="text-muted-foreground mb-2 text-sm font-light">Popular apps</h4>
+          <h4 className="text-muted-foreground mb-2 text-sm font-light">Most used apps</h4>
           <div className="space-y-0.5">
             {popularApps.map((app) => {
               const details = appDetails[app.name]
@@ -2449,7 +2449,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                             <>
                               {/* Popular apps section */}
                               <div className="px-3 font-light text-muted-foreground text-sm py-1.5 my-0 lowercase">
-                                Popular apps
+                                Most used apps
                               </div>
                               {popularApps.map((item) => {
                                 const uniqueKey = `popular-${item.name}`
