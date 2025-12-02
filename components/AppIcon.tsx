@@ -201,5 +201,7 @@ export default function AppIcon({ appName, className = "w-3.5 h-3.5" }: AppIconP
     return <Box className={className} />
   }
   
+  // Simple Icons should render with their brand colors by default
+  // The icon component should preserve its natural colors
   return <IconComponent className={className} />
 }

@@ -529,8 +529,8 @@ const appTriggers = [
 
 // Sidebar tab configuration with descriptions for tooltips
 const categoryTabs = [
-  { name: "Triggers", key: "Triggers", icon: Zap },
   { name: "Inputs and Outputs", key: "Inputs and Outputs", icon: ArrowDownUp },
+  { name: "Triggers", key: "Triggers", icon: Zap },
   { name: "StackAI Tools", key: "Core Nodes", icon: StackAIIcon },
   { name: "Apps", key: "Apps", icon: Blocks },
   { name: "Tools & Logic", key: "Utils", icon: Wrench },
@@ -735,8 +735,14 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
 
 function ItemIcon({ type, muted = false, appName }: { type: string; muted?: boolean; appName?: string }) {
   // If type is "box" and we have an app name, use AppIcon (with brand colors)
+  // AppIcon should always render with its natural brand colors, not affected by muted prop
   if (type === "box" && appName) {
-    return <AppIcon appName={appName} className="w-3.5 h-3.5 flex-shrink-0" />
+    // Wrap in a container that prevents text color inheritance
+    return (
+      <span className="inline-flex items-center" style={{ color: 'unset' }}>
+        <AppIcon appName={appName} className="w-3.5 h-3.5 flex-shrink-0" />
+      </span>
+    )
   }
   
   const Icon = iconMap[type] || Box
@@ -1101,8 +1107,8 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
     ]
 
     return (
-    <div className="p-3 py-0">
-        <div className="space-y-3">
+    <div className="p-3 py-0 min-w-0 overflow-hidden">
+        <div className="space-y-3 min-w-0">
           {/* Core Nodes section */}
           <div>
             <div className="sticky top-0 z-10 bg-background py-1 mb-1">
@@ -1110,7 +1116,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                 <span>Core Nodes</span>
               </div>
             </div>
-            <div className="space-y-0.5 px-2">
+            <div className="space-y-0.5 px-2 min-w-0 overflow-hidden">
               {topItems.map((item) => {
                 const actionData: SelectedAction = {
                   appName: item.name,
@@ -1143,10 +1149,12 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                   <div
                     key={item.name}
                     onClick={() => handleItemClick("Core Nodes", item)}
-                    className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors"
+                    className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors min-w-0 overflow-hidden"
                   >
-                    <ItemIcon type={item.icon} appName={item.name} />
-                    <span className="text-foreground truncate font-medium">{item.name}</span>
+                    <div className="flex-shrink-0">
+                      <ItemIcon type={item.icon} appName={item.name} />
+                    </div>
+                    <span className="text-foreground truncate font-medium min-w-0 flex-1">{item.name}</span>
                   </div>
                 )
               })}
@@ -1159,7 +1167,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                   <span>{category}</span>
                 </div>
               </div>
-              <div className="space-y-0.5 px-2">
+              <div className="space-y-0.5 px-2 min-w-0 overflow-hidden">
                 {tools.map((tool) => {
                   const actionData: SelectedAction = {
                     appName: tool.name,
@@ -1192,10 +1200,12 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                     <div
                       key={tool.name}
                       onClick={() => handleItemClick("Core Nodes", tool)}
-                className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors"
+                className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors min-w-0 overflow-hidden"
               >
-                      <ItemIcon type={tool.icon} />
-                      <span className="text-foreground truncate font-medium">{tool.name}</span>
+                      <div className="flex-shrink-0">
+                        <ItemIcon type={tool.icon} />
+                      </div>
+                      <span className="text-foreground truncate font-medium min-w-0 flex-1">{tool.name}</span>
                     </div>
                   )
                 })}
@@ -1856,9 +1866,9 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
     : categories.filter((cat) => cat.name === activeTab)
 
   return (
-    <TooltipProvider delayDuration={100}>
+    <TooltipProvider delayDuration={0} skipDelayDuration={0}>
       <div className={`bg-card rounded-xl border border-border shadow-lg flex overflow-hidden group ${
-        source === "sidebar" ? "w-[280px] h-[584px]" : "w-[420px] h-[312px]"
+        source === "sidebar" ? "w-[320px] h-[584px]" : "w-[420px] h-[312px]"
       }`}>
         {/* Sidebar with category tabs */}
         <div className="w-12 border-border/30 flex flex-col items-center py-2 flex-shrink-0 leading-3 h-auto border-r gap-0.5 relative">
@@ -1893,8 +1903,9 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
               align="center"
               sideOffset={0}
               avoidCollisions={false}
-              className="bg-white text-foreground border border-border/50 shadow-md px-2 py-1.5 rounded-lg"
+              className="bg-white text-foreground border border-border/50 shadow-md px-2 py-1.5 rounded-lg pointer-events-none"
               arrowClassName="bg-white fill-white border-border/50"
+              onPointerEnter={(e) => e.preventDefault()}
             >
               <span className="text-sm font-medium">Popular</span>
             </TooltipContent>
@@ -1938,8 +1949,9 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                   align="center"
                   sideOffset={0}
                   avoidCollisions={false}
-                  className="bg-white text-foreground border border-border/50 shadow-md px-2 py-1.5 rounded-lg"
+                  className="bg-white text-foreground border border-border/50 shadow-md px-2 py-1.5 rounded-lg pointer-events-none"
                   arrowClassName="bg-white fill-white border-border/50"
+                  onPointerEnter={(e) => e.preventDefault()}
                 >
                   <span className="text-sm font-medium">{tab.name}</span>
                 </TooltipContent>
@@ -1949,7 +1961,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
         </div>
 
         {/* Main content */}
-        <div className="flex-1 flex flex-col min-h-0">
+        <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
           {/* Header with search */}
           <div className="sticky top-0 z-10 bg-background border-b border-border/30 flex-shrink-0">
             <div className="flex items-center gap-2 px-3 py-2.5">
@@ -2030,7 +2042,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
           {/* Items list */}
           <div
             ref={scrollContainerRef}
-            className={`flex-1 overflow-y-auto nowheel my-2 py-[0] node-selector-scrollable ${source === "sidebar" ? "node-selector-scrollable-thin" : ""}`}
+            className={`flex-1 overflow-y-auto nowheel my-2 py-[0] node-selector-scrollable min-w-0 ${source === "sidebar" ? "node-selector-scrollable-thin" : ""}`}
             onWheel={(e) => e.stopPropagation()}
           >
             <div key={tabKey} className="animate-in fade-in duration-300">
@@ -2069,7 +2081,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                                   <div className="flex-shrink-0">
                                     <ItemIcon type={action.icon} />
                                   </div>
-                                  <span className="text-sm font-medium truncate min-w-0">{action.name}</span>
+                              <span className="text-sm font-medium truncate min-w-0">{action.name}</span>
                                 </div>
                                 <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
                               </div>
@@ -2251,7 +2263,14 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                                 selectedAction === action.actionName ? "bg-accent/40" : ""
                               }`}>
                                 <ItemIcon type="book" />
-                                <span className="text-foreground truncate font-medium">{action.actionName}</span>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="text-foreground truncate font-medium">{action.actionName}</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>{action.actionName}</p>
+                                  </TooltipContent>
+                                </Tooltip>
                               </div>
                             </DraggableItem>
                           )
@@ -2319,7 +2338,14 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                                       selectedAction === trigger.triggerName ? "bg-accent/40" : ""
                                     }`}>
                                       <ItemIcon type={appItem?.icon || "box"} appName={appName} />
-                                      <span className="text-foreground truncate font-medium">{trigger.triggerName}</span>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <span className="text-foreground truncate font-medium">{trigger.triggerName}</span>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>{trigger.triggerName}</p>
+                                        </TooltipContent>
+                                      </Tooltip>
                                     </div>
                                   </DraggableItem>
                                 )
@@ -2371,7 +2397,14 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                                           <div className="flex-shrink-0">
                                             <ItemIcon type={appItem?.icon || "box"} appName={appName} />
                                           </div>
-                                          <span className="text-sm font-medium truncate min-w-0">{action.actionName}</span>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <span className="text-sm font-medium truncate min-w-0">{action.actionName}</span>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                              <p>{action.actionName}</p>
+                                            </TooltipContent>
+                                          </Tooltip>
                                         </div>
                                         <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
                                       </div>
@@ -2390,7 +2423,14 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                                       selectedAction === action.actionName ? "bg-accent/40" : ""
                                     }`}>
                                       <ItemIcon type={appItem?.icon || "box"} appName={appName} />
-                                      <span className="text-foreground truncate font-medium">{action.actionName}</span>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <span className="text-foreground truncate font-medium">{action.actionName}</span>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>{action.actionName}</p>
+                                        </TooltipContent>
+                                      </Tooltip>
                                     </div>
                                   </DraggableItem>
                                 )
@@ -2444,7 +2484,14 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                                       <div className="flex-shrink-0">
                                         <ItemIcon type={item.icon} />
                                       </div>
-                                      <span className="text-sm font-medium truncate min-w-0">{item.name}</span>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <span className="text-sm font-medium truncate min-w-0">{item.name}</span>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>{item.name}</p>
+                                        </TooltipContent>
+                                      </Tooltip>
                                     </div>
                                     <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
                                   </div>
@@ -2685,7 +2732,14 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                                               <div className="flex-shrink-0">
                                                 <ItemIcon type={item.icon} appName={item.name} />
                                               </div>
-                                              <span className="text-sm font-medium truncate min-w-0">{item.name}</span>
+                                              <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                  <span className="text-sm font-medium truncate min-w-0">{item.name}</span>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                  <p>{item.name}</p>
+                                                </TooltipContent>
+                                              </Tooltip>
                                             </div>
                                             <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
                                           </div>

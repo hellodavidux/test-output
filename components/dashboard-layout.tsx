@@ -3,11 +3,6 @@
 import React, { useState, useRef, useEffect } from "react"
 import {
   Search,
-  Home,
-  Database,
-  RefreshCw,
-  Pencil,
-  BarChart3,
   Link as LinkIcon,
   Bell,
   HelpCircle,
@@ -20,6 +15,55 @@ import {
   Play,
   Plus,
 } from "lucide-react"
+
+// Custom icon components for sidebar
+const HouseIcon = ({ className }: { className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+    <path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"></path>
+    <path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+  </svg>
+)
+
+const DatabaseIcon = ({ className }: { className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+    <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+    <path d="M3 5V19A9 3 0 0 0 21 19V5"></path>
+    <path d="M3 12A9 3 0 0 0 21 12"></path>
+  </svg>
+)
+
+const ArrowLeftRightIcon = ({ className }: { className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+    <path d="M8 3 4 7l4 4"></path>
+    <path d="M4 7h16"></path>
+    <path d="m16 21 4-4-4-4"></path>
+    <path d="M20 17H4"></path>
+  </svg>
+)
+
+const SquarePenIcon = ({ className }: { className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+    <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+    <path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"></path>
+  </svg>
+)
+
+const ChartColumnIcon = ({ className }: { className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+    <path d="M5 21v-6"></path>
+    <path d="M12 21V9"></path>
+    <path d="M19 21V3"></path>
+  </svg>
+)
+
+const GitBranchIcon = ({ className }: { className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+    <line x1="6" x2="6" y1="3" y2="15"></line>
+    <circle cx="18" cy="6" r="3"></circle>
+    <circle cx="6" cy="18" r="3"></circle>
+    <path d="M18 9a9 9 0 0 1-9 9"></path>
+  </svg>
+)
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
@@ -191,55 +235,55 @@ export function DashboardLayout({ children, onActionSelect, onOpenNodeSelector }
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button className="flex h-9 w-9 items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
-                    <Home className="h-4 w-4" />
+                    <HouseIcon className="h-4 w-4" />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="right" sideOffset={8} hideArrow>
-                  <span>Home</span>
+                  <span>Projects</span>
                 </TooltipContent>
               </Tooltip>
 
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button className="flex h-9 w-9 items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
-                    <Database className="h-4 w-4" />
+                    <DatabaseIcon className="h-4 w-4" />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="right" sideOffset={8} hideArrow>
-                  <span>Database</span>
+                  <span>Knowledge Base</span>
                 </TooltipContent>
               </Tooltip>
 
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button className="flex h-9 w-9 items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
-                    <RefreshCw className="h-4 w-4" />
+                    <ArrowLeftRightIcon className="h-4 w-4" />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="right" sideOffset={8} hideArrow>
-                  <span>Refresh</span>
+                  <span>Connections</span>
                 </TooltipContent>
               </Tooltip>
 
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button className="flex h-9 w-9 items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
-                    <Pencil className="h-4 w-4" />
+                    <SquarePenIcon className="h-4 w-4" />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="right" sideOffset={8} hideArrow>
-                  <span>Edit</span>
+                  <span>Prompt Library</span>
                 </TooltipContent>
               </Tooltip>
 
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button className="flex h-9 w-9 items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
-                    <BarChart3 className="h-4 w-4" />
+                    <ChartColumnIcon className="h-4 w-4" />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="right" sideOffset={8} hideArrow>
-                  <span>Analytics</span>
+                  <span>Project Analytics</span>
                 </TooltipContent>
               </Tooltip>
             </div>
