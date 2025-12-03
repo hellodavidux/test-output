@@ -478,11 +478,6 @@ const categories: Category[] = [
     ],
   },
   {
-    name: "Utils",
-    icon: Wrench,
-    items: [], // Items handled separately with subcategories
-  },
-  {
     name: "Apps",
     icon: Blocks,
     items: [], // Items handled separately - popular apps first, then all others alphabetically
@@ -555,6 +550,7 @@ const appTriggers = [
 
 // Sidebar tab configuration with descriptions for tooltips
 const categoryTabs = [
+  { name: "Popular", key: "Popular", icon: Home },
   { name: "Triggers", key: "Triggers", icon: Zap },
   { name: "Actions", key: "Core Nodes", icon: Play },
   { name: "Outputs", key: "Outputs", icon: ArrowRightToLineIcon },
@@ -716,6 +712,7 @@ const categoryDescriptions: Record<string, string> = {
 }
 
 const tabTooltips: Record<string, string> = {
+  Popular: "Popular tools and apps",
   Triggers: "Start your workflow",
   Utils: "Logic and utility functions",
   Apps: "Third-party integrations",
@@ -824,7 +821,7 @@ type AddElementsPanelProps = {
 }
 
 export function AddElementsPanel({ onSelectAction, source = "handle", isPinned = false, onPinToggle, initialTab }: AddElementsPanelProps) {
-  const [activeTab, setActiveTab] = useState(initialTab || "Triggers")
+  const [activeTab, setActiveTab] = useState(initialTab || "Popular")
   
   // Update activeTab when initialTab prop changes
   useEffect(() => {
@@ -993,7 +990,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                     data={actionData}
                     className="group/item"
                   >
-                    <div className="flex items-center justify-between gap-2.5 py-1.5 px-2 rounded-md text-sm cursor-grab hover:bg-accent/50 transition-colors min-w-0">
+                    <div className="flex items-center justify-between gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0">
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         <ItemIcon type={tool.icon} muted appName={tool.name} />
                         <span className="text-foreground truncate font-medium">{tool.name}</span>
@@ -1014,11 +1011,11 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
               >
                 <div
                 onClick={() => handlePopularToolClick(tool)}
-                  className="flex items-center justify-between gap-2.5 py-1.5 px-2 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors"
+                  className="flex items-center justify-between gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors min-w-0 overflow-hidden"
               >
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
                 <ItemIcon type={tool.icon} muted />
-                <span className="text-foreground truncate font-medium">{tool.name}</span>
+                <span className="text-foreground truncate font-medium min-w-0">{tool.name}</span>
                   </div>
                   {toolDetails && (
                     <ChevronDown className="w-3.5 h-3.5 text-muted-foreground -rotate-90 flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity pointer-events-none" />
@@ -1052,7 +1049,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                     data={actionData}
                     className="group/item"
                   >
-                    <div className="flex items-center justify-between gap-2.5 py-1.5 px-2 rounded-md text-sm cursor-grab hover:bg-accent/50 transition-colors min-w-0">
+                    <div className="flex items-center justify-between gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0">
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         <ItemIcon type={app.icon} muted />
                         <span className="text-foreground truncate font-medium">{app.name}</span>
@@ -1071,7 +1068,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                 >
                   <div
                     onClick={() => handlePopularAppClick(app.name)}
-                    className="flex items-center justify-between gap-2.5 py-1.5 px-2 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors"
+                    className="flex items-center justify-between gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors"
                   >
                     <div className="flex items-center gap-2.5">
                       <ItemIcon type={app.icon} muted appName={app.name} />
@@ -1121,8 +1118,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
       { name: "List Knowledge Bases", icon: "database", category: "Knowledge Base" },
       { name: "Read Knowledge Base File", icon: "database", category: "Knowledge Base" },
       { name: "Search Knowledge Base", icon: "database", category: "Knowledge Base" },
-      // Documents
-      { name: "Fill PDF Form", icon: "file", category: "Documents" },
+      { name: "Fill PDF Form", icon: "file", category: "Document" },
       // Workflow
       { name: "Generate StackAI Workflow", icon: "stackai", category: "Workflow" },
       { name: "Get StackAI Action", icon: "stackai", category: "Workflow" },
@@ -1161,18 +1157,18 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
     ]
 
     return (
-      <div className="p-3 py-0 min-w-0 overflow-hidden">
-        <div className={`grid ${source === "sidebar" ? "grid-cols-1" : "grid-cols-2"} gap-4`}>
+      <div className="py-0 px-3 min-w-0 overflow-hidden">
+        <div className={`grid ${source === "sidebar" ? "grid-cols-1" : "grid-cols-2"} gap-2`}>
           {/* Left Column */}
           <div>
             {/* Core Nodes section */}
             <div className="mb-4">
               <div className="sticky top-0 z-10 bg-background py-1 mb-1">
-                <div className="px-3 text-sm font-light text-muted-foreground">
+                <div className="text-sm font-light text-muted-foreground">
                   <span>Core Nodes</span>
             </div>
               </div>
-              <div className="space-y-0.5 px-2 min-w-0 overflow-hidden">
+              <div className="space-y-0.5 min-w-0 overflow-hidden">
                 {topItems.map((item) => {
                   // Map "Search Knowledge Base" back to "Knowledge Base" for lookup
                   const lookupName = item.name === "Search Knowledge Base" ? "Knowledge Base" : item.name
@@ -1191,7 +1187,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                         data={actionData}
                     className="group/item"
                   >
-                    <div className="flex items-center justify-between gap-2 py-1 px-2 rounded-md text-sm cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                    <div className="flex items-center justify-between gap-2 py-1 px-2 rounded-md text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
                       <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                         <div className="flex-shrink-0">
                               <ItemIcon type={item.icon} appName={item.name} />
@@ -1210,7 +1206,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                     <div
                       key={item.name}
                       onClick={() => handleItemClick("Core Nodes", itemForClick)}
-                      className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors min-w-0 overflow-hidden"
+                      className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors min-w-0 overflow-hidden"
                     >
                         <div className="flex-shrink-0">
                         <ItemIcon type={item.icon} appName={item.name} />
@@ -1222,134 +1218,335 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                     </div>
             </div>
 
+            {/* Email section */}
+            {groupedTools["Email"] && (
+              <div className="mb-4">
+                <div className="sticky top-0 z-10 bg-background py-1 mb-1">
+                  <div className="text-sm font-light text-muted-foreground">
+                    <span>Email</span>
+                  </div>
+                </div>
+                <div className="space-y-0.5 min-w-0 overflow-hidden">
+                  {groupedTools["Email"].map((tool) => {
+                    const actionData: SelectedAction = {
+                      appName: tool.name,
+                      actionName: tool.name,
+                      description: nodeDescriptions[tool.name] || `${tool.name} node`,
+                      type: "action",
+                    }
+                    
+                    if (source === "sidebar") {
+                      return (
+                        <DraggableItem
+                          key={tool.name}
+                          data={actionData}
+                    className="group/item"
+                  >
+                          <div className="flex items-center justify-between gap-2 py-1 px-2 rounded-md text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                      <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+                        <div className="flex-shrink-0">
+                                <ItemIcon type={tool.icon} />
+                        </div>
+                              <span className="text-foreground truncate font-medium min-w-0">{tool.name}</span>
+                      </div>
+                      <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
+                    </div>
+                  </DraggableItem>
+                      )
+                    }
+                    
+                    return (
+                      <div
+                        key={tool.name}
+                        onClick={() => handleItemClick("Core Nodes", tool)}
+                        className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors min-w-0 overflow-hidden"
+                      >
+                        <div className="flex-shrink-0">
+                          <ItemIcon type={tool.icon} />
+        </div>
+                        <span className="text-foreground truncate font-medium min-w-0 flex-1">{tool.name}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Web section */}
+            {groupedTools["Web"] && (
+              <div className="mb-4">
+                <div className="sticky top-0 z-10 bg-background py-1 mb-1">
+                  <div className="text-sm font-light text-muted-foreground">
+                    <span>Web</span>
+                  </div>
+                </div>
+                <div className="space-y-0.5 min-w-0 overflow-hidden">
+                  {groupedTools["Web"].map((tool) => {
+                    const actionData: SelectedAction = {
+                      appName: tool.name,
+                      actionName: tool.name,
+                      description: nodeDescriptions[tool.name] || `${tool.name} node`,
+                      type: "action",
+                    }
+                    
+                    if (source === "sidebar") {
+                      return (
+                        <DraggableItem
+                          key={tool.name}
+                          data={actionData}
+                          className="group/item"
+                        >
+                          <div className="flex items-center justify-between gap-2 py-1 px-2 rounded-md text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                            <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+                              <div className="flex-shrink-0">
+                                <ItemIcon type={tool.icon} />
+                              </div>
+                              <span className="text-foreground truncate font-medium min-w-0">{tool.name}</span>
+                            </div>
+                            <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
+                          </div>
+                        </DraggableItem>
+                      )
+                    }
+                    
+                    return (
+                      <div
+                        key={tool.name}
+                        onClick={() => handleItemClick("Core Nodes", tool)}
+                        className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors min-w-0 overflow-hidden"
+                      >
+                        <div className="flex-shrink-0">
+                          <ItemIcon type={tool.icon} />
+        </div>
+                        <span className="text-foreground truncate font-medium min-w-0 flex-1">{tool.name}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Image section */}
+            {groupedTools["Image"] && (
+              <div className="mb-4">
+                <div className="sticky top-0 z-10 bg-background py-1 mb-1">
+                  <div className="text-sm font-light text-muted-foreground">
+                    <span>Image</span>
+      </div>
+    </div>
+                <div className="space-y-0.5 min-w-0 overflow-hidden">
+                  {groupedTools["Image"].map((tool) => {
+                    const actionData: SelectedAction = {
+                      appName: tool.name,
+                      actionName: tool.name,
+                      description: nodeDescriptions[tool.name] || `${tool.name} node`,
+                      type: "action",
+                    }
+                    
+                    if (source === "sidebar") {
+                      return (
+                        <DraggableItem
+                          key={tool.name}
+                          data={actionData}
+                          className="group/item"
+                        >
+                          <div className="flex items-center justify-between gap-2 py-1 px-2 rounded-md text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                            <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+                              <div className="flex-shrink-0">
+                                <ItemIcon type={tool.icon} />
+              </div>
+                              <span className="text-foreground truncate font-medium min-w-0">{tool.name}</span>
+                            </div>
+                            <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
+                          </div>
+                        </DraggableItem>
+                      )
+                    }
+                    
+                    return (
+                      <div
+                        key={tool.name}
+                        onClick={() => handleItemClick("Core Nodes", tool)}
+                        className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors min-w-0 overflow-hidden"
+                      >
+                        <div className="flex-shrink-0">
+                          <ItemIcon type={tool.icon} />
+                        </div>
+                        <span className="text-foreground truncate font-medium min-w-0 flex-1">{tool.name}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Web Search section */}
+            {groupedTools["Web Search"] && (
+              <div className="mb-4">
+                <div className="sticky top-0 z-10 bg-background py-1 mb-1">
+                  <div className="text-sm font-light text-muted-foreground">
+                    <span>Web Search</span>
+                  </div>
+                </div>
+                <div className="space-y-0.5 min-w-0 overflow-hidden">
+                  {groupedTools["Web Search"].map((tool) => {
+                    const actionData: SelectedAction = {
+                      appName: tool.name,
+                      actionName: tool.name,
+                      description: nodeDescriptions[tool.name] || `${tool.name} node`,
+                      type: "action",
+                    }
+                    
+                    if (source === "sidebar") {
+                      return (
+                        <DraggableItem
+                          key={tool.name}
+                          data={actionData}
+                          className="group/item"
+                        >
+                          <div className="flex items-center justify-between gap-2 py-1 px-2 rounded-md text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                            <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+                              <div className="flex-shrink-0">
+                                <ItemIcon type={tool.icon} />
+                              </div>
+                              <span className="text-foreground truncate font-medium min-w-0">{tool.name}</span>
+                            </div>
+                            <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
+                          </div>
+                        </DraggableItem>
+                      )
+                    }
+                    
+                    return (
+                      <div
+                        key={tool.name}
+                        onClick={() => handleItemClick("Core Nodes", tool)}
+                        className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors min-w-0 overflow-hidden"
+                      >
+                        <div className="flex-shrink-0">
+                          <ItemIcon type={tool.icon} />
+                        </div>
+                        <span className="text-foreground truncate font-medium min-w-0 flex-1">{tool.name}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Computer section */}
+            {groupedTools["Computer"] && (
+              <div className="mb-4">
+                <div className="sticky top-0 z-10 bg-background py-1 mb-1">
+                  <div className="text-sm font-light text-muted-foreground">
+                    <span>Computer</span>
+                  </div>
+                </div>
+                <div className="space-y-0.5 min-w-0 overflow-hidden">
+                  {groupedTools["Computer"].map((tool) => {
+                    const actionData: SelectedAction = {
+                      appName: tool.name,
+                      actionName: tool.name,
+                      description: nodeDescriptions[tool.name] || `${tool.name} node`,
+                      type: "action",
+                    }
+                    
+                    if (source === "sidebar") {
+                      return (
+                        <DraggableItem
+                          key={tool.name}
+                          data={actionData}
+                          className="group/item"
+                        >
+                          <div className="flex items-center justify-between gap-2 py-1 px-2 rounded-md text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                            <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+                              <div className="flex-shrink-0">
+                                <ItemIcon type={tool.icon} />
+                              </div>
+                              <span className="text-foreground truncate font-medium min-w-0">{tool.name}</span>
+                            </div>
+                            <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
+                          </div>
+                        </DraggableItem>
+                      )
+                    }
+                    
+                    return (
+                      <div
+                        key={tool.name}
+                        onClick={() => handleItemClick("Core Nodes", tool)}
+                        className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors min-w-0 overflow-hidden"
+                      >
+                        <div className="flex-shrink-0">
+                          <ItemIcon type={tool.icon} />
+                        </div>
+                        <span className="text-foreground truncate font-medium min-w-0 flex-1">{tool.name}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
           </div>
 
           {/* Right Column - StackAI Actions */}
           {source !== "sidebar" && (
             <div>
-              {!showAllStackAIActions ? (
-                <>
+              {/* All StackAI Actions by category */}
+              {Object.entries(groupedTools)
+                .filter(([category]) => category !== "Web" && category !== "Image" && category !== "Web Search" && category !== "Email" && category !== "Computer")
+                .map(([category, tools]) => (
+                <div key={category} className="mb-3">
                   <div className="sticky top-0 z-10 bg-background py-1 mb-1">
-                    <div className="px-3 text-sm font-light text-muted-foreground">
-                      <span>Built in Actions</span>
+                    <div className="text-sm font-light text-muted-foreground">
+                      <span>{category}</span>
                     </div>
                   </div>
-                  <div className="space-y-0.5 px-2 min-w-0 overflow-hidden">
-                    {/* Popular actions */}
-                    {[
-                      { name: "Text-to-SQL", icon: "code" },
-                      { name: "Send Email", icon: "message" },
-                      { name: "Web Search", icon: "link" },
-                      { name: "Document Q&A", icon: "book" },
-                      { name: "Summarize Documents", icon: "book" },
-                      { name: "StackAI Actions", icon: "stackai", isExpandable: true },
-                    ].map((item) => {
+                  <div className="space-y-0.5 min-w-0 overflow-hidden">
+                    {tools.map((tool) => {
                       const actionData: SelectedAction = {
-                        appName: item.name,
-                        actionName: item.name,
-                        description: nodeDescriptions[item.name] || `${item.name} node`,
+                        appName: tool.name,
+                        actionName: tool.name,
+                        description: nodeDescriptions[tool.name] || `${tool.name} node`,
                         type: "action",
-                      }
-                      
-                      if (item.isExpandable) {
-                        return (
-                          <div
-                            key={item.name}
-                            className="group/item"
-                          >
-                            <div
-                              onClick={() => setShowAllStackAIActions(true)}
-                              className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors min-w-0 overflow-hidden"
-                            >
-                              <div className="flex-shrink-0">
-                                <ItemIcon type={item.icon} />
-        </div>
-                              <span className="text-foreground truncate font-medium min-w-0 flex-1">{item.name}</span>
-                              <ChevronDown className="w-3.5 h-3.5 text-muted-foreground -rotate-90 flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity pointer-events-none" />
-                            </div>
-                          </div>
-                        )
                       }
                       
                       return (
                         <div
-                          key={item.name}
-                          onClick={() => handleItemClick("Core Nodes", item)}
-                          className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors min-w-0 overflow-hidden"
+                          key={tool.name}
+                          onClick={() => handleItemClick("Core Nodes", tool)}
+                          className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors min-w-0 overflow-hidden"
                         >
                           <div className="flex-shrink-0">
-                            <ItemIcon type={item.icon} />
-        </div>
-                          <span className="text-foreground truncate font-medium min-w-0 flex-1">{item.name}</span>
-      </div>
-                      )
-                    })}
-    </div>
-                </>
-              ) : (
-                <>
-                  {/* Back button */}
-                  <div className="mb-2">
-                    <button
-                      onClick={() => setShowAllStackAIActions(false)}
-                      className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors px-2 py-1"
-                    >
-                      <ChevronDown className="w-4 h-4 rotate-90" />
-                      <span>Back</span>
-                    </button>
-                  </div>
-                  
-                  {/* All StackAI Actions by category */}
-          {Object.entries(groupedTools).map(([category, tools]) => (
-                    <div key={category} className="mb-3">
-                      <div className="sticky top-0 z-10 bg-background py-1 mb-1">
-                        <div className="px-3 text-sm font-light text-muted-foreground">
-                <span>{category}</span>
-              </div>
-                      </div>
-                      <div className="space-y-0.5 px-2 min-w-0 overflow-hidden">
-                {tools.map((tool) => {
-                  const actionData: SelectedAction = {
-                    appName: tool.name,
-                    actionName: tool.name,
-                    description: nodeDescriptions[tool.name] || `${tool.name} node`,
-                    type: "action",
-                          }
-                          
-                          return (
-                            <div
-                              key={tool.name}
-                              onClick={() => handleItemClick("Core Nodes", tool)}
-                              className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors min-w-0 overflow-hidden"
-                            >
-                              <div className="flex-shrink-0">
-                                <ItemIcon type={tool.icon} />
-                              </div>
-                              <span className="text-foreground truncate font-medium min-w-0 flex-1">{tool.name}</span>
-                            </div>
-                          )
-                        })}
-                      </div>
+                            <ItemIcon type={tool.icon} />
+                          </div>
+                          <span className="text-foreground truncate font-medium min-w-0 flex-1">{tool.name}</span>
                     </div>
-                  ))}
-                </>
-              )}
+                  )
+                })}
+              </div>
+              </div>
+            ))}
             </div>
           )}
+          </div>
         </div>
-      </div>
     )
   }
 
   const renderOutputsView = () => {
     const outputItemsList = [
-      { name: "Output node", icon: "pencil" },
-      { name: "Template node", icon: "template" },
-      { name: "Audio node", icon: "mic" },
+      { name: "Output text", icon: "pencil" },
+      { name: "Template", icon: "template" },
+      { name: "Audio", icon: "mic" },
     ]
 
     return (
       <div className="p-3 py-0 min-w-0 overflow-hidden">
+        <div className="sticky top-0 z-10 bg-background py-1 mb-2">
+          <h4 className="text-muted-foreground text-sm font-light">Outputs</h4>
+        </div>
         <div className="space-y-0.5 px-2 min-w-0 overflow-hidden">
           {outputItemsList.map((item) => {
             const actionData: SelectedAction = {
@@ -1366,7 +1563,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                         data={actionData}
                         className="group/item"
                       >
-                        <div className="flex items-center justify-between gap-2 py-1 px-2 rounded-md text-sm cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                        <div className="flex items-center justify-between gap-2 py-1 px-2 rounded-md text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
                           <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                             <div className="flex-shrink-0">
                         <ItemIcon type={item.icon} appName={item.name} />
@@ -1383,7 +1580,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                     <div
                 key={item.name}
                 onClick={() => handleItemClick("Outputs", item)}
-                className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors min-w-0 overflow-hidden"
+                className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors min-w-0 overflow-hidden"
               >
                 <div className="flex-shrink-0">
                   <ItemIcon type={item.icon} appName={item.name} />
@@ -1425,12 +1622,12 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                     data={actionData}
                     className="group/item"
                   >
-                    <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-sm cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                    <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
                       <div className="flex items-center gap-2 text-foreground min-w-0 flex-1 overflow-hidden">
                         <div className="flex-shrink-0">
                           <ItemIcon type={item.icon} appName={item.name} />
                         </div>
-                        <span className="text-sm font-medium truncate min-w-0">{item.name}</span>
+                        <span className="text-xs font-medium truncate min-w-0">{item.name}</span>
                       </div>
                       <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
                     </div>
@@ -1442,13 +1639,13 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                 <div key={uniqueKey} className="group/item">
                   <div
                     onClick={() => handleItemClick("Apps", item)}
-                    className={`flex items-center justify-between py-2 px-4 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors ${
+                    className={`flex items-center justify-between py-2 px-4 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors ${
                       selectedAction === item.name && !details ? "bg-accent/40" : ""
                     }`}
                   >
                     <div className="flex items-center gap-2.5 text-foreground overflow-x-auto whitespace-nowrap">
                       <ItemIcon type={item.icon} appName={item.name} />
-                      <span className="text-sm font-medium">{item.name}</span>
+                      <span className="text-xs font-medium">{item.name}</span>
                     </div>
                     {details && (
                       <ChevronDown className="w-3.5 h-3.5 text-muted-foreground -rotate-90 flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity pointer-events-none" />
@@ -1483,12 +1680,12 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                     data={actionData}
                     className="group/item"
                   >
-                    <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-sm cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                    <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
                       <div className="flex items-center gap-2 text-foreground min-w-0 flex-1 overflow-hidden">
                         <div className="flex-shrink-0">
                           <ItemIcon type={item.icon} appName={item.name} />
                         </div>
-                        <span className="text-sm font-medium truncate min-w-0">{item.name}</span>
+                        <span className="text-xs font-medium truncate min-w-0">{item.name}</span>
                       </div>
                       <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
                     </div>
@@ -1500,13 +1697,13 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                 <div key={uniqueKey} className="group/item">
                   <div
                     onClick={() => handleItemClick("Apps", item)}
-                    className={`flex items-center justify-between py-2 px-4 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors ${
+                    className={`flex items-center justify-between py-2 px-4 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors ${
                       selectedAction === item.name && !details ? "bg-accent/40" : ""
                     }`}
                   >
                     <div className="flex items-center gap-2.5 text-foreground overflow-x-auto whitespace-nowrap">
                       <ItemIcon type={item.icon} appName={item.name} />
-                      <span className="text-sm font-medium">{item.name}</span>
+                      <span className="text-xs font-medium">{item.name}</span>
                     </div>
                     {details && (
                       <ChevronDown className="w-3.5 h-3.5 text-muted-foreground -rotate-90 flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity pointer-events-none" />
@@ -1522,21 +1719,21 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
   }
 
   const renderUtilsView = () => {
-    const utilsCategory = categories.find((cat) => cat.name === "Utils")
-    if (!utilsCategory) return null
+    const utilsCategory = categories.find((cat) => cat.name === "Utils") as any
+    if (!utilsCategory || !utilsCategory.items) return null
 
     return (
-      <div className="p-3 py-0">
-        <div className={`grid ${source === "sidebar" ? "grid-cols-1" : "grid-cols-2"} gap-4`}>
+    <div className="py-0 px-2">
+      <div className={`grid ${source === "sidebar" ? "grid-cols-1" : "grid-cols-2"} gap-1`}>
           {/* Left Column */}
-          <div>
-            {/* Logic section */}
+          <div className="min-w-0">
+            {/* Flow section */}
             <div className="sticky top-0 z-10 bg-background py-1 my-0">
               <div className="px-3 font-light text-muted-foreground text-xs uppercase tracking-wider">
-                Logic
+                Flow
               </div>
             </div>
-            <div className="space-y-0.5 px-2 min-w-0 overflow-hidden">
+            <div className="space-y-0.5 px-2 min-w-0">
               {utilsCategory.items.slice(0, 4).map((item) => {
                 const uniqueKey = `Utils-${item.name}`
                 const details = appDetails[item.name]
@@ -1554,12 +1751,12 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                       data={actionData}
                       className="group/item"
                     >
-                      <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-sm cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                      <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
                         <div className="flex items-center gap-2 text-foreground min-w-0 flex-1 overflow-hidden">
                           <div className="flex-shrink-0">
                             <ItemIcon type={item.icon} />
                           </div>
-                          <span className="text-sm font-medium truncate min-w-0">{item.name}</span>
+                          <span className="text-xs font-medium truncate min-w-0">{item.name}</span>
                         </div>
                         <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
                       </div>
@@ -1571,13 +1768,13 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                   <div key={uniqueKey} className="group/item">
                     <div
                       onClick={() => handleItemClick("Utils", item)}
-                      className={`flex items-center justify-between py-2 px-4 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors ${
+                      className={`flex items-center justify-between py-2 px-4 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors ${
                         selectedAction === item.name && !details ? "bg-accent/40" : ""
                       }`}
                     >
-                      <div className="flex items-center gap-2.5 text-foreground overflow-x-auto whitespace-nowrap">
+                      <div className="flex items-center gap-2.5 text-foreground min-w-0 flex-1 overflow-hidden">
                         <ItemIcon type={item.icon} appName={item.name} />
-                        <span className="text-sm font-medium">{item.name}</span>
+                        <span className="text-xs font-medium truncate">{item.name}</span>
                       </div>
                       {details && (
                         <ChevronDown className="w-3.5 h-3.5 text-muted-foreground -rotate-90 flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity pointer-events-none" />
@@ -1596,7 +1793,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                     Databases
                   </div>
                 </div>
-                <div className="space-y-0.5 px-2 min-w-0 overflow-hidden">
+                <div className="space-y-0.5 px-2 min-w-0">
                   {utilsCategory.utilsCategories["Databases"].map((item) => {
                     const uniqueKey = `Utils-Databases-${item.name}`
                     const details = appDetails[item.name]
@@ -1614,12 +1811,12 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                           data={actionData}
                           className="group/item"
                         >
-                          <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-sm cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                          <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
                             <div className="flex items-center gap-2 text-foreground min-w-0 flex-1 overflow-hidden">
                               <div className="flex-shrink-0">
                                 <ItemIcon type={item.icon} appName={item.name} />
                               </div>
-                              <span className="text-sm font-medium truncate min-w-0">{item.name}</span>
+                              <span className="text-xs font-medium truncate min-w-0">{item.name}</span>
                             </div>
                             <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
                           </div>
@@ -1631,13 +1828,13 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                       <div key={uniqueKey} className="group/item">
                         <div
                           onClick={() => handleItemClick("Utils", item)}
-                          className={`flex items-center justify-between py-2 px-4 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors ${
+                          className={`flex items-center justify-between py-2 px-4 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors ${
                             selectedAction === item.name && !details ? "bg-accent/40" : ""
                           }`}
                         >
-                          <div className="flex items-center gap-2.5 text-foreground overflow-x-auto whitespace-nowrap">
+                          <div className="flex items-center gap-2.5 text-foreground min-w-0 flex-1 overflow-hidden">
                             <ItemIcon type={item.icon} appName={item.name} />
-                            <span className="text-sm font-medium">{item.name}</span>
+                            <span className="text-xs font-medium truncate">{item.name}</span>
                           </div>
                           {details && (
                             <ChevronDown className="w-3.5 h-3.5 text-muted-foreground -rotate-90 flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity pointer-events-none" />
@@ -1651,15 +1848,15 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
             )}
           </div>
 
-          {/* Right Column - Utils (Miscellaneous) */}
+          {/* Right Column - Miscellaneous */}
           {source !== "sidebar" && utilsCategory.utilsCategories && utilsCategory.utilsCategories["Miscellaneous"] && (
-            <div>
+        <div>
               <div className="sticky top-0 z-10 bg-background py-1 my-0">
                 <div className="px-3 font-light text-muted-foreground text-xs uppercase tracking-wider">
-                  Utils
+                  Miscellaneous
                 </div>
               </div>
-              <div className="space-y-0.5 px-2 min-w-0 overflow-hidden">
+              <div className="space-y-0.5 px-2 min-w-0">
                 {utilsCategory.utilsCategories["Miscellaneous"].map((item) => {
                   const uniqueKey = `Utils-Miscellaneous-${item.name}`
                   const details = appDetails[item.name]
@@ -1670,23 +1867,83 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                     type: "action",
                   }
 
+                  if (source === "sidebar") {
+                    return (
+                      <DraggableItem
+                        key={uniqueKey}
+                        data={actionData}
+                        className="group/item"
+                      >
+                        <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                          <div className="flex items-center gap-2 text-foreground min-w-0 flex-1 overflow-hidden">
+                            <div className="flex-shrink-0">
+                              <ItemIcon type={item.icon} appName={item.name} />
+                            </div>
+                            <span className="text-xs font-medium truncate min-w-0">{item.name}</span>
+                          </div>
+                          <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
+                        </div>
+                      </DraggableItem>
+                    )
+                  }
+
                   return (
                     <div key={uniqueKey} className="group/item">
                       <div
                         onClick={() => handleItemClick("Utils", item)}
-                        className={`flex items-center justify-between py-2 px-4 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors ${
+                        className={`flex items-center justify-between py-2 px-4 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors ${
                           selectedAction === item.name && !details ? "bg-accent/40" : ""
                         }`}
                       >
-                        <div className="flex items-center gap-2.5 text-foreground overflow-x-auto whitespace-nowrap">
+                        <div className="flex items-center gap-2.5 text-foreground min-w-0 flex-1 overflow-hidden">
                           <ItemIcon type={item.icon} appName={item.name} />
-                          <span className="text-sm font-medium">{item.name}</span>
+                          <span className="text-xs font-medium truncate">{item.name}</span>
                         </div>
                         {details && (
                           <ChevronDown className="w-3.5 h-3.5 text-muted-foreground -rotate-90 flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity pointer-events-none" />
                         )}
                       </div>
                     </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+          
+          {/* Sidebar: Show Miscellaneous in left column when source is sidebar */}
+          {source === "sidebar" && utilsCategory.utilsCategories && utilsCategory.utilsCategories["Miscellaneous"] && (
+            <div className="mt-4">
+              <div className="sticky top-0 z-10 bg-background py-1 my-0">
+                <div className="px-3 font-light text-muted-foreground text-xs uppercase tracking-wider">
+                  Miscellaneous
+                </div>
+              </div>
+              <div className="space-y-0.5 px-2 min-w-0">
+                {utilsCategory.utilsCategories["Miscellaneous"].map((item) => {
+                  const uniqueKey = `Utils-Miscellaneous-${item.name}`
+                  const actionData: SelectedAction = {
+                    appName: item.name,
+                    actionName: item.name,
+                    description: nodeDescriptions[item.name] || `${item.name} node`,
+                    type: "action",
+                  }
+
+                  return (
+                    <DraggableItem
+                      key={uniqueKey}
+                      data={actionData}
+                      className="group/item"
+                    >
+                      <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                        <div className="flex items-center gap-2 text-foreground min-w-0 flex-1 overflow-hidden">
+                          <div className="flex-shrink-0">
+                            <ItemIcon type={item.icon} appName={item.name} />
+                          </div>
+                          <span className="text-xs font-medium truncate min-w-0">{item.name}</span>
+                        </div>
+                        <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
+                      </div>
+                    </DraggableItem>
                   )
                 })}
               </div>
@@ -1724,7 +1981,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                     data={actionData}
                     className="group/item"
                   >
-                    <div className="flex items-center justify-between gap-2.5 py-1.5 px-2 rounded-md text-sm cursor-grab hover:bg-accent/50 transition-colors min-w-0">
+                    <div className="flex items-center justify-between gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0">
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
                             <ItemIcon type={item.icon} appName={item.name} />
                         <span className="text-foreground truncate font-medium">{item.name}</span>
@@ -1739,7 +1996,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
               <div
                 key={item.name}
                 onClick={() => handleItemClick("Triggers", item)}
-                className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors"
+                className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors"
               >
                       <ItemIcon type={item.icon} appName={item.name} />
                 <span className="text-foreground truncate font-medium">{item.name}</span>
@@ -1755,60 +2012,60 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                 <h4 className="text-muted-foreground text-sm font-light">Built-in Triggers</h4>
               </div>
           <div className="space-y-0.5 px-0">
-                {builtInTriggers.map((item) => {
+            {builtInTriggers.map((item) => {
               const actionData: SelectedAction = {
-                    appName: item.name,
-                    actionName: item.name,
-                    description: nodeDescriptions[item.name] || `${item.name} trigger`,
-                    type: "trigger",
+                appName: item.name,
+                actionName: item.name,
+                description: nodeDescriptions[item.name] || `${item.name} trigger`,
+                type: "trigger",
               }
               
               if (source === "sidebar") {
                 return (
                   <DraggableItem
-                        key={item.name}
+                    key={item.name}
                     data={actionData}
                     className="group/item"
                   >
-                    <div className="flex items-center justify-between gap-2.5 py-1.5 px-2 rounded-md text-sm cursor-grab hover:bg-accent/50 transition-colors min-w-0">
+                    <div className="flex items-center justify-between gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0">
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
                             <ItemIcon type={item.icon} appName={item.name} />
-                            <span className="text-foreground truncate font-medium">{item.name}</span>
-      </div>
+                        <span className="text-foreground truncate font-medium">{item.name}</span>
+                      </div>
                       <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none" />
-    </div>
+                    </div>
                   </DraggableItem>
                 )
               }
-                  
-                  return (
-                    <div
-                      key={item.name}
-                      onClick={() => handleItemClick("Triggers", item)}
-                      className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors"
-                    >
-                      <ItemIcon type={item.icon} />
-                      <span className="text-foreground truncate font-medium">{item.name}</span>
-                    </div>
-                  )
-                })}
+              
+              return (
+              <div
+                key={item.name}
+                onClick={() => handleItemClick("Triggers", item)}
+                      className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors"
+              >
+                <ItemIcon type={item.icon} />
+                <span className="text-foreground truncate font-medium">{item.name}</span>
               </div>
-            </div>
+              )
+            })}
+              </div>
           </div>
+        </div>
 
           {/* Right Column - App Triggers */}
           {source !== "sidebar" && appTriggers.length > 0 && (
-            <div>
+        <div>
               <div className="sticky top-0 z-10 bg-background py-1 mb-2">
                 <h4 className="text-muted-foreground text-sm font-light">App Triggers</h4>
               </div>
-              <div className="space-y-0.5 px-0">
-                {appTriggers.map((app) => {
-                  const details = appDetails[app.name]
-                  const actionData: SelectedAction = {
-                    appName: app.name,
-                    actionName: app.name,
-                    description: `${app.name} app`,
+          <div className="space-y-0.5 px-0">
+            {appTriggers.map((app) => {
+              const details = appDetails[app.name]
+              const actionData: SelectedAction = {
+                appName: app.name,
+                actionName: app.name,
+                description: `${app.name} app`,
                     type: "action",
               }
               
@@ -1820,7 +2077,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                 >
                   <div
                     onClick={() => handlePopularAppClick(app.name)}
-                    className="flex items-center justify-between gap-2.5 py-1.5 px-2 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors"
+                    className="flex items-center justify-between gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors"
                   >
                     <div className="flex items-center gap-2.5">
                           <ItemIcon type={app.icon} muted appName={app.name} />
@@ -1857,19 +2114,19 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
               }
               
               if (source === "sidebar") {
-    return (
+                return (
                   <DraggableItem
                     key={item.name}
                     data={actionData}
                     className="group/item"
                   >
-                    <div className="flex items-center justify-between gap-2.5 py-1.5 px-2 rounded-md text-sm cursor-grab hover:bg-accent/50 transition-colors min-w-0">
+                    <div className="flex items-center justify-between gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0">
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         <ItemIcon type={item.icon} appName={item.name} />
                         <span className="text-foreground truncate font-medium">{item.name}</span>
-        </div>
+      </div>
                       <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none" />
-                    </div>
+    </div>
                   </DraggableItem>
                 )
               }
@@ -1878,7 +2135,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                 <div
                   key={item.name}
                   onClick={() => handleItemClick("Inputs and Outputs", item)}
-                  className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors"
+                  className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors"
                 >
                   <ItemIcon type={item.icon} appName={item.name} />
                   <span className="text-foreground truncate font-medium">{item.name}</span>
@@ -1905,9 +2162,9 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                   <DraggableItem
                     key={item.name}
                     data={actionData}
-                    className="group/item"
+                  className="group/item"
                   >
-                    <div className="flex items-center justify-between gap-2.5 py-1.5 px-2 rounded-md text-sm cursor-grab hover:bg-accent/50 transition-colors min-w-0">
+                    <div className="flex items-center justify-between gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0">
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         <ItemIcon type={item.icon} appName={item.name} />
                         <span className="text-foreground truncate font-medium">{item.name}</span>
@@ -1922,7 +2179,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                 <div
                   key={item.name}
                   onClick={() => handleItemClick("Inputs and Outputs", item)}
-                  className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors"
+                  className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors"
                 >
                   <ItemIcon type={item.icon} appName={item.name} />
                   <span className="text-foreground truncate font-medium">{item.name}</span>
@@ -1944,13 +2201,13 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
         {/* Triggers Section */}
         {details.triggers.length > 0 && (
           <div className="relative">
-            <div className="sticky top-0 z-10 bg-background py-1">
-              <div className="flex items-center gap-2 text-sm font-medium text-gray-900">
-                <Zap className="w-4 h-4 text-gray-900" />
-              <span>Triggers</span>
+            <div className="sticky top-0 z-20 bg-background py-1 mb-1">
+              <div className="text-sm font-light text-muted-foreground flex items-center gap-2">
+                <Zap className="w-4 h-4" />
+                <span>Triggers</span>
+              </div>
             </div>
-            </div>
-            {/* Vertical line from header down */}
+            {/* Vertical line from header down - aligned with icon center (pl-4=16px + icon center=8px = 24px) */}
             <div className="absolute left-6 top-8 bottom-0 w-[1px] bg-gray-200" />
             <div className="space-y-0.5 mt-1 pl-8">
               {details.triggers.map((trigger) => (
@@ -1964,7 +2221,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                   }}
                   onClick={() => handleTriggerClick(appName, trigger)}
                 >
-                  <div className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-sm cursor-pointer hover:bg-gray-100 transition-colors">
+                  <div className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-gray-100 transition-colors">
                     <ItemIcon type={appName.toLowerCase()} appName={appName} />
                     <span className="text-gray-900 truncate font-medium">{trigger.name}</span>
                   </div>
@@ -1977,21 +2234,22 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
         {/* Actions Section */}
         {details.actionGroups.length > 0 && (
           <div className="mt-4 relative">
-            <div className="sticky top-0 z-10 bg-background py-1">
-              <div className="flex items-center gap-2 text-sm font-medium text-gray-900">
-                <Play className="w-4 h-4 text-gray-900" />
+            <div className="sticky top-0 z-20 bg-background py-1 mb-1">
+              <div className="text-sm font-light text-muted-foreground flex items-center gap-2">
+                <Play className="w-4 h-4" />
                 <span>Actions</span>
               </div>
             </div>
-            {/* Vertical line from Actions header down */}
-            <div className="absolute left-6 top-8 bottom-0 w-[1px] bg-gray-200" />
+            {/* Vertical line from Actions header down - aligned with icon center */}
+            <div className="absolute left-[20px] top-8 bottom-0 w-[1px] bg-gray-200" />
 
         {/* Action Groups */}
             {details.actionGroups.map((group, groupIndex) => (
               <div key={group.name} className="relative">
-                {/* Subheader aligned with parent header (Actions) */}
-                <div className="pl-0 py-1 mt-2">
-                  <div className="text-sm font-normal text-gray-500">
+                {/* Subheader aligned with parent header (Actions) - pl-4(16px) + icon(16px) + gap-2(8px) = 40px */}
+                {/* Sticky below Actions header: top-[32px] accounts for Actions header height (py-1 + text-sm + mb-1) */}
+                <div className="sticky top-[32px] z-[15] bg-background pl-10 py-1 mb-1">
+                  <div className="text-sm font-light text-muted-foreground">
                     {group.name}
             </div>
                 </div>
@@ -2008,7 +2266,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                   }}
                   onClick={() => handleActionClick(appName, action)}
                 >
-                      <div className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-sm cursor-pointer hover:bg-gray-100 transition-colors">
+                      <div className="flex items-center gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-gray-100 transition-colors">
                         <ItemIcon type={appName.toLowerCase()} appName={appName} />
                         <span className="text-gray-900 truncate font-medium">{action.name}</span>
                   </div>
@@ -2416,6 +2674,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
             const Icon = tab.icon
             const isActive = activeTab === tab.key
             const hasSearchMatch = isSearching && (
+              (tab.key === "Popular" && (searchResults.coreActions.length > 0 || searchResults.apps.length > 0 || searchResults.otherItems.length > 0)) ||
               (tab.key === "Apps" && searchResults.apps.length > 0) ||
               (tab.key === "Core Nodes" && searchResults.coreActions.length > 0) ||
               (tab.key === "Triggers" && searchResults.triggers.length > 0) ||
@@ -2454,7 +2713,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                   arrowClassName="bg-white fill-white border-border/50"
                   onPointerEnter={(e) => e.preventDefault()}
                 >
-                  <span className="text-sm font-medium">{tab.name}</span>
+                  <span className="text-xs font-medium">{tab.name}</span>
                 </TooltipContent>
               </Tooltip>
             )
@@ -2481,7 +2740,14 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                   type="text"
                   placeholder="Search nodes..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    const query = e.target.value
+                    setSearchQuery(query)
+                    // Clear app navigation when searching
+                    if (query.trim()) {
+                      setSelectedApp(null)
+                    }
+                  }}
                   autoFocus
                   className={`w-full ${searchQuery ? "pl-9 pr-8" : source === "sidebar" ? "pl-9 pr-8" : "pl-9 pr-12"} py-1.5 text-sm bg-gray-50 rounded-lg border border-gray-200 focus:outline-none focus:ring-1 focus:ring-gray-300 focus:border-gray-300`}
                 />
@@ -2533,7 +2799,7 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                     className="bg-white text-foreground border border-border/50 shadow-md px-2 py-1.5 rounded-lg"
                     arrowClassName="bg-white fill-white border-border/50"
                   >
-                    <span className="text-sm font-medium">{isPinned ? "Unpin" : "Pin"}</span>
+                    <span className="text-xs font-medium">{isPinned ? "Unpin" : "Pin"}</span>
                   </TooltipContent>
                 </Tooltip>
               )}
@@ -2549,6 +2815,8 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
             <div key={tabKey} className="animate-in fade-in duration-300">
               {selectedApp ? (
                 renderAppDetailView(selectedApp)
+              ) : activeTab === "Popular" && !isSearching ? (
+                renderHomeView()
               ) : activeTab === "Triggers" && !isSearching ? (
                 renderTriggersView()
               ) : activeTab === "Core Nodes" && !isSearching ? (
@@ -2560,14 +2828,17 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
               ) : activeTab === "Apps" && !isSearching ? (
                 renderAppsView()
               ) : isSearching ? (
-                <>
+                <div className="py-0 px-3">
                   {/* Core Actions Section */}
                   {searchResults.coreActions.length > 0 && (
                     <div className="mb-4">
-                      <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Core Actions
+                      <div className="sticky top-0 z-10 bg-background py-1 mb-1">
+                        <div className="text-sm font-light text-muted-foreground">
+                          <span>Core Actions</span>
+                        </div>
                       </div>
-                      {searchResults.coreActions.map((action) => {
+                      <div className="space-y-0.5 min-w-0 overflow-hidden">
+                        {searchResults.coreActions.map((action) => {
                         const uniqueKey = `core-action-${action.name}`
                         const actionData: SelectedAction = {
                           appName: "StackAI",
@@ -2579,12 +2850,12 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                         if (source === "sidebar") {
                           return (
                             <DraggableItem key={uniqueKey} data={actionData} className="group/item">
-                              <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-sm cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                              <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
                                 <div className="flex items-center gap-2 text-foreground min-w-0 flex-1 overflow-hidden">
                                   <div className="flex-shrink-0">
                                     <ItemIcon type={action.icon} />
                                   </div>
-                              <span className="text-sm font-medium truncate min-w-0">{action.name}</span>
+                              <span className="text-xs font-medium truncate min-w-0">{action.name}</span>
                                 </div>
                                 <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
                               </div>
@@ -2599,25 +2870,31 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                             onClick={() => handleActionClick("StackAI", { name: action.name, description: action.description })}
                             className="group/item"
                           >
-                            <div className={`flex items-center gap-2.5 py-1 px-2 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors ${
+                            <div className={`flex items-center gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors min-w-0 overflow-hidden ${
                               selectedAction === action.name ? "bg-accent/40" : ""
                             }`}>
-                              <ItemIcon type={action.icon} />
-                              <span className="text-foreground truncate font-medium">{action.name}</span>
+                              <div className="flex-shrink-0">
+                                <ItemIcon type={action.icon} />
+                              </div>
+                              <span className="text-foreground truncate font-medium min-w-0 flex-1">{action.name}</span>
                             </div>
                           </DraggableItem>
                         )
                       })}
+                      </div>
                     </div>
                   )}
 
                   {/* Nodes Section (Logic, Utils, Inputs, Outputs) - Show before Apps for better relevance */}
                   {searchResults.otherItems.length > 0 && (
                     <div className="mb-4">
-                      <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Nodes
+                      <div className="sticky top-0 z-10 bg-background py-1 mb-1">
+                        <div className="text-sm font-light text-muted-foreground">
+                          <span>Nodes</span>
+                        </div>
                       </div>
-                      {searchResults.otherItems.map((item, index) => {
+                      <div className="space-y-0.5 min-w-0 overflow-hidden">
+                        {searchResults.otherItems.map((item, index) => {
                         const uniqueKey = `other-${item.category}-${item.name}-${index}`
                         const actionData: SelectedAction = {
                           appName: item.name,
@@ -2629,12 +2906,12 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                         if (source === "sidebar") {
                           return (
                             <DraggableItem key={uniqueKey} data={actionData} className="group/item">
-                              <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-sm cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                              <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
                                 <div className="flex items-center gap-2 text-foreground min-w-0 flex-1 overflow-hidden">
                                   <div className="flex-shrink-0">
                                     <ItemIcon type={item.icon} />
                                   </div>
-                                  <span className="text-sm font-medium truncate min-w-0">{item.name}</span>
+                                  <span className="text-xs font-medium truncate min-w-0">{item.name}</span>
                                 </div>
                                 <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
                               </div>
@@ -2657,25 +2934,31 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                             }}
                             className="group/item"
                           >
-                            <div className={`flex items-center gap-2.5 py-1 px-2 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors ${
+                            <div className={`flex items-center gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors min-w-0 overflow-hidden ${
                               selectedAction === item.name ? "bg-accent/40" : ""
                             }`}>
-                              <ItemIcon type={item.icon} />
-                              <span className="text-foreground truncate font-medium">{item.name}</span>
+                              <div className="flex-shrink-0">
+                                <ItemIcon type={item.icon} />
+                              </div>
+                              <span className="text-foreground truncate font-medium min-w-0 flex-1">{item.name}</span>
                             </div>
                           </DraggableItem>
                         )
                       })}
+                      </div>
                     </div>
                   )}
 
                   {/* Apps Section */}
                   {searchResults.apps.length > 0 && (
                     <div className="mb-4">
-                      <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Apps
+                      <div className="sticky top-0 z-10 bg-background py-1 mb-1">
+                        <div className="text-sm font-light text-muted-foreground">
+                          <span>Apps</span>
+                        </div>
                       </div>
-                      {searchResults.apps.map((app) => {
+                      <div className="space-y-0.5 min-w-0 overflow-hidden">
+                        {searchResults.apps.map((app) => {
                         const uniqueKey = `search-app-${app.name}`
                         const details = appDetails[app.name]
                         const actionData: SelectedAction = {
@@ -2688,12 +2971,12 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                         if (source === "sidebar") {
                           return (
                             <DraggableItem key={uniqueKey} data={actionData} className="group/item">
-                              <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-sm cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                              <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
                                 <div className="flex items-center gap-2 text-foreground min-w-0 flex-1 overflow-hidden">
                                   <div className="flex-shrink-0">
                                     <ItemIcon type={app.icon} appName={app.name} />
                                   </div>
-                                  <span className="text-sm font-medium truncate min-w-0">{app.name}</span>
+                                  <span className="text-xs font-medium truncate min-w-0">{app.name}</span>
                                 </div>
                                 <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
                               </div>
@@ -2705,13 +2988,15 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                           <div key={uniqueKey} className="group/item">
                             <div
                               onClick={() => handleItemClick("Apps", { name: app.name, icon: app.icon })}
-                              className={`flex items-center justify-between py-1.5 px-2 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors ${
+                              className={`flex items-center justify-between py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors min-w-0 overflow-hidden ${
                                 selectedAction === app.name && !details ? "bg-accent/40" : ""
                               }`}
                             >
-                              <div className="flex items-center gap-2.5 text-foreground overflow-x-auto whitespace-nowrap">
-                                <ItemIcon type={app.icon} appName={app.name} />
-                                <span className="text-sm font-medium">{app.name}</span>
+                              <div className="flex items-center gap-2.5 text-foreground min-w-0 flex-1 overflow-hidden">
+                                <div className="flex-shrink-0">
+                                  <ItemIcon type={app.icon} appName={app.name} />
+                                </div>
+                                <span className="text-xs font-medium truncate min-w-0">{app.name}</span>
                               </div>
                               {details && (
                                 <ChevronDown className="w-3.5 h-3.5 text-muted-foreground -rotate-90 flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity pointer-events-none" />
@@ -2720,16 +3005,19 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                           </div>
                         )
                       })}
+                      </div>
                     </div>
                   )}
 
                   {/* Knowledge Base Actions Section - Show before regular app actions */}
                   {searchResults.knowledgeBaseActions && searchResults.knowledgeBaseActions.length > 0 && (
                     <div className="mb-4">
-                      <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Knowledge Base
+                      <div className="sticky top-0 z-10 bg-background py-1 mb-1">
+                        <div className="text-sm font-light text-muted-foreground">
+                          <span>Knowledge Base</span>
+                        </div>
                       </div>
-                      <div className="space-y-0.5 px-2 pl-6">
+                      <div className="space-y-0.5 min-w-0 overflow-hidden">
                         {searchResults.knowledgeBaseActions?.map((action) => {
                           const uniqueKey = `kb-action-${action.appName}-${action.actionName}`
                           const actionData: SelectedAction = {
@@ -2742,12 +3030,12 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                           if (source === "sidebar") {
                             return (
                               <DraggableItem key={uniqueKey} data={actionData} className="group/item">
-                                <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-sm cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                                <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
                                   <div className="flex items-center gap-2 text-foreground min-w-0 flex-1 overflow-hidden">
                                     <div className="flex-shrink-0">
                                       <ItemIcon type="book" />
                                     </div>
-                                    <span className="text-sm font-medium truncate min-w-0">{action.actionName}</span>
+                                    <span className="text-xs font-medium truncate min-w-0">{action.actionName}</span>
                                   </div>
                                   <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
                                 </div>
@@ -2762,18 +3050,13 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                               onClick={() => handleActionClick(action.appName, { name: action.actionName, description: action.description })}
                               className="group/item"
                             >
-                              <div className={`flex items-center gap-2.5 py-1 px-2 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors ${
+                              <div className={`flex items-center gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors min-w-0 overflow-hidden ${
                                 selectedAction === action.actionName ? "bg-accent/40" : ""
                               }`}>
-                                <ItemIcon type="book" />
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="text-foreground truncate font-medium">{action.actionName}</span>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>{action.actionName}</p>
-                                  </TooltipContent>
-                                </Tooltip>
+                                <div className="flex-shrink-0">
+                                  <ItemIcon type="book" />
+                                </div>
+                                <span className="text-foreground truncate font-medium min-w-0 flex-1">{action.actionName}</span>
                               </div>
                             </DraggableItem>
                           )
@@ -2782,11 +3065,18 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                     </div>
                   )}
 
+                  {/* Divider between Apps and Triggers */}
+                  {searchResults.apps.length > 0 && searchResults.triggers.length > 0 && (
+                    <div className="my-4 border-t border-gray-200"></div>
+                  )}
+
                   {/* Triggers Section */}
                   {searchResults.triggers.length > 0 && (
                     <div className="mb-4">
-                      <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Triggers
+                      <div className="sticky top-0 z-10 bg-background py-1 mb-1">
+                        <div className="text-sm font-light text-muted-foreground">
+                          <span>Triggers</span>
+                        </div>
                       </div>
                       {Object.entries(
                         searchResults.triggers.reduce((acc, trigger) => {
@@ -2800,11 +3090,11 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                         const appItem = [...popularApps, ...otherApps].find((app) => app.name === appName)
                         return (
                           <div key={`triggers-${appName}`} className="mb-3">
-                            <div className="px-3 py-1 flex items-center gap-2 text-sm font-light text-muted-foreground">
+                            <div className="py-1 mb-1 flex items-center gap-2 text-sm font-light text-muted-foreground">
                               <ItemIcon type={appItem?.icon || "box"} appName={appName} />
                               <span className="lowercase">{appName}</span>
                             </div>
-                            <div className="space-y-0.5 px-2 pl-6">
+                            <div className="space-y-0.5 min-w-0 overflow-hidden">
                               {triggers.map((trigger) => {
                                 const uniqueKey = `trigger-${appName}-${trigger.triggerName}`
                                 const triggerData: SelectedAction = {
@@ -2817,12 +3107,12 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                                 if (source === "sidebar") {
                                   return (
                                     <DraggableItem key={uniqueKey} data={triggerData} className="group/item">
-                                      <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-sm cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                                      <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
                                         <div className="flex items-center gap-2 text-foreground min-w-0 flex-1 overflow-hidden">
                                           <div className="flex-shrink-0">
                                             <ItemIcon type={appItem?.icon || "box"} appName={appName} />
                                           </div>
-                                          <span className="text-sm font-medium truncate min-w-0">{trigger.triggerName}</span>
+                                          <span className="text-xs font-medium truncate min-w-0">{trigger.triggerName}</span>
                                         </div>
                                         <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
                                       </div>
@@ -2837,18 +3127,13 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                                     onClick={() => handleTriggerClick(appName, { name: trigger.triggerName, description: trigger.description })}
                                     className="group/item"
                                   >
-                                    <div className={`flex items-center gap-2.5 py-1 px-2 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors ${
+                                    <div className={`flex items-center gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors min-w-0 overflow-hidden ${
                                       selectedAction === trigger.triggerName ? "bg-accent/40" : ""
                                     }`}>
-                                      <ItemIcon type={appItem?.icon || "box"} appName={appName} />
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <span className="text-foreground truncate font-medium">{trigger.triggerName}</span>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                          <p>{trigger.triggerName}</p>
-                                        </TooltipContent>
-                                      </Tooltip>
+                                      <div className="flex-shrink-0">
+                                        <ItemIcon type={appItem?.icon || "box"} appName={appName} />
+                                      </div>
+                                      <span className="text-foreground truncate font-medium min-w-0 flex-1">{trigger.triggerName}</span>
                                     </div>
                                   </DraggableItem>
                                 )
@@ -2863,8 +3148,10 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                   {/* Actions by App Section */}
                   {searchResults.actions.length > 0 && (
                     <div className="mb-4">
-                      <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Actions
+                      <div className="sticky top-0 z-10 bg-background py-1 mb-1">
+                        <div className="text-sm font-light text-muted-foreground">
+                          <span>Actions</span>
+                        </div>
                       </div>
                       {Object.entries(
                         searchResults.actions.reduce((acc, action) => {
@@ -2878,11 +3165,11 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                         const appItem = [...popularApps, ...otherApps].find((app) => app.name === appName)
                         return (
                           <div key={`actions-${appName}`} className="mb-3">
-                            <div className="px-3 py-1 flex items-center gap-2 text-sm font-light text-muted-foreground">
+                            <div className="py-1 mb-1 flex items-center gap-2 text-sm font-light text-muted-foreground">
                               <ItemIcon type={appItem?.icon || "box"} appName={appName} />
                               <span className="lowercase">{appName}</span>
                             </div>
-                            <div className="space-y-0.5 px-2 pl-6">
+                            <div className="space-y-0.5 min-w-0 overflow-hidden">
                               {actions.map((action) => {
                                 const uniqueKey = `action-${appName}-${action.actionName}`
                                 const actionData: SelectedAction = {
@@ -2895,14 +3182,14 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                                 if (source === "sidebar") {
                                   return (
                                     <DraggableItem key={uniqueKey} data={actionData} className="group/item">
-                                      <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-sm cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                                      <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
                                         <div className="flex items-center gap-2 text-foreground min-w-0 flex-1 overflow-hidden">
                                           <div className="flex-shrink-0">
                                             <ItemIcon type={appItem?.icon || "box"} appName={appName} />
                                           </div>
                                           <Tooltip>
                                             <TooltipTrigger asChild>
-                                              <span className="text-sm font-medium truncate min-w-0">{action.actionName}</span>
+                                              <span className="text-xs font-medium truncate min-w-0">{action.actionName}</span>
                                             </TooltipTrigger>
                                             <TooltipContent>
                                               <p>{action.actionName}</p>
@@ -2922,18 +3209,13 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                                     onClick={() => handleActionClick(appName, { name: action.actionName, description: action.description })}
                                     className="group/item"
                                   >
-                                    <div className={`flex items-center gap-2.5 py-1 px-2 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors ${
+                                    <div className={`flex items-center gap-2.5 py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors min-w-0 overflow-hidden ${
                                       selectedAction === action.actionName ? "bg-accent/40" : ""
                                     }`}>
-                                      <ItemIcon type={appItem?.icon || "box"} appName={appName} />
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <span className="text-foreground truncate font-medium">{action.actionName}</span>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                          <p>{action.actionName}</p>
-                                        </TooltipContent>
-                                      </Tooltip>
+                                      <div className="flex-shrink-0">
+                                        <ItemIcon type={appItem?.icon || "box"} appName={appName} />
+                                      </div>
+                                      <span className="text-foreground truncate font-medium min-w-0 flex-1">{action.actionName}</span>
                                     </div>
                                   </DraggableItem>
                                 )
@@ -2952,11 +3234,11 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                    searchResults.triggers.length === 0 && 
                    searchResults.coreActions.length === 0 && 
                    searchResults.otherItems.length === 0 && (
-                    <div className="px-3 py-8 text-center text-sm text-muted-foreground">
+                    <div className="py-8 text-center text-sm text-muted-foreground">
                       No results found for "{searchQuery}"
                     </div>
                   )}
-                </>
+                </div>
               ) : (
                 <>
                   {filteredCategories.map((category) => (
@@ -2982,14 +3264,14 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                                   data={actionData}
                                   className="group/item"
                                 >
-                                  <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-sm cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                                  <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
                                     <div className="flex items-center gap-2 text-foreground min-w-0 flex-1 overflow-hidden">
                                       <div className="flex-shrink-0">
                                         <ItemIcon type={item.icon} />
                                       </div>
                                       <Tooltip>
                                         <TooltipTrigger asChild>
-                                          <span className="text-sm font-medium truncate min-w-0">{item.name}</span>
+                                          <span className="text-xs font-medium truncate min-w-0">{item.name}</span>
                                         </TooltipTrigger>
                                         <TooltipContent>
                                           <p>{item.name}</p>
@@ -3006,13 +3288,13 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                               <div key={uniqueKey} className="group/item">
                                 <div
                                   onClick={() => handleItemClick(category.name, item)}
-                                  className={`flex items-center justify-between py-1.5 px-2 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors ${
+                                  className={`flex items-center justify-between py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors ${
                                     selectedAction === item.name && !details ? "bg-accent/40" : ""
                                   }`}
                                 >
                                   <div className="flex items-center gap-2.5 text-foreground overflow-x-auto whitespace-nowrap">
                                     <ItemIcon type={item.icon} />
-                                    <span className="text-sm font-medium">{item.name}</span>
+                                    <span className="text-xs font-medium">{item.name}</span>
                                   </div>
                                   {details && (
                                     <ChevronDown className="w-3.5 h-3.5 text-muted-foreground -rotate-90 flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity pointer-events-none" />
@@ -3046,12 +3328,12 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                                       data={actionData}
                                       className="group/item"
                                     >
-                                      <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-sm cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                                      <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
                                         <div className="flex items-center gap-2 text-foreground min-w-0 flex-1 overflow-hidden">
                                           <div className="flex-shrink-0">
                                             <ItemIcon type={item.icon} />
                                           </div>
-                                          <span className="text-sm font-medium truncate min-w-0">{item.name}</span>
+                                          <span className="text-xs font-medium truncate min-w-0">{item.name}</span>
                                         </div>
                                         <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
                                       </div>
@@ -3063,13 +3345,13 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                                   <div key={uniqueKey} className="group/item">
                                     <div
                                       onClick={() => handleItemClick(category.name, item)}
-                                      className={`flex items-center justify-between py-2 px-4 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors ${
+                                      className={`flex items-center justify-between py-2 px-4 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors ${
                                         selectedAction === item.name && !details ? "bg-accent/40" : ""
                                       }`}
                                     >
                                       <div className="flex items-center gap-2.5 text-foreground overflow-x-auto whitespace-nowrap">
                                         <ItemIcon type={item.icon} appName={item.name} />
-                                        <span className="text-sm font-medium">{item.name}</span>
+                                        <span className="text-xs font-medium">{item.name}</span>
                                       </div>
                                       {details && (
                                         <ChevronDown className="w-3.5 h-3.5 text-muted-foreground -rotate-90 flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity pointer-events-none" />
@@ -3102,12 +3384,12 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                                       data={actionData}
                                       className="group/item"
                                     >
-                                      <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-sm cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                                      <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
                                         <div className="flex items-center gap-2 text-foreground min-w-0 flex-1 overflow-hidden">
                                           <div className="flex-shrink-0">
                                             <ItemIcon type={item.icon} appName={item.name} />
                                           </div>
-                                          <span className="text-sm font-medium truncate min-w-0">{item.name}</span>
+                                          <span className="text-xs font-medium truncate min-w-0">{item.name}</span>
                                         </div>
                                         <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
                                       </div>
@@ -3119,13 +3401,13 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                                   <div key={uniqueKey} className="group/item">
                                     <div
                                       onClick={() => handleItemClick(category.name, item)}
-                                      className={`flex items-center justify-between py-2 px-4 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors ${
+                                      className={`flex items-center justify-between py-2 px-4 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors ${
                                         selectedAction === item.name && !details ? "bg-accent/40" : ""
                                       }`}
                                     >
                                       <div className="flex items-center gap-2.5 text-foreground overflow-x-auto whitespace-nowrap">
                                         <ItemIcon type={item.icon} appName={item.name} />
-                                        <span className="text-sm font-medium">{item.name}</span>
+                                        <span className="text-xs font-medium">{item.name}</span>
                                       </div>
                                       {details && (
                                         <ChevronDown className="w-3.5 h-3.5 text-muted-foreground -rotate-90 flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity pointer-events-none" />
@@ -3174,12 +3456,12 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                               data={actionData}
                               className="group/item"
                             >
-                              <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-sm cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                              <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
                                 <div className="flex items-center gap-2 text-foreground min-w-0 flex-1 overflow-hidden">
                                   <div className="flex-shrink-0">
                                     <ItemIcon type={item.icon} />
                                   </div>
-                                  <span className="text-sm font-medium truncate min-w-0">{item.name}</span>
+                                  <span className="text-xs font-medium truncate min-w-0">{item.name}</span>
                                 </div>
                                 <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
                               </div>
@@ -3191,13 +3473,13 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                           <div key={uniqueKey} className="group/item">
                             <div
                               onClick={() => handleItemClick(category.name, item)}
-                                        className={`flex items-center justify-between py-2 px-4 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors ${
+                                        className={`flex items-center justify-between py-2 px-4 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors ${
                                 selectedAction === item.name && !details ? "bg-accent/40" : ""
                               }`}
                             >
                               <div className="flex items-center gap-2.5 text-foreground overflow-x-auto whitespace-nowrap">
                                           <ItemIcon type={item.icon} appName={item.name} />
-                                <span className="text-sm font-medium">{item.name}</span>
+                                <span className="text-xs font-medium">{item.name}</span>
                               </div>
                               {details && (
                                 <ChevronDown className="w-3.5 h-3.5 text-muted-foreground -rotate-90 flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity pointer-events-none" />
@@ -3232,12 +3514,12 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                                             data={actionData}
                                             className="group/item"
                                           >
-                                            <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-sm cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                                            <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
                                               <div className="flex items-center gap-2 text-foreground min-w-0 flex-1 overflow-hidden">
                                                 <div className="flex-shrink-0">
                                                   <ItemIcon type={item.icon} appName={item.name} />
                                                 </div>
-                                                <span className="text-sm font-medium truncate min-w-0">{item.name}</span>
+                                                <span className="text-xs font-medium truncate min-w-0">{item.name}</span>
                                               </div>
                                               <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
                                             </div>
@@ -3249,13 +3531,13 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                                         <div key={uniqueKey} className="group/item">
                                           <div
                                             onClick={() => handleItemClick(category.name, item)}
-                                            className={`flex items-center justify-between py-2 px-4 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors ${
+                                            className={`flex items-center justify-between py-2 px-4 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors ${
                                               selectedAction === item.name && !details ? "bg-accent/40" : ""
                                             }`}
                                           >
                                             <div className="flex items-center gap-2.5 text-foreground overflow-x-auto whitespace-nowrap">
                                               <ItemIcon type={item.icon} appName={item.name} />
-                                              <span className="text-sm font-medium">{item.name}</span>
+                                              <span className="text-xs font-medium">{item.name}</span>
                                             </div>
                                             {details && (
                                               <ChevronDown className="w-3.5 h-3.5 text-muted-foreground -rotate-90 flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity pointer-events-none" />
@@ -3290,13 +3572,13 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                                       <div key={uniqueKey} className="group/item">
                                         <div
                                           onClick={() => handleItemClick(category.name, item)}
-                                          className={`flex items-center justify-between py-2 px-4 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors ${
+                                          className={`flex items-center justify-between py-2 px-4 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors ${
                                             selectedAction === item.name && !details ? "bg-accent/40" : ""
                                           }`}
                                         >
                                           <div className="flex items-center gap-2.5 text-foreground overflow-x-auto whitespace-nowrap">
                                             <ItemIcon type={item.icon} appName={item.name} />
-                                            <span className="text-sm font-medium">{item.name}</span>
+                                            <span className="text-xs font-medium">{item.name}</span>
                                           </div>
                                           {details && (
                                             <ChevronDown className="w-3.5 h-3.5 text-muted-foreground -rotate-90 flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity pointer-events-none" />
@@ -3329,12 +3611,12 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                               data={actionData}
                               className="group/item"
                             >
-                              <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-sm cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
+                              <div className="flex items-center justify-between py-1.5 pl-3 pr-3 text-xs cursor-grab hover:bg-accent/50 transition-colors min-w-0 overflow-hidden">
                                 <div className="flex items-center gap-2 text-foreground min-w-0 flex-1 overflow-hidden">
                                   <div className="flex-shrink-0">
                                     <ItemIcon type={item.icon} />
                                   </div>
-                                  <span className="text-sm font-medium truncate min-w-0">{item.name}</span>
+                                  <span className="text-xs font-medium truncate min-w-0">{item.name}</span>
                                 </div>
                                 <GripVertical className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-all pointer-events-none ml-1" />
                               </div>
@@ -3347,13 +3629,13 @@ export function AddElementsPanel({ onSelectAction, source = "handle", isPinned =
                             {/* Item row */}
                             <div
                               onClick={() => handleItemClick(category.name, item)}
-                              className={`flex items-center justify-between py-1.5 px-2 rounded-md text-sm cursor-pointer hover:bg-accent/50 transition-colors ${
+                              className={`flex items-center justify-between py-1.5 px-2 rounded-md text-xs cursor-pointer hover:bg-accent/50 transition-colors ${
                                 selectedAction === item.name && !details ? "bg-accent/40" : ""
                               }`}
                             >
                               <div className="flex items-center gap-2.5 text-foreground overflow-x-auto whitespace-nowrap">
                                 <ItemIcon type={item.icon} />
-                                <span className="text-sm font-medium">{item.name}</span>
+                                <span className="text-xs font-medium">{item.name}</span>
                               </div>
                               {details && (
                                 <ChevronDown className="w-3.5 h-3.5 text-muted-foreground -rotate-90 flex-shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity pointer-events-none" />
