@@ -22,6 +22,20 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, input, output
   const [isMaximized, setIsMaximized] = useState(false)
   const [modalTab, setModalTab] = useState<"input" | "output" | "completion">(activeTab)
   
+  // Reset view mode to "text" when switching to completion tab (since formatted is not available)
+  React.useEffect(() => {
+    if (activeTab === "completion" && viewMode === "formatted") {
+      setViewMode("text")
+    }
+  }, [activeTab, viewMode])
+  
+  // Also reset view mode when switching to completion in modal
+  React.useEffect(() => {
+    if (modalTab === "completion" && viewMode === "formatted") {
+      setViewMode("text")
+    }
+  }, [modalTab, viewMode])
+  
   // Update modal tab when activeTab changes
   React.useEffect(() => {
     if (activeTab === "output" || activeTab === "completion") {
@@ -136,13 +150,15 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, input, output
         lastIndex = index + match[0].length
       } else if (type === 'citation') {
         const citationId = match[1]
+        // Extract just the number from the citation ID (e.g., "1" from "1" or "citation-1")
+        const citationNumber = citationId.match(/\d+/)?.[0] || citationId
         parts.push(
           <sup
             key={`citation-${index}`}
             className="text-blue-600 dark:text-blue-400 font-medium cursor-pointer hover:underline"
             title={`Citation ${citationId}`}
           >
-            [{citationId}]
+            [{citationNumber}]
           </sup>
         )
         lastIndex = index + match[0].length
@@ -240,13 +256,15 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, input, output
               >
                 Text
               </ToggleGroupItem>
-              <ToggleGroupItem 
-                value="formatted" 
-                aria-label="Formatted" 
-                className="px-5 h-5 text-[11px] rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
-              >
-                Formatted
-              </ToggleGroupItem>
+              {activeTab !== "completion" && (
+                <ToggleGroupItem 
+                  value="formatted" 
+                  aria-label="Formatted" 
+                  className="px-5 h-5 text-[11px] rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
+                >
+                  Formatted
+                </ToggleGroupItem>
+              )}
               <ToggleGroupItem 
                 value="code" 
                 aria-label="Code" 
@@ -342,14 +360,14 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, input, output
             <div className="relative">
               <div 
                 className={`bg-gradient-to-br from-muted/60 to-muted/40 rounded-lg p-4 border border-border/50 overflow-x-hidden max-h-72 overflow-y-auto shadow-inner ${
-                  activeTab === "completion" && viewMode === "formatted" ? "font-sans" : "font-mono text-xs"
+                  activeTab === "completion" && viewMode === "text" && typeof currentData === "string" ? "font-sans" : "font-mono text-xs"
                 }`}
                 onWheel={(e) => {
                   e.stopPropagation()
                 }}
               >
                 {hasOutput ? (
-                  activeTab === "completion" && viewMode === "formatted" && typeof currentData === "string" ? (
+                  activeTab === "completion" && viewMode === "text" && typeof currentData === "string" ? (
                     <div className="text-sm leading-relaxed text-foreground/90 space-y-3 px-2">
                       <div className="prose prose-sm max-w-none">
                         <p className="whitespace-pre-wrap">{formatMarkdownText(currentData)}</p>
@@ -462,13 +480,15 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, input, output
                       >
                         Text
                       </ToggleGroupItem>
-                      <ToggleGroupItem 
-                        value="formatted" 
-                        aria-label="Formatted" 
-                        className="px-3 h-5 text-[11px] rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
-                      >
-                        Formatted
-                      </ToggleGroupItem>
+                      {modalTab !== "completion" && (
+                        <ToggleGroupItem 
+                          value="formatted" 
+                          aria-label="Formatted" 
+                          className="px-3 h-5 text-[11px] rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
+                        >
+                          Formatted
+                        </ToggleGroupItem>
+                      )}
                       <ToggleGroupItem 
                         value="code" 
                         aria-label="Code" 
@@ -559,7 +579,7 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, input, output
                   style={{ overscrollBehavior: 'contain' }}
                 >
                   {hasModalData ? (
-                    modalTab === "completion" && viewMode === "formatted" && typeof modalData === "string" ? (
+                    modalTab === "completion" && viewMode === "text" && typeof modalData === "string" ? (
                       <div className="text-sm leading-relaxed text-foreground/90 space-y-3 px-2">
                         <div className="prose prose-sm max-w-none">
                           <p className="whitespace-pre-wrap">{formatMarkdownText(modalData)}</p>

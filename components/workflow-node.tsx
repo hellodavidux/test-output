@@ -111,13 +111,13 @@ function WorkflowNode({ data, id }: NodeProps) {
     ;(window as any).__handleClickSourceNode = { nodeId: id, side }
     
     if (onHandleClick) {
-      const node = getNode(id as string)
-      if (node) {
-        const rect = e.currentTarget.getBoundingClientRect()
-        const position = {
+    const node = getNode(id as string)
+    if (node) {
+      const rect = e.currentTarget.getBoundingClientRect()
+      const position = {
           x: side === "right" ? rect.right + 50 : rect.left - 10,
           y: rect.top - 100,
-        }
+      }
         onHandleClick(side, position)
       }
     }
@@ -125,8 +125,8 @@ function WorkflowNode({ data, id }: NodeProps) {
 
   const handleReplaceNode = (e: React.MouseEvent) => {
     e.stopPropagation()
-    // Store that we're replacing this node
-    ;(window as any).__replaceNodeId = id
+      // Store that we're replacing this node
+      ;(window as any).__replaceNodeId = id
     // Replace node functionality removed
   }
 
@@ -146,19 +146,30 @@ function WorkflowNode({ data, id }: NodeProps) {
   const handleOutputClick = (e: React.MouseEvent) => {
     e.stopPropagation()
     e.preventDefault()
-    // Always open panel with output tab when clicking output button
-    // This should work regardless of run mode - always try to open
+    // Toggle: if panel is open with output tab, close it; otherwise open it
     if (onToggleIOPanel) {
-      onToggleIOPanel(id as string, "output")
+      if (isIOPanelOpen && activeIOTab === "output") {
+        // Close the panel
+        onToggleIOPanel(id as string)
+      } else {
+        // Open panel with output tab
+        onToggleIOPanel(id as string, "output")
+      }
     }
   }
 
   const handleCompletionClick = (e: React.MouseEvent) => {
     e.stopPropagation()
     e.preventDefault()
-    // Always open panel with completion tab when clicking completion button
+    // Toggle: if panel is open with completion tab, close it; otherwise open it
     if (onToggleIOPanel) {
-      onToggleIOPanel(id as string, "completion")
+      if (isIOPanelOpen && activeIOTab === "completion") {
+        // Close the panel
+        onToggleIOPanel(id as string)
+      } else {
+        // Open panel with completion tab
+        onToggleIOPanel(id as string, "completion")
+      }
     }
   }
 
@@ -182,11 +193,11 @@ function WorkflowNode({ data, id }: NodeProps) {
           </div>
         </div>
       )}
-      <NodeHandles onLeftClick={(e) => handleHandleClick("left", e)} onRightClick={(e) => handleHandleClick("right", e)}>
+    <NodeHandles onLeftClick={(e) => handleHandleClick("left", e)} onRightClick={(e) => handleHandleClick("right", e)}>
         <div className="relative">
-          <ContextMenu>
-            <ContextMenuTrigger asChild>
-              {/* Main card */}
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          {/* Main card */}
               <div className={`bg-card rounded-xl w-[380px] transition-all overflow-hidden border border-border/50 ${
                 isRunning 
                   ? "shadow-[0_0_0_3px_rgba(168,85,247,0.15)]" 
@@ -269,40 +280,40 @@ function WorkflowNode({ data, id }: NodeProps) {
                 ) : (
                   <div className="p-4">
                     {/* Default Header */}
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className={`w-8 h-8 rounded-lg border flex items-center justify-center flex-shrink-0 ${iconBg}`}>
-                        <AppIcon appName={appName} className="w-4 h-4" />
-                      </div>
-                      <span className="text-base font-semibold text-foreground flex-1">{actionName}</span>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button className="p-1 rounded-md hover:bg-muted transition-colors" onClick={(e) => e.stopPropagation()}>
-                            <MoreVertical className="w-4 h-4 text-muted-foreground" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onClick={handleReplaceNode}
-                          >
-                            <RefreshCw className="w-4 h-4 mr-2" />
-                            Replace
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={handleDeleteNode}
-                            className="text-destructive focus:text-destructive"
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
+            <div className="flex items-center gap-3 mb-2">
+              <div className={`w-8 h-8 rounded-lg border flex items-center justify-center flex-shrink-0 ${iconBg}`}>
+                <AppIcon appName={appName} className="w-4 h-4" />
+              </div>
+              <span className="text-base font-semibold text-foreground flex-1">{actionName}</span>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="p-1 rounded-md hover:bg-muted transition-colors" onClick={(e) => e.stopPropagation()}>
+                    <MoreVertical className="w-4 h-4 text-muted-foreground" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={handleReplaceNode}
+                  >
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Replace
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={handleDeleteNode}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
 
-                    {/* Description */}
-                    <p className="text-sm text-muted-foreground mb-3 leading-relaxed">{description}</p>
+            {/* Description */}
+            <p className="text-sm text-muted-foreground mb-3 leading-relaxed">{description}</p>
                   </div>
                 )}
-                
+
                 {/* Footer with Output and Completion tabs */}
                 <div className="bg-muted/30 px-4 pt-2 pb-0 border-t border-border/50 flex items-center gap-6 relative">
                   <button
@@ -337,22 +348,22 @@ function WorkflowNode({ data, id }: NodeProps) {
                       )}
                     </span>
                   </button>
-                </div>
-              </div>
-          </ContextMenuTrigger>
-          <ContextMenuContent>
-            <ContextMenuItem onClick={handleReplaceNode}>
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Replace
-            </ContextMenuItem>
-            <ContextMenuItem onClick={handleDeleteNode} variant="destructive">
-              <Trash2 className="w-4 h-4 mr-2" />
-              Delete
-            </ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenu>
+            </div>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onClick={handleReplaceNode}>
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Replace
+          </ContextMenuItem>
+          <ContextMenuItem onClick={handleDeleteNode} variant="destructive">
+            <Trash2 className="w-4 h-4 mr-2" />
+            Delete
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
         </div>
-      </NodeHandles>
+    </NodeHandles>
       
       {/* IO Panel - appears below the node when open */}
       {isIOPanelOpen && (
