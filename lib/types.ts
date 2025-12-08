@@ -55,6 +55,7 @@ export type WorkflowNodeData = {
   isCompletionDismissed?: boolean
   onToggleIOPanel?: (nodeId: string, tab?: "output" | "completion") => void
   onClearOutput?: () => void
+  onPinChange?: (isPinned: boolean) => void
   input?: any
   output?: any
   completion?: any

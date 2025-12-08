@@ -1,7 +1,7 @@
 "use client"
 
-import React, { useState } from "react"
-import { X, Copy, Download, Maximize2, Trash2 } from "lucide-react"
+import React, { useState, useRef, useEffect } from "react"
+import { Pin, PinOff, Copy, Download, Maximize2, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -12,15 +12,18 @@ interface NodeIOPanelProps {
   activeTab: "output" | "completion"
   onClose: () => void
   onClear?: () => void
+  onPinChange?: (isPinned: boolean) => void
   input?: any
   output?: any
   completion?: any
 }
 
-export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, input, output, completion }: NodeIOPanelProps) {
+export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, onPinChange, input, output, completion }: NodeIOPanelProps) {
   const [viewMode, setViewMode] = useState<"text" | "formatted" | "code">("formatted")
   const [isMaximized, setIsMaximized] = useState(false)
   const [modalTab, setModalTab] = useState<"input" | "output" | "completion">(activeTab)
+  const [isPinned, setIsPinned] = useState(false)
+  const panelRef = useRef<HTMLDivElement>(null)
   
   // Reset view mode to "text" when switching to completion tab (since formatted is not available)
   React.useEffect(() => {
@@ -43,9 +46,78 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, input, output
     }
   }, [activeTab])
 
+  // Handle click outside to close panel (only if not pinned)
+  useEffect(() => {
+    if (isPinned) return // Don't add listener if pinned
+    
+    let mouseDownPosition: { x: number; y: number } | null = null
+    const DRAG_THRESHOLD = 5 // pixels - if mouse moves more than this, it's a drag
+    
+    const handleMouseDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+      
+      // Don't track if clicking on the node footer (Output/Completion buttons)
+      if (target.closest('[data-node-footer]')) {
+        return
+      }
+      
+      // Don't track if clicking inside the panel
+      if (panelRef.current && panelRef.current.contains(target)) {
+        return
+      }
+      
+      // Store mouse position to detect drag vs click
+      mouseDownPosition = { x: event.clientX, y: event.clientY }
+    }
+    
+    const handleMouseUp = (event: MouseEvent) => {
+      if (!mouseDownPosition) return
+      
+      const target = event.target as HTMLElement
+      
+      // Don't close if clicking on the node footer
+      if (target.closest('[data-node-footer]')) {
+        mouseDownPosition = null
+        return
+      }
+      
+      // Don't close if clicking inside the panel
+      if (panelRef.current && panelRef.current.contains(target)) {
+        mouseDownPosition = null
+        return
+      }
+      
+      // Calculate distance moved
+      const distance = Math.sqrt(
+        Math.pow(event.clientX - mouseDownPosition.x, 2) + 
+        Math.pow(event.clientY - mouseDownPosition.y, 2)
+      )
+      
+      // Only close if it was a click (not a drag)
+      if (distance < DRAG_THRESHOLD) {
+        onClose()
+      }
+      
+      mouseDownPosition = null
+    }
+
+    // Add listeners with a small delay to avoid immediate triggering
+    const timeoutId = setTimeout(() => {
+      document.addEventListener('mousedown', handleMouseDown, true)
+      document.addEventListener('mouseup', handleMouseUp, true)
+    }, 100)
+    
+    return () => {
+      clearTimeout(timeoutId)
+      document.removeEventListener('mousedown', handleMouseDown, true)
+      document.removeEventListener('mouseup', handleMouseUp, true)
+    }
+  }, [isPinned, onClose])
+
   // Check if we have actual output/completion data (flow has been run)
   const currentData = activeTab === "completion" ? completion : output
   const hasOutput = currentData !== null && currentData !== undefined
+  const hasAnyData = (output !== null && output !== undefined) || (completion !== null && completion !== undefined)
   
   // Get data for modal based on selected tab
   const modalData = modalTab === "input" ? input : modalTab === "completion" ? completion : output
@@ -236,7 +308,7 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, input, output
   }
 
   return (
-    <div className="mt-2 w-[380px] animate-in fade-in slide-in-from-top-2 duration-200" onClick={(e) => e.stopPropagation()}>
+    <div ref={panelRef} data-io-panel className="mt-2 w-[380px] animate-in fade-in slide-in-from-top-2 duration-200" onClick={(e) => e.stopPropagation()}>
       <div className="bg-card rounded-lg border border-border/50 shadow-md overflow-hidden backdrop-blur-sm w-full">
         <div>
           {/* View Mode and Actions Row */}
@@ -341,16 +413,25 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, input, output
                           </DropdownMenuItem>
                         </DropdownMenuContent>
               </DropdownMenu>
+              {/* Divider */}
+              <div className="h-5 w-px bg-border mx-1" />
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 hover:bg-muted text-muted-foreground"
+                className={`h-7 w-7 hover:bg-muted text-muted-foreground ${isPinned ? 'bg-muted' : ''}`}
                 onClick={(e) => {
                   e.stopPropagation()
-                  onClose()
+                  const newPinnedState = !isPinned
+                  setIsPinned(newPinnedState)
+                  onPinChange?.(newPinnedState)
                 }}
+                title={isPinned ? "Unpin panel" : "Pin panel"}
               >
-                <X className="h-3.5 w-3.5" />
+                {isPinned ? (
+                  <PinOff className="h-3.5 w-3.5" />
+                ) : (
+                  <Pin className="h-3.5 w-3.5" />
+                )}
               </Button>
             </div>
           </div>
@@ -389,15 +470,15 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, input, output
                 {/* Action buttons */}
                 {hasOutput && (
                   <>
-                    {/* Clear button - bottom left */}
-                    {onClear && (
+                    {/* Clear button - bottom left - shows if any data exists and clears both output and completion */}
+                    {onClear && hasAnyData && (
                       <button
                         className="absolute bottom-2 left-2 p-1.5 rounded-md bg-background/80 hover:bg-background border border-border/50 hover:border-border shadow-sm transition-colors z-10"
                         onClick={(e) => {
                           e.stopPropagation()
-                          onClear()
+                          onClear() // This clears both output and completion for the node
                         }}
-                        title="Clear"
+                        title="Clear output and completion"
                       >
                         <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
                       </button>
@@ -421,82 +502,117 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, input, output
 
           {/* Full screen modal */}
           <Dialog open={isMaximized} onOpenChange={setIsMaximized}>
-            <DialogContent className="!max-w-[95vw] !w-[95vw] max-h-[95vh] h-[95vh] flex flex-col p-0">
-              <DialogHeader className="px-6 py-4 border-b">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <DialogTitle>{modalTab.charAt(0).toUpperCase() + modalTab.slice(1)}</DialogTitle>
-                    {/* Tab switcher */}
-                    <div className="flex items-center gap-2">
+            <DialogContent 
+              className="!max-w-[95vw] !w-[95vw] max-h-[95vh] h-[95vh] flex flex-col p-0"
+              onPointerDownOutside={(e) => {
+                // Allow closing when clicking outside (on overlay)
+                // This is the default behavior, so we don't need to prevent it
+              }}
+              onClick={(e) => {
+                // Stop propagation to prevent closing when clicking inside modal content
+                e.stopPropagation()
+              }}
+              onInteractOutside={(e) => {
+                // Allow closing when clicking outside (on overlay)
+                // This is the default behavior
+              }}
+            >
+              <DialogHeader className="px-6 py-4 border-b flex-shrink-0 w-full">
+                <div className="flex flex-col gap-4 w-full">
+                  {/* First row: Title and tabs */}
+                  <div className="flex items-center justify-between w-full">
+                    <div className="flex items-center gap-4 flex-1 min-w-0">
+                      <DialogTitle className="flex-shrink-0 w-[80px]">{modalTab.charAt(0).toUpperCase() + modalTab.slice(1)}</DialogTitle>
+                      {/* Tab switcher */}
+                      <div className="flex items-center gap-2 flex-shrink-0 w-[280px]">
                       <button
                         type="button"
-                        className={`px-3 py-1 text-sm font-normal transition-colors rounded-md ${
+                        className={`px-3 py-1 text-sm font-normal transition-colors rounded-md whitespace-nowrap ${
                           modalTab === "input" 
                             ? "bg-muted text-foreground" 
                             : "text-muted-foreground hover:text-foreground"
                         }`}
-                        onClick={() => setModalTab("input")}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setModalTab("input")
+                        }}
                       >
                         Input
                       </button>
                       <button
                         type="button"
-                        className={`px-3 py-1 text-sm font-normal transition-colors rounded-md ${
+                        className={`px-3 py-1 text-sm font-normal transition-colors rounded-md whitespace-nowrap ${
                           modalTab === "output" 
                             ? "bg-muted text-foreground" 
                             : "text-muted-foreground hover:text-foreground"
                         }`}
-                        onClick={() => setModalTab("output")}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setModalTab("output")
+                        }}
                       >
                         Output
                       </button>
                       <button
                         type="button"
-                        className={`px-3 py-1 text-sm font-normal transition-colors rounded-md ${
+                        className={`px-3 py-1 text-sm font-normal transition-colors rounded-md whitespace-nowrap ${
                           modalTab === "completion" 
                             ? "bg-muted text-foreground" 
                             : "text-muted-foreground hover:text-foreground"
                         }`}
-                        onClick={() => setModalTab("completion")}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setModalTab("completion")
+                        }}
                       >
                         Completion
                       </button>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
-                    {/* View Mode Tabs */}
-                    <ToggleGroup
-                      type="single"
-                      value={viewMode}
-                      onValueChange={(value) => {
-                        if (value) setViewMode(value as "text" | "formatted" | "code")
-                      }}
-                      className="bg-[#f5f5f5] rounded p-[2px] border-0 h-6"
-                    >
-                      <ToggleGroupItem 
-                        value="text" 
-                        aria-label="Text" 
-                        className="px-2.5 h-5 text-[11px] rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
+                  
+                  {/* Divider */}
+                  <div className="h-px bg-border" />
+                  
+                  {/* Second row: View mode toggle, copy, and download */}
+                  <div className="flex items-center gap-4 w-full">
+                    {/* View Mode Tabs - fixed width to prevent layout shift */}
+                    <div className="w-[140px] flex-shrink-0">
+                      <ToggleGroup
+                        type="single"
+                        value={viewMode}
+                        onValueChange={(value) => {
+                          if (value) setViewMode(value as "text" | "formatted" | "code")
+                        }}
+                        className="bg-[#f5f5f5] rounded p-[2px] border-0 h-6 w-full"
                       >
-                        Text
-                      </ToggleGroupItem>
-                      {modalTab !== "completion" && (
                         <ToggleGroupItem 
-                          value="formatted" 
-                          aria-label="Formatted" 
-                          className="px-3 h-5 text-[11px] rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
+                          value="text" 
+                          aria-label="Text" 
+                          className="px-2.5 h-5 text-[11px] rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
                         >
-                          Formatted
+                          Text
                         </ToggleGroupItem>
-                      )}
-                      <ToggleGroupItem 
-                        value="code" 
-                        aria-label="Code" 
-                        className="px-2.5 h-5 text-[11px] rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
-                      >
-                        Code
-                      </ToggleGroupItem>
-                    </ToggleGroup>
+                        {modalTab !== "completion" ? (
+                          <ToggleGroupItem 
+                            value="formatted" 
+                            aria-label="Formatted" 
+                            className="px-3 h-5 text-[11px] rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
+                          >
+                            Formatted
+                          </ToggleGroupItem>
+                        ) : (
+                          <div className="px-3 h-5" /> // Spacer to maintain width
+                        )}
+                        <ToggleGroupItem 
+                          value="code" 
+                          aria-label="Code" 
+                          className="px-2.5 h-5 text-[11px] rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
+                        >
+                          Code
+                        </ToggleGroupItem>
+                      </ToggleGroup>
+                    </div>
                     {/* Action Buttons */}
                     <div className="flex items-center gap-0.5">
                       <Button
@@ -528,8 +644,9 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, input, output
                           <DropdownMenuItem
                             onClick={(e) => {
                               e.stopPropagation()
-                              if (hasOutput) {
-                                downloadFile(formatJSON(output), `output-${nodeId}.json`, 'application/json')
+                              if (hasModalData) {
+                                const dataToDownload = modalTab === "input" ? input : modalTab === "completion" ? completion : output
+                                downloadFile(formatJSON(dataToDownload), `${modalTab}-${nodeId}.json`, 'application/json')
                               }
                             }}
                           >
@@ -539,8 +656,9 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, input, output
                           <DropdownMenuItem
                             onClick={(e) => {
                               e.stopPropagation()
-                              if (hasOutput) {
-                                downloadFile(convertToCSV(output), `output-${nodeId}.csv`, 'text/csv')
+                              if (hasModalData) {
+                                const dataToDownload = modalTab === "input" ? input : modalTab === "completion" ? completion : output
+                                downloadFile(convertToCSV(dataToDownload), `${modalTab}-${nodeId}.csv`, 'text/csv')
                               }
                             }}
                           >
@@ -550,12 +668,9 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, input, output
                           <DropdownMenuItem
                             onClick={(e) => {
                               e.stopPropagation()
-                              if (hasOutput) {
-                                // For PDF, we'll create a simple text-based PDF
-                                // In a real implementation, you might want to use a library like jsPDF
-                                const text = formatJSON(output)
-                                // Simple approach: create a text file that can be converted to PDF
-                                // Or use window.print() to print the content
+                              if (hasModalData) {
+                                const dataToDownload = modalTab === "input" ? input : modalTab === "completion" ? completion : output
+                                const text = formatJSON(dataToDownload)
                                 window.print()
                               }
                             }}

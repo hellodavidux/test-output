@@ -32,6 +32,7 @@ function FlowCanvas({
   const [activeIOTabs, setActiveIOTabs] = useState<Map<string, "output" | "completion">>(new Map())
   const [dismissedIOPanels, setDismissedIOPanels] = useState<Map<string, Set<"output" | "completion">>>(new Map())
   const [clearedOutputs, setClearedOutputs] = useState<Set<string>>(new Set())
+  const [pinnedIOPanels, setPinnedIOPanels] = useState<Set<string>>(new Set())
   const [selectedNodeData, setSelectedNodeData] = useState<{
     id: string
     appName: string
@@ -121,7 +122,13 @@ function FlowCanvas({
     }
   }
 
-  const handleNodeClick = (_event: React.MouseEvent, node: Node) => {
+  const handleNodeClick = (event: React.MouseEvent, node: Node) => {
+    // Check if the click originated from the footer (Output/Completion buttons)
+    const target = event.target as HTMLElement
+    if (target.closest('[data-node-footer]')) {
+      return // Don't open the configuration panel if clicking on the footer
+    }
+    
     if (node.type === "workflowNode") {
       const data = node.data as WorkflowNodeData
       setSelectedNodeData({
@@ -135,11 +142,22 @@ function FlowCanvas({
     }
   }
 
-  const handlePaneClick = () => {
+  const handlePaneClick = useCallback(() => {
     setIsSidebarOpen(false)
     setSelectedNodeData(null)
     setContextMenuPosition(null)
-  }
+    // Close all IO panels when clicking on the pane, except pinned ones
+    setOpenIOPanels((prev) => {
+      const newSet = new Set<string>()
+      // Keep only pinned panels open
+      pinnedIOPanels.forEach((nodeId) => {
+        if (prev.has(nodeId)) {
+          newSet.add(nodeId)
+        }
+      })
+      return newSet
+    })
+  }, [pinnedIOPanels])
 
   // Store the last mouse position for context menu
   const lastMousePosition = useRef<{ x: number; y: number } | null>(null)
@@ -197,14 +215,9 @@ function FlowCanvas({
   const handleRun = () => {
     setContextMenuPosition(null)
     
-    if (isRunMode) {
-      // If already in run mode, toggle it off
-      setIsRunMode(false)
-      setIsRunning(false)
-      setOpenIOPanels(new Set())
-      setDismissedIOPanels(new Map()) // Reset dismissed state when exiting run mode
-      return
-    }
+    // Close the configuration panel when running
+    setIsSidebarOpen(false)
+    setSelectedNodeData(null)
     
     // Reset dismissed state for all nodes when starting a new run
     setDismissedIOPanels(new Map())
@@ -410,6 +423,17 @@ function FlowCanvas({
             isCompletionDismissed,
             onToggleIOPanel: handleToggleIOPanel,
             onClearOutput: () => handleClearOutput(node.id),
+            onPinChange: (isPinned: boolean) => {
+              setPinnedIOPanels((prev) => {
+                const newSet = new Set(prev)
+                if (isPinned) {
+                  newSet.add(node.id)
+                } else {
+                  newSet.delete(node.id)
+                }
+                return newSet
+              })
+            },
             // Only provide output data when in run mode and not cleared
             input: isRunMode && !isCleared ? {
               message: "Hello, world!",
@@ -456,14 +480,34 @@ function FlowCanvas({
 
   useEffect(() => {
     if (!isInitialized) {
-      // Center the default workflow node on the canvas
-      // Position it at the center of the viewport (accounting for sidebar width ~44px)
+      // Center the workflow nodes on the canvas
+      // Position them at the center of the viewport (accounting for sidebar width ~44px)
       const viewportWidth = window.innerWidth - 44 // Subtract sidebar width
       const viewportHeight = window.innerHeight - 56 // Subtract top bar height
       const centerX = viewportWidth / 2 - 190 // Approximate center accounting for node width (380px)
       const centerY = viewportHeight / 2 - 100 // Approximate center accounting for node height
+      const nodeSpacing = 450 // Space between nodes
       
-      const defaultNodeData: WorkflowNodeData = {
+      // Input node (left)
+      const inputNodeData: WorkflowNodeData = {
+        appName: "Input",
+        actionName: "User Input",
+        description: "Collect user input",
+        type: "input",
+        version: "v1.0.0",
+        onDeleteNode: handleDeleteNode,
+        onToggleIOPanel: handleToggleIOPanel,
+      }
+      
+      const inputNode: Node = {
+        id: "input-node",
+        type: "workflowNode",
+        position: { x: Math.max(0, centerX - nodeSpacing), y: Math.max(0, centerY) },
+        data: inputNodeData,
+      }
+      
+      // AI Agent node (middle)
+      const aiAgentNodeData: WorkflowNodeData = {
         appName: "AI Agent",
         actionName: "LLM",
         description: "Process text using a large language model",
@@ -473,16 +517,54 @@ function FlowCanvas({
         onToggleIOPanel: handleToggleIOPanel,
       }
       
-      const defaultNode: Node = {
-        id: "default-node",
+      const aiAgentNode: Node = {
+        id: "ai-agent-node",
         type: "workflowNode",
         position: { x: Math.max(0, centerX), y: Math.max(0, centerY) },
-        data: defaultNodeData,
+        data: aiAgentNodeData,
       }
-      setNodes([defaultNode])
+      
+      // Send Email node (right)
+      const sendEmailNodeData: WorkflowNodeData = {
+        appName: "Send Email",
+        actionName: "Send Email",
+        description: "Send an email message",
+        type: "action",
+        version: "v1.0.0",
+        onDeleteNode: handleDeleteNode,
+        onToggleIOPanel: handleToggleIOPanel,
+      }
+      
+      const sendEmailNode: Node = {
+        id: "send-email-node",
+        type: "workflowNode",
+        position: { x: Math.max(0, centerX + nodeSpacing), y: Math.max(0, centerY) },
+        data: sendEmailNodeData,
+      }
+      
+      // Create edges connecting the nodes
+      const initialEdges = [
+        {
+          id: "edge-input-to-ai",
+          source: "input-node",
+          target: "ai-agent-node",
+          sourceHandle: "right",
+          targetHandle: "left",
+        },
+        {
+          id: "edge-ai-to-email",
+          source: "ai-agent-node",
+          target: "send-email-node",
+          sourceHandle: "right",
+          targetHandle: "left",
+        },
+      ]
+      
+      setNodes([inputNode, aiAgentNode, sendEmailNode])
+      setEdges(initialEdges)
       setIsInitialized(true)
     }
-  }, [isInitialized, setNodes])
+  }, [isInitialized, setNodes, setEdges])
 
   return (
     <>

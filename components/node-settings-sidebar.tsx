@@ -22,6 +22,12 @@ interface NodeSettingsSidebarProps {
   onReplaceNode?: (nodeId: string) => void
 }
 
+// List of AI providers - filter to only show providers that exist in appDetails
+const getAIProviders = () => {
+  const aiProviderNames = ["OpenAI", "Anthropic", "Google", "Cohere", "Hugging Face"]
+  return aiProviderNames.filter(provider => PROVIDERS.includes(provider))
+}
+
 export function NodeSettingsSidebar({
   isOpen,
   onClose,
@@ -37,7 +43,8 @@ export function NodeSettingsSidebar({
   // Sync state with nodeData when it changes
   useEffect(() => {
     if (nodeData) {
-      setSelectedProvider(nodeData.appName)
+      // Always set provider to OpenAI and disable dropdown
+      setSelectedProvider("OpenAI")
       // Only set selectedAction if it's not empty (allows for unselected state)
       if (nodeData.actionName) {
         setSelectedAction(nodeData.actionName)
@@ -50,7 +57,8 @@ export function NodeSettingsSidebar({
   if (!isOpen || !nodeData) return null
 
   const nodeSlug = `action-${nodeData.id.split("-").pop() || "0"}`
-  const providerDetails = appDetails[selectedProvider]
+  // Always use OpenAI as the provider (dropdown is disabled)
+  const providerDetails = appDetails["OpenAI"] || appDetails[selectedProvider]
 
   // Get current action/trigger description
   const getCurrentDescription = (): string => {
@@ -69,19 +77,21 @@ export function NodeSettingsSidebar({
     return nodeData.description
   }
 
-  // Handle provider change
+  // Handle provider change (disabled - always uses OpenAI)
   const handleProviderChange = (provider: string) => {
-    setSelectedProvider(provider)
+    // Provider dropdown is disabled, this function is no longer used
+    // Always use OpenAI
+    setSelectedProvider("OpenAI")
     setProviderOpen(false)
 
     // Reset action when provider changes
-    const details = appDetails[provider]
+    const details = appDetails["OpenAI"] || appDetails[provider]
     if (details) {
       const firstAction = details.actionGroups[0]?.items[0] || details.triggers[0]
       if (firstAction) {
         setSelectedAction(firstAction.name)
         onNodeUpdate?.(nodeData.id, {
-          appName: provider,
+          appName: "OpenAI",
           actionName: firstAction.name,
           description: firstAction.description,
           type: details.triggers.some((t) => t.name === firstAction.name) ? "trigger" : "action",
@@ -95,7 +105,7 @@ export function NodeSettingsSidebar({
     setSelectedAction(action.name)
     setActionOpen(false)
     onNodeUpdate?.(nodeData.id, {
-      appName: selectedProvider,
+      appName: "OpenAI", // Always use OpenAI as provider
       actionName: action.name,
       description: action.description,
       type,
@@ -103,12 +113,12 @@ export function NodeSettingsSidebar({
   }
 
   return (
-    <div className="fixed top-0 right-0 h-full w-[380px] bg-background border-l border-border shadow-lg z-50 flex flex-col">
+    <div className="fixed top-14 right-0 bottom-0 w-[380px] bg-background border-l border-border shadow-lg z-50 flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <div className="flex items-center gap-3">
           <div className="w-6 h-6 flex items-center justify-center">
-            <AppIcon appName={selectedProvider} className="w-5 h-5" />
+            <AppIcon appName="OpenAI" className="w-5 h-5" />
           </div>
           <span className="font-semibold text-foreground truncate max-w-[160px]">
             {selectedAction || "Select an action"}
@@ -147,41 +157,25 @@ export function NodeSettingsSidebar({
           </label>
           <div className="relative">
             <button
-              onClick={() => setProviderOpen(!providerOpen)}
-              className="w-full flex items-center justify-between px-3 py-2.5 border border-border rounded-lg bg-background hover:bg-muted/50 transition-colors"
+              disabled
+              className="w-full flex items-center justify-between px-3 py-2.5 border border-border rounded-lg bg-background hover:bg-muted/50 transition-colors cursor-default"
+              onClick={(e) => e.preventDefault()}
             >
               <div className="flex items-center gap-2.5">
-                <AppIcon appName={selectedProvider} className="w-5 h-5" />
-                <span className="text-sm text-foreground">{selectedProvider}</span>
+                <AppIcon appName="OpenAI" className="w-5 h-5" />
+                <span className="text-sm text-foreground">OpenAI</span>
               </div>
               <ChevronDown
-                className={`w-4 h-4 text-muted-foreground transition-transform ${providerOpen ? "rotate-180" : ""}`}
+                className="w-4 h-4 text-muted-foreground"
               />
             </button>
-
-            {providerOpen && (
-              <div className="absolute top-full left-0 right-0 mt-1 bg-background border border-border rounded-lg shadow-lg z-10 max-h-[240px] overflow-y-auto">
-                {PROVIDERS.map((provider) => (
-                  <button
-                    key={provider}
-                    onClick={() => handleProviderChange(provider)}
-                    className={`w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-muted/50 transition-colors ${
-                      provider === selectedProvider ? "bg-muted" : ""
-                    }`}
-                  >
-                    <AppIcon appName={provider} className="w-5 h-5" />
-                    <span className="text-sm text-foreground">{provider}</span>
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
         </div>
 
-        {/* Action Dropdown */}
+        {/* Model Dropdown */}
         <div className="space-y-2">
           <label className="text-sm font-medium text-foreground border-b border-dashed border-muted-foreground/50 pb-0.5">
-            Action
+            Model
           </label>
           <div className="relative">
             <button
@@ -191,7 +185,7 @@ export function NodeSettingsSidebar({
               <div className="flex items-center gap-2.5">
                 {selectedAction ? (
                   <>
-                    <AppIcon appName={selectedProvider} className="w-5 h-5" />
+                    <AppIcon appName="OpenAI" className="w-5 h-5" />
                     <span className="text-sm text-foreground">{selectedAction}</span>
                   </>
                 ) : (
@@ -220,7 +214,7 @@ export function NodeSettingsSidebar({
                           trigger.name === selectedAction ? "bg-muted" : ""
                         }`}
                       >
-                        <AppIcon appName={selectedProvider} className="w-4 h-4" />
+                        <AppIcon appName="OpenAI" className="w-4 h-4" />
                         <span className="text-sm text-foreground">{trigger.name}</span>
                       </button>
                     ))}
@@ -245,7 +239,7 @@ export function NodeSettingsSidebar({
                               action.name === selectedAction ? "bg-muted" : ""
                             }`}
                           >
-                            <AppIcon appName={selectedProvider} className="w-4 h-4" />
+                            <AppIcon appName="OpenAI" className="w-4 h-4" />
                             <span className="text-sm text-foreground">{action.name}</span>
                           </button>
                         ))}
