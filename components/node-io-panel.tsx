@@ -309,7 +309,7 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, onPinChange, 
 
   return (
     <div ref={panelRef} data-io-panel className="mt-2 w-[380px] animate-in fade-in slide-in-from-top-2 duration-200" onClick={(e) => e.stopPropagation()}>
-      <div className="bg-card rounded-lg border border-border/50 shadow-md overflow-hidden backdrop-blur-sm w-full">
+      <div className={`bg-card rounded-lg border border-border/50 overflow-hidden backdrop-blur-sm w-full ${isPinned ? 'shadow-none' : 'shadow-md'}`}>
         <div>
           {/* View Mode and Actions Row */}
           <div className="flex items-center justify-between px-4 py-2.5 bg-background">
