@@ -8,7 +8,7 @@ import WorkflowNode from "@/components/workflow-node"
 import { NodeSettingsSidebar } from "@/components/node-settings-sidebar"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuTrigger } from "@/components/ui/context-menu"
 import { Play, StickyNote, Clipboard, ClipboardX } from "lucide-react"
-import type { Node } from "@xyflow/react"
+import type { Node, Edge } from "@xyflow/react"
 import type { WorkflowNodeData, SelectedAction } from "@/lib/types"
 
 const nodeTypes = {
@@ -23,7 +23,7 @@ function FlowCanvas({
   onRunRef: React.MutableRefObject<(() => void) | null>
 }) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
-  const [edges, setEdges, onEdgesChange] = useEdgesState([])
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [isInitialized, setIsInitialized] = useState(false)
   const [isRunMode, setIsRunMode] = useState(false)
   const [isRunning, setIsRunning] = useState(false)
