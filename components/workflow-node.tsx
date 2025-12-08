@@ -425,6 +425,8 @@ function WorkflowNode({ data, id }: NodeProps) {
             input={input}
             output={output}
             completion={completion}
+            appName={appName}
+            actionName={actionName}
           />
         </div>
       )}

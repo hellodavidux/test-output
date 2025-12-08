@@ -6,6 +6,44 @@ import { Button } from "@/components/ui/button"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { AppIcon } from "./workflow-node"
+
+function getNodeIconBg(appName: string): string {
+  const name = appName.toLowerCase()
+
+  const colorMap: Record<string, string> = {
+    // Apps - amber
+    slack: "border-amber-200 bg-amber-50",
+    stackai: "border-amber-200 bg-amber-50",
+    airtable: "border-amber-200 bg-amber-50",
+    anthropic: "border-amber-200 bg-amber-50",
+    // Inputs - blue
+    input: "border-blue-200 bg-blue-50",
+    files: "border-blue-200 bg-blue-50",
+    trigger: "border-blue-200 bg-blue-50",
+    url: "border-blue-200 bg-blue-50",
+    audio: "border-blue-200 bg-blue-50",
+    // Outputs - green
+    output: "border-green-200 bg-green-50",
+    action: "border-green-200 bg-green-50",
+    template: "border-green-200 bg-green-50",
+    // Core - purple
+    "ai agent": "border-purple-200 bg-purple-50",
+    "knowledge base": "border-purple-200 bg-purple-50",
+    // Logic - orange
+    condition: "border-orange-200 bg-orange-50",
+    loop: "border-orange-200 bg-orange-50",
+    switch: "border-orange-200 bg-orange-50",
+    // Utils - gray
+    delay: "border-gray-200 bg-gray-50",
+    "http request": "border-gray-200 bg-gray-50",
+    code: "border-gray-200 bg-gray-50",
+    // Send Email
+    "send email": "border-green-200 bg-green-50",
+  }
+
+  return colorMap[name] ?? "border-amber-200 bg-amber-50"
+}
 
 interface NodeIOPanelProps {
   nodeId: string
@@ -16,9 +54,11 @@ interface NodeIOPanelProps {
   input?: any
   output?: any
   completion?: any
+  appName?: string
+  actionName?: string
 }
 
-export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, onPinChange, input, output, completion }: NodeIOPanelProps) {
+export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, onPinChange, input, output, completion, appName, actionName }: NodeIOPanelProps) {
   const [viewMode, setViewMode] = useState<"text" | "formatted" | "code">("formatted")
   const [isMaximized, setIsMaximized] = useState(false)
   const [modalTab, setModalTab] = useState<"input" | "output" | "completion">(activeTab)
@@ -503,190 +543,178 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, onPinChange, 
           {/* Full screen modal */}
           <Dialog open={isMaximized} onOpenChange={setIsMaximized}>
             <DialogContent 
-              className="!max-w-[95vw] !w-[95vw] max-h-[95vh] h-[95vh] flex flex-col p-0"
-              onPointerDownOutside={(e) => {
-                // Allow closing when clicking outside (on overlay)
-                // This is the default behavior, so we don't need to prevent it
-              }}
+              className="!max-w-[60vw] !w-[60vw] !h-[calc(100vh-2rem)] !max-h-[calc(100vh-2rem)] !top-4 !right-4 !left-auto !translate-x-0 !translate-y-0 !m-0 flex flex-col p-0 rounded-lg !border-0 !gap-0"
               onClick={(e) => {
                 // Stop propagation to prevent closing when clicking inside modal content
                 e.stopPropagation()
               }}
-              onInteractOutside={(e) => {
-                // Allow closing when clicking outside (on overlay)
-                // This is the default behavior
-              }}
             >
               <DialogHeader className="px-6 py-4 border-b flex-shrink-0 w-full">
                 <div className="flex flex-col gap-4 w-full">
-                  {/* First row: Title and tabs */}
-                  <div className="flex items-center justify-between w-full">
-                    <div className="flex items-center gap-4 flex-1 min-w-0">
-                      <DialogTitle className="flex-shrink-0 w-[80px]">{modalTab.charAt(0).toUpperCase() + modalTab.slice(1)}</DialogTitle>
-                      {/* Tab switcher */}
-                      <div className="flex items-center gap-2 flex-shrink-0 w-[280px]">
-                      <button
-                        type="button"
-                        className={`px-3 py-1 text-sm font-normal transition-colors rounded-md whitespace-nowrap ${
-                          modalTab === "input" 
-                            ? "bg-muted text-foreground" 
-                            : "text-muted-foreground hover:text-foreground"
-                        }`}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setModalTab("input")
-                        }}
-                      >
-                        Input
-                      </button>
-                      <button
-                        type="button"
-                        className={`px-3 py-1 text-sm font-normal transition-colors rounded-md whitespace-nowrap ${
-                          modalTab === "output" 
-                            ? "bg-muted text-foreground" 
-                            : "text-muted-foreground hover:text-foreground"
-                        }`}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setModalTab("output")
-                        }}
-                      >
-                        Output
-                      </button>
-                      <button
-                        type="button"
-                        className={`px-3 py-1 text-sm font-normal transition-colors rounded-md whitespace-nowrap ${
-                          modalTab === "completion" 
-                            ? "bg-muted text-foreground" 
-                            : "text-muted-foreground hover:text-foreground"
-                        }`}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setModalTab("completion")
-                        }}
-                      >
-                        Completion
-                      </button>
+                  {/* First row: Title with icon */}
+                  <div className="flex items-center gap-3 w-full">
+                    {appName && (
+                      <div className={`w-8 h-8 rounded-lg border flex items-center justify-center flex-shrink-0 ${getNodeIconBg(appName)}`}>
+                        <AppIcon appName={appName} className="w-4 h-4" />
                       </div>
-                    </div>
+                    )}
+                    <DialogTitle className="flex-shrink-0">{actionName || appName || modalTab.charAt(0).toUpperCase() + modalTab.slice(1)}</DialogTitle>
                   </div>
                   
-                  {/* Divider */}
-                  <div className="h-px bg-border" />
-                  
-                  {/* Second row: View mode toggle, copy, and download */}
-                  <div className="flex items-center gap-4 w-full">
-                    {/* View Mode Tabs - fixed width to prevent layout shift */}
-                    <div className="w-[140px] flex-shrink-0">
-                      <ToggleGroup
-                        type="single"
-                        value={viewMode}
-                        onValueChange={(value) => {
-                          if (value) setViewMode(value as "text" | "formatted" | "code")
-                        }}
-                        className="bg-[#f5f5f5] rounded p-[2px] border-0 h-6 w-full"
-                      >
-                        <ToggleGroupItem 
-                          value="text" 
-                          aria-label="Text" 
-                          className="px-2.5 h-5 text-[11px] rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
-                        >
-                          Text
-                        </ToggleGroupItem>
-                        {modalTab !== "completion" ? (
-                          <ToggleGroupItem 
-                            value="formatted" 
-                            aria-label="Formatted" 
-                            className="px-3 h-5 text-[11px] rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
-                          >
-                            Formatted
-                          </ToggleGroupItem>
-                        ) : (
-                          <div className="px-3 h-5" /> // Spacer to maintain width
-                        )}
-                        <ToggleGroupItem 
-                          value="code" 
-                          aria-label="Code" 
-                          className="px-2.5 h-5 text-[11px] rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
-                        >
-                          Code
-                        </ToggleGroupItem>
-                      </ToggleGroup>
-                    </div>
-                    {/* Action Buttons */}
-                    <div className="flex items-center gap-0.5">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 hover:bg-muted text-muted-foreground"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (hasModalData) {
-                            const textToCopy = typeof modalData === "string" ? modalData : formatJSON(modalData)
-                            navigator.clipboard.writeText(textToCopy)
-                          }
-                        }}
-                      >
-                        <Copy className="h-3.5 w-3.5" />
-                      </Button>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 hover:bg-muted text-muted-foreground"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <Download className="h-3.5 w-3.5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              if (hasModalData) {
-                                const dataToDownload = modalTab === "input" ? input : modalTab === "completion" ? completion : output
-                                downloadFile(formatJSON(dataToDownload), `${modalTab}-${nodeId}.json`, 'application/json')
-                              }
-                            }}
-                          >
-                            <Download className="h-4 w-4 mr-2" />
-                            Download as JSON
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              if (hasModalData) {
-                                const dataToDownload = modalTab === "input" ? input : modalTab === "completion" ? completion : output
-                                downloadFile(convertToCSV(dataToDownload), `${modalTab}-${nodeId}.csv`, 'text/csv')
-                              }
-                            }}
-                          >
-                            <Download className="h-4 w-4 mr-2" />
-                            Download as CSV
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              if (hasModalData) {
-                                const dataToDownload = modalTab === "input" ? input : modalTab === "completion" ? completion : output
-                                const text = formatJSON(dataToDownload)
-                                window.print()
-                              }
-                            }}
-                          >
-                            <Download className="h-4 w-4 mr-2" />
-                            Download as PDF
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
+                  {/* Second row: Input/Output/Completion tabs */}
+                  <div className="flex items-center gap-2 w-full">
+                    <button
+                      type="button"
+                      className={`px-3 py-1 text-sm font-normal transition-colors rounded-md whitespace-nowrap ${
+                        modalTab === "input" 
+                          ? "bg-muted text-foreground" 
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setModalTab("input")
+                      }}
+                    >
+                      Input
+                    </button>
+                    <button
+                      type="button"
+                      className={`px-3 py-1 text-sm font-normal transition-colors rounded-md whitespace-nowrap ${
+                        modalTab === "output" 
+                          ? "bg-muted text-foreground" 
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setModalTab("output")
+                      }}
+                    >
+                      Output
+                    </button>
+                    <button
+                      type="button"
+                      className={`px-3 py-1 text-sm font-normal transition-colors rounded-md whitespace-nowrap ${
+                        modalTab === "completion" 
+                          ? "bg-muted text-foreground" 
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setModalTab("completion")
+                      }}
+                    >
+                      Completion
+                    </button>
                   </div>
+                  
                 </div>
               </DialogHeader>
-              <div className="flex-1 overflow-hidden p-6">
+              <div className="flex-1 overflow-hidden p-6 flex flex-col">
+                {/* View Mode Tabs and Action Buttons - right above the gray text field */}
+                <div className="mb-3 flex-shrink-0 flex items-center justify-between">
+                  <ToggleGroup
+                    type="single"
+                    value={viewMode}
+                    onValueChange={(value) => {
+                      if (value) setViewMode(value as "text" | "formatted" | "code")
+                    }}
+                    className="bg-[#f5f5f5] rounded p-[2px] border-0 h-6"
+                  >
+                    <ToggleGroupItem 
+                      value="text" 
+                      aria-label="Text" 
+                      className="px-2.5 h-5 text-[11px] rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
+                    >
+                      Text
+                    </ToggleGroupItem>
+                    {modalTab !== "completion" && (
+                      <ToggleGroupItem 
+                        value="formatted" 
+                        aria-label="Formatted" 
+                        className="px-3 h-5 text-[11px] rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
+                      >
+                        Formatted
+                      </ToggleGroupItem>
+                    )}
+                    <ToggleGroupItem 
+                      value="code" 
+                      aria-label="Code" 
+                      className="px-2.5 h-5 text-[11px] rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
+                    >
+                      Code
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                  {/* Action Buttons */}
+                  <div className="flex items-center gap-0.5">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 hover:bg-muted text-muted-foreground"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (hasModalData) {
+                          const textToCopy = typeof modalData === "string" ? modalData : formatJSON(modalData)
+                          navigator.clipboard.writeText(textToCopy)
+                        }
+                      }}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 hover:bg-muted text-muted-foreground"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (hasModalData) {
+                              const dataToDownload = modalTab === "input" ? input : modalTab === "completion" ? completion : output
+                              downloadFile(formatJSON(dataToDownload), `${modalTab}-${nodeId}.json`, 'application/json')
+                            }
+                          }}
+                        >
+                          <Download className="h-4 w-4 mr-2" />
+                          Download as JSON
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (hasModalData) {
+                              const dataToDownload = modalTab === "input" ? input : modalTab === "completion" ? completion : output
+                              downloadFile(convertToCSV(dataToDownload), `${modalTab}-${nodeId}.csv`, 'text/csv')
+                            }
+                          }}
+                        >
+                          <Download className="h-4 w-4 mr-2" />
+                          Download as CSV
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (hasModalData) {
+                              const dataToDownload = modalTab === "input" ? input : modalTab === "completion" ? completion : output
+                              const text = formatJSON(dataToDownload)
+                              window.print()
+                            }
+                          }}
+                        >
+                          <Download className="h-4 w-4 mr-2" />
+                          Download as PDF
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
                 <div 
-                  className="h-full w-full bg-gradient-to-br from-muted/60 to-muted/40 rounded-lg p-6 border border-border/50 overflow-x-hidden overflow-y-auto shadow-inner"
+                  className="flex-1 w-full bg-gradient-to-br from-muted/60 to-muted/40 rounded-lg p-6 border border-border/50 overflow-x-hidden overflow-y-auto shadow-inner"
                   onWheel={(e) => {
                     e.stopPropagation()
                     e.preventDefault()
