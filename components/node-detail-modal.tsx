@@ -732,13 +732,18 @@ export function NodeDetailModal({ node, onClose, initialTab = "output", initialV
   // Modal content to be rendered via portal
   const modalContent = (
     <>
-      {/* Backdrop - only closes when clicking directly on backdrop */}
+      {/* Backdrop - closes when clicking on backdrop or outside modal/run progress */}
       <div 
         data-node-detail-modal="backdrop"
         className="fixed inset-0 bg-black/20 z-[100]" 
         onClick={(e) => {
-          // Only close if clicking directly on the backdrop element itself
-          if (e.target === e.currentTarget) {
+          const target = e.target as HTMLElement
+          // Don't close if clicking inside modal content or run progress panel
+          const isInsideModal = target.closest('[data-node-detail-modal="content"]')
+          const isInsideRunProgress = target.closest('[data-run-progress-panel]')
+          
+          // Only close if clicking directly on backdrop (not inside any panels)
+          if (target === e.currentTarget && !isInsideModal && !isInsideRunProgress) {
             onClose()
           }
         }}
@@ -750,7 +755,7 @@ export function NodeDetailModal({ node, onClose, initialTab = "output", initialV
         }}
       />
       
-      {/* Modal - stop all click propagation to prevent backdrop from closing */}
+      {/* Modal - allow closing when clicking on container itself, but not children */}
       <div
         data-node-detail-modal="content"
         ref={modalRef}
@@ -763,12 +768,23 @@ export function NodeDetailModal({ node, onClose, initialTab = "output", initialV
           width: showRunProgress ? "calc(100% - 48px)" : "60%",
         }}
         onClick={(e) => {
-          // Stop propagation to prevent backdrop click
+          const target = e.target as HTMLElement
+          // Don't close if clicking inside run progress panel
+          const isInsideRunProgress = target.closest('[data-run-progress-panel]')
+          
+          // Close if clicking directly on the container itself (not children)
+          // but not if clicking inside run progress panel
+          if (e.target === e.currentTarget && !isInsideRunProgress) {
+            onClose()
+          }
+          // Stop propagation to prevent backdrop from closing when clicking children
           e.stopPropagation()
         }}
         onMouseDown={(e) => {
-          // Also stop on mousedown to prevent any event bubbling
-          e.stopPropagation()
+          // Stop propagation for children, but allow container clicks
+          if (e.target !== e.currentTarget) {
+            e.stopPropagation()
+          }
         }}
       >
         {/* Main Modal Content */}
@@ -1003,7 +1019,18 @@ export function NodeDetailModal({ node, onClose, initialTab = "output", initialV
         
         {/* Run Progress Panel - shown when opened from run progress, on the right */}
         {showRunProgress && runProgressComponent && (
-          <div className="flex-shrink-0 bg-white shadow-2xl rounded-lg h-fit">
+          <div 
+            data-run-progress-panel="in-modal-wrapper"
+            className="flex-shrink-0 bg-white shadow-2xl rounded-lg h-fit"
+            onClick={(e) => {
+              // Stop propagation to prevent modal from closing when clicking inside
+              e.stopPropagation()
+            }}
+            onMouseDown={(e) => {
+              // Stop propagation on mousedown as well
+              e.stopPropagation()
+            }}
+          >
             {runProgressComponent}
           </div>
         )}

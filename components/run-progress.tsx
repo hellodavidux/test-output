@@ -29,6 +29,7 @@ export function RunProgress({ nodes, isRunning = false, runStatus = "success", s
   const [isExpanded, setIsExpanded] = useState(false)
   const [selectedNode, setSelectedNode] = useState<Node | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
 
   // Sync with external shouldExpand prop
   useEffect(() => {
@@ -137,8 +138,13 @@ export function RunProgress({ nodes, isRunning = false, runStatus = "success", s
         return
       }
       
-      // Close if clicking outside the panel
-      if (panelRef.current && !panelRef.current.contains(target)) {
+      // Don't close if clicking inside the run progress panel
+      if (target.closest('[data-run-progress-panel]')) {
+        return
+      }
+      
+      // Close if clicking outside the container (the outer fixed div)
+      if (containerRef.current && !containerRef.current.contains(target)) {
         handleExpandChange(false)
       }
     }
@@ -172,7 +178,18 @@ export function RunProgress({ nodes, isRunning = false, runStatus = "success", s
 
   // Render run progress panel content (to be used in modal or standalone)
   const renderRunProgressPanel = (isInModal: boolean = false, onModalClose?: () => void, onStandaloneClose?: () => void) => (
-    <div className={`w-[400px] ${isInModal ? 'h-fit' : 'max-h-full'} bg-white flex flex-col ${isInModal ? 'rounded-lg' : ''}`}>
+    <div 
+      data-run-progress-panel={isInModal ? "in-modal" : "standalone-content"}
+      className={`w-[400px] ${isInModal ? 'h-fit' : 'max-h-full'} flex flex-col ${isInModal ? 'rounded-lg' : ''}`}
+      onClick={(e) => {
+        // Stop propagation to prevent modal from closing when clicking inside
+        e.stopPropagation()
+      }}
+      onMouseDown={(e) => {
+        // Stop propagation on mousedown as well
+        e.stopPropagation()
+      }}
+    >
       <div ref={panelRef} className={`flex flex-col ${isInModal ? 'h-fit' : 'h-full'}`}>
         {/* Header */}
         <div className={`flex items-center justify-between px-6 py-4 border-b flex-shrink-0 ${isInModal ? 'rounded-t-lg' : ''}`}>
@@ -277,7 +294,19 @@ export function RunProgress({ nodes, isRunning = false, runStatus = "success", s
   // Expanded state - modal/panel
   return (
     <>
-      <div className="fixed bottom-6 right-6 z-50 w-[400px] max-h-[80vh] bg-white rounded-lg shadow-xl flex flex-col">
+      <div 
+        ref={containerRef}
+        data-run-progress-panel="standalone"
+        className="fixed bottom-6 right-6 z-50 w-[400px] max-h-[80vh] bg-white rounded-lg shadow-xl flex flex-col"
+        onClick={(e) => {
+          // Stop propagation to prevent modal from closing when clicking inside
+          e.stopPropagation()
+        }}
+        onMouseDown={(e) => {
+          // Stop propagation on mousedown as well
+          e.stopPropagation()
+        }}
+      >
         {renderRunProgressPanel()}
       </div>
       
@@ -285,9 +314,16 @@ export function RunProgress({ nodes, isRunning = false, runStatus = "success", s
       {selectedNode && (
         <NodeDetailModal
           node={selectedNode}
-          onClose={() => setSelectedNode(null)}
+          onClose={() => {
+            setSelectedNode(null)
+            // Also close the RunProgress panel when modal closes
+            handleExpandChange(false)
+          }}
           showRunProgress={true}
-          runProgressComponent={renderRunProgressPanel(true, () => setSelectedNode(null), () => handleExpandChange(false))}
+          runProgressComponent={renderRunProgressPanel(true, () => {
+            setSelectedNode(null)
+            handleExpandChange(false)
+          }, () => handleExpandChange(false))}
         />
       )}
     </>
