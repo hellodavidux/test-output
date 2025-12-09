@@ -6,6 +6,7 @@ import "@xyflow/react/dist/style.css"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import WorkflowNode from "@/components/workflow-node"
 import { NodeSettingsSidebar } from "@/components/node-settings-sidebar"
+import { RunProgress } from "@/components/run-progress"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuTrigger } from "@/components/ui/context-menu"
 import { Play, StickyNote, Clipboard, ClipboardX } from "lucide-react"
 import type { Node, Edge } from "@xyflow/react"
@@ -42,6 +43,7 @@ function FlowCanvas({
   } | null>(null)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null)
+  const [shouldExpandRunProgress, setShouldExpandRunProgress] = useState(false)
   const { screenToFlowPosition } = useReactFlow()
 
   const handleActionSelect = (action: SelectedAction, sourceNodeId?: string, side?: "left" | "right") => {
@@ -218,6 +220,9 @@ function FlowCanvas({
     // Close the configuration panel when running
     setIsSidebarOpen(false)
     setSelectedNodeData(null)
+    
+    // Expand run progress window
+    setShouldExpandRunProgress(true)
     
     // Reset dismissed state for all nodes when starting a new run
     setDismissedIOPanels(new Map())
@@ -626,6 +631,13 @@ function FlowCanvas({
         onReplaceNode={(nodeId) => {
           // Replace node functionality removed
         }}
+      />
+      <RunProgress 
+        nodes={nodes} 
+        isRunning={isRunning}
+        runStatus={isRunning ? "running" : isRunMode ? "success" : "success"}
+        shouldExpand={shouldExpandRunProgress}
+        onExpandChange={(expanded) => setShouldExpandRunProgress(expanded)}
       />
     </>
   )

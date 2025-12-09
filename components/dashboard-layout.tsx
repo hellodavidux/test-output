@@ -8,8 +8,6 @@ import {
   HelpCircle,
   TrendingUp,
   User,
-  Undo2,
-  Redo2,
   Upload,
   Save,
   Play,
@@ -112,12 +110,6 @@ export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLa
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted border border-border">
             <User className="h-4 w-4 text-muted-foreground" />
           </div>
-          <Button variant="ghost" size="icon-sm" className="h-8 w-8">
-            <Undo2 className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon-sm" className="h-8 w-8">
-            <Redo2 className="h-4 w-4" />
-          </Button>
           <Button variant="ghost" size="icon-sm" className="h-8 w-8">
             <Upload className="h-4 w-4" />
           </Button>

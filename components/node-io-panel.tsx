@@ -1,12 +1,13 @@
 "use client"
 
 import React, { useState, useRef, useEffect } from "react"
-import { Pin, PinOff, Copy, Download, Maximize2, Trash2 } from "lucide-react"
+import { Pin, PinOff, Copy, Download, Trash2, X, ChevronDown, ChevronUp, Maximize2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { AppIcon } from "./workflow-node"
+import { useReactFlow } from "@xyflow/react"
+import { NodeDetailModal } from "./node-detail-modal"
+import type { Node } from "@xyflow/react"
 
 function getNodeIconBg(appName: string): string {
   const name = appName.toLowerCase()
@@ -60,10 +61,12 @@ interface NodeIOPanelProps {
 
 export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, onPinChange, input, output, completion, appName, actionName }: NodeIOPanelProps) {
   const [viewMode, setViewMode] = useState<"text" | "formatted" | "code">("formatted")
-  const [isMaximized, setIsMaximized] = useState(false)
-  const [modalTab, setModalTab] = useState<"input" | "output" | "completion">(activeTab)
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["tool-invocations"]))
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
   const [isPinned, setIsPinned] = useState(false)
+  const [isModalOpen, setIsModalOpen] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
+  const { getNode } = useReactFlow()
   
   // Reset view mode to "text" when switching to completion tab (since formatted is not available)
   React.useEffect(() => {
@@ -71,24 +74,10 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, onPinChange, 
       setViewMode("text")
     }
   }, [activeTab, viewMode])
-  
-  // Also reset view mode when switching to completion in modal
-  React.useEffect(() => {
-    if (modalTab === "completion" && viewMode === "formatted") {
-      setViewMode("text")
-    }
-  }, [modalTab, viewMode])
-  
-  // Update modal tab when activeTab changes
-  React.useEffect(() => {
-    if (activeTab === "output" || activeTab === "completion") {
-      setModalTab(activeTab)
-    }
-  }, [activeTab])
 
   // Handle click outside to close panel (only if not pinned)
   useEffect(() => {
-    if (isPinned) return // Don't add listener if pinned
+    if (isPinned || isModalOpen) return // Don't add listener if pinned or modal is open
     
     let mouseDownPosition: { x: number; y: number } | null = null
     const DRAG_THRESHOLD = 5 // pixels - if mouse moves more than this, it's a drag
@@ -103,6 +92,11 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, onPinChange, 
       
       // Don't track if clicking inside the panel
       if (panelRef.current && panelRef.current.contains(target)) {
+        return
+      }
+      
+      // Don't track if clicking on the modal
+      if (target.closest('[data-node-detail-modal]')) {
         return
       }
       
@@ -123,6 +117,12 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, onPinChange, 
       
       // Don't close if clicking inside the panel
       if (panelRef.current && panelRef.current.contains(target)) {
+        mouseDownPosition = null
+        return
+      }
+      
+      // Don't close if clicking on the modal
+      if (target.closest('[data-node-detail-modal]')) {
         mouseDownPosition = null
         return
       }
@@ -152,16 +152,12 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, onPinChange, 
       document.removeEventListener('mousedown', handleMouseDown, true)
       document.removeEventListener('mouseup', handleMouseUp, true)
     }
-  }, [isPinned, onClose])
+  }, [isPinned, isModalOpen, onClose])
 
   // Check if we have actual output/completion data (flow has been run)
   const currentData = activeTab === "completion" ? completion : output
   const hasOutput = currentData !== null && currentData !== undefined
   const hasAnyData = (output !== null && output !== undefined) || (completion !== null && completion !== undefined)
-  
-  // Get data for modal based on selected tab
-  const modalData = modalTab === "input" ? input : modalTab === "completion" ? completion : output
-  const hasModalData = modalData !== null && modalData !== undefined
 
   // Helper function to download file
   const downloadFile = (content: string, filename: string, mimeType: string) => {
@@ -210,6 +206,342 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, onPinChange, 
     } catch {
       return String(obj)
     }
+  }
+
+  // Convert data to plain text format (for text view) - single paragraph, no structure
+  const formatAsPlainText = (data: any): string => {
+    if (data === null || data === undefined) {
+      return ""
+    }
+    if (typeof data === "string") {
+      return data
+    }
+    if (typeof data === "number" || typeof data === "boolean") {
+      return String(data)
+    }
+    if (Array.isArray(data)) {
+      return data.map(item => formatAsPlainText(item)).join(" ")
+    }
+    if (typeof data === "object") {
+      // Flatten object to plain text - recursively extract all values
+      const extractValues = (obj: any): string[] => {
+        const values: string[] = []
+        for (const [key, value] of Object.entries(obj)) {
+          if (value === null || value === undefined) {
+            continue
+          } else if (typeof value === "object" && !Array.isArray(value)) {
+            values.push(...extractValues(value))
+          } else if (Array.isArray(value)) {
+            value.forEach(item => {
+              if (typeof item === "object" && item !== null) {
+                values.push(...extractValues(item))
+              } else {
+                values.push(String(item))
+              }
+            })
+          } else {
+            values.push(String(value))
+          }
+        }
+        return values
+      }
+      return extractValues(data).join(" ")
+    }
+    return String(data)
+  }
+
+  // Render formatted tree structure (like the image with pill labels)
+  const renderFormattedTree = (data: any, level: number = 0, parentPath: string = ""): React.ReactNode => {
+    if (data === null || data === undefined) {
+      return <span className="text-muted-foreground italic text-sm">null</span>
+    }
+
+    if (typeof data === "string" || typeof data === "number" || typeof data === "boolean") {
+      // Check if string is a URL
+      const isUrl = typeof data === "string" && (data.startsWith("http://") || data.startsWith("https://"))
+      if (isUrl) {
+        return (
+          <a
+            href={data as string}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-blue-600 hover:underline"
+          >
+            {data as string}
+          </a>
+        )
+      }
+      return <span className="text-sm text-foreground">{String(data)}</span>
+    }
+
+    if (Array.isArray(data)) {
+      if (data.length === 0) {
+        return <span className="text-muted-foreground italic text-sm">Empty array</span>
+      }
+      return (
+        <div className="space-y-2">
+          {data.map((item, index) => {
+            const itemPath = `${parentPath}[${index}]`
+            const isExpanded = expandedItems.has(itemPath)
+            const hasNestedData = typeof item === "object" && item !== null && (Array.isArray(item) ? item.length > 0 : Object.keys(item).length > 0)
+
+            return (
+              <div key={index} className="pl-4">
+                {hasNestedData ? (
+                  <>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setExpandedItems(prev => {
+                          const newSet = new Set(prev)
+                          if (newSet.has(itemPath)) {
+                            newSet.delete(itemPath)
+                          } else {
+                            newSet.add(itemPath)
+                          }
+                          return newSet
+                        })
+                      }}
+                      className="flex items-center gap-2 hover:text-foreground transition-colors text-left w-full mb-1"
+                    >
+                      <span className="px-2 py-0.5 text-xs font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded-md">
+                        {Array.isArray(item) ? `Item ${index + 1}` : `URL ${index + 1}`}
+                      </span>
+                      {isExpanded ? (
+                        <ChevronUp className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                      ) : (
+                        <ChevronDown className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                      )}
+                    </button>
+                    {isExpanded && (
+                      <div className="pl-4 mt-1">
+                        {renderFormattedTree(item, level + 1, itemPath)}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 text-xs font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded-md">
+                      {Array.isArray(item) ? `Item ${index + 1}` : `URL ${index + 1}`}
+                    </span>
+                    <span className="text-sm text-foreground">{renderFormattedTree(item, level + 1, itemPath)}</span>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )
+    }
+
+    if (typeof data === "object") {
+      const entries = Object.entries(data)
+      if (entries.length === 0) {
+        return <span className="text-muted-foreground italic text-sm">Empty object</span>
+      }
+
+      return (
+        <div className="space-y-2">
+          {entries.map(([key, value]) => {
+            const itemPath = parentPath ? `${parentPath}.${key}` : key
+            const isExpanded = expandedItems.has(itemPath)
+            const hasNestedData = typeof value === "object" && value !== null && (Array.isArray(value) ? value.length > 0 : Object.keys(value).length > 0)
+            const isPrimitive = typeof value !== "object" || value === null
+
+            // Check if value is a URL
+            const isUrl = typeof value === "string" && (value.startsWith("http://") || value.startsWith("https://"))
+
+            return (
+              <div key={key} className={level > 0 ? "pl-4" : ""}>
+                {hasNestedData ? (
+                  <>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setExpandedItems(prev => {
+                          const newSet = new Set(prev)
+                          if (newSet.has(itemPath)) {
+                            newSet.delete(itemPath)
+                          } else {
+                            newSet.add(itemPath)
+                          }
+                          return newSet
+                        })
+                      }}
+                      className="flex items-center gap-2 hover:text-foreground transition-colors text-left w-full mb-1"
+                    >
+                      <span className="px-2 py-0.5 text-xs font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded-md">
+                        {key}
+                      </span>
+                      {isExpanded ? (
+                        <ChevronUp className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                      ) : (
+                        <ChevronDown className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                      )}
+                    </button>
+                    {isExpanded && (
+                      <div className="pl-4 mt-1">
+                        {renderFormattedTree(value, level + 1, itemPath)}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 text-xs font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded-md">
+                      {key}
+                    </span>
+                    {isUrl ? (
+                      <a
+                        href={value as string}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-blue-600 hover:underline"
+                      >
+                        {value as string}
+                      </a>
+                    ) : (
+                      <span className="text-sm text-foreground">{String(value)}</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )
+    }
+
+    return <span className="text-muted-foreground text-sm">{String(data)}</span>
+  }
+
+  // Render hierarchical data structure (for non-formatted views)
+  const renderHierarchicalData = (data: any, path: string = "", level: number = 0): React.ReactNode => {
+    if (data === null || data === undefined) {
+      return <span className="text-muted-foreground italic">null</span>
+    }
+
+    if (typeof data === "string" || typeof data === "number" || typeof data === "boolean") {
+      return <span className="text-foreground/90">{String(data)}</span>
+    }
+
+    if (Array.isArray(data)) {
+      if (data.length === 0) {
+        return <span className="text-muted-foreground italic text-sm">Empty array</span>
+      }
+      return (
+        <div className="space-y-2">
+          {data.map((item, index) => {
+            const itemPath = `${path}[${index}]`
+            const isExpanded = expandedItems.has(itemPath)
+            const hasNestedData = typeof item === "object" && item !== null && (Array.isArray(item) ? item.length > 0 : Object.keys(item).length > 0)
+            
+            return (
+              <div key={index} className="pl-6">
+                {hasNestedData ? (
+                  <>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setExpandedItems(prev => {
+                          const newSet = new Set(prev)
+                          if (newSet.has(itemPath)) {
+                            newSet.delete(itemPath)
+                          } else {
+                            newSet.add(itemPath)
+                          }
+                          return newSet
+                        })
+                      }}
+                      className="flex items-center gap-2 hover:text-foreground transition-colors text-left w-full"
+                    >
+                      {isExpanded ? (
+                        <ChevronUp className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                      ) : (
+                        <ChevronDown className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                      )}
+                      <span className="text-sm font-medium text-foreground">URL {index + 1}</span>
+                    </button>
+                    {isExpanded && (
+                      <div className="pl-6 mt-1.5">
+                        {renderHierarchicalData(item, itemPath, level + 1)}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-sm text-foreground/90 pl-6">
+                    {renderHierarchicalData(item, itemPath, level + 1)}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )
+    }
+
+    if (typeof data === "object") {
+      const entries = Object.entries(data)
+      if (entries.length === 0) {
+        return <span className="text-muted-foreground italic text-sm">Empty object</span>
+      }
+
+      return (
+        <div className="space-y-2.5">
+          {entries.map(([key, value]) => {
+            const itemPath = path ? `${path}.${key}` : key
+            const isExpanded = expandedItems.has(itemPath)
+            const hasNestedData = typeof value === "object" && value !== null && (Array.isArray(value) ? value.length > 0 : Object.keys(value).length > 0)
+            const isPrimitive = typeof value !== "object" || value === null
+
+            // Special handling for top-level tool names (like "Web search")
+            const isTopLevelTool = level === 0 && typeof value === "object" && value !== null
+
+            return (
+              <div key={key} className={level === 0 ? "" : "pl-6"}>
+                {hasNestedData ? (
+                  <>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setExpandedItems(prev => {
+                          const newSet = new Set(prev)
+                          if (newSet.has(itemPath)) {
+                            newSet.delete(itemPath)
+                          } else {
+                            newSet.add(itemPath)
+                          }
+                          return newSet
+                        })
+                      }}
+                      className={`flex items-center gap-2 hover:text-foreground transition-colors text-left w-full ${isTopLevelTool ? "mb-2" : ""}`}
+                    >
+                      {isExpanded ? (
+                        <ChevronUp className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                      ) : (
+                        <ChevronDown className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                      )}
+                      <span className={`text-sm ${isTopLevelTool ? "font-semibold" : "font-medium"} text-foreground`}>{key}</span>
+                    </button>
+                    {isExpanded && (
+                      <div className="pl-6 mt-1.5">
+                        {renderHierarchicalData(value, itemPath, level + 1)}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex items-start gap-2">
+                    <span className="text-sm font-medium text-foreground flex-shrink-0">{key}:</span>
+                    <span className="text-sm text-foreground/90 break-words">{renderHierarchicalData(value, itemPath, level + 1)}</span>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )
+    }
+
+    return <span className="text-muted-foreground text-sm">{String(data)}</span>
   }
 
   // Format markdown text with links and citations
@@ -480,8 +812,14 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, onPinChange, 
           <div className="bg-background px-4 pb-4">
             <div className="relative">
               <div 
-                className={`bg-gradient-to-br from-muted/60 to-muted/40 rounded-lg p-4 border border-border/50 overflow-x-hidden max-h-72 overflow-y-auto shadow-inner ${
-                  activeTab === "completion" && viewMode === "text" && typeof currentData === "string" ? "font-sans" : "font-mono text-xs"
+                className={`${
+                  viewMode === "formatted" 
+                    ? "overflow-x-hidden max-h-72 overflow-y-auto" 
+                    : viewMode === "text"
+                      ? "bg-gradient-to-br from-muted/60 to-muted/40 rounded-lg p-4 border border-border/50 overflow-x-hidden max-h-72 overflow-y-auto shadow-inner font-sans"
+                      : activeTab === "completion" && viewMode === "text" && typeof currentData === "string"
+                        ? "bg-gradient-to-br from-muted/60 to-muted/40 rounded-lg p-4 border border-border/50 overflow-x-hidden max-h-72 overflow-y-auto shadow-inner font-sans"
+                        : "bg-gradient-to-br from-muted/60 to-muted/40 rounded-lg p-4 border border-border/50 overflow-x-hidden max-h-72 overflow-y-auto shadow-inner font-mono text-xs"
                 }`}
                 onWheel={(e) => {
                   e.stopPropagation()
@@ -494,8 +832,19 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, onPinChange, 
                         <p className="whitespace-pre-wrap">{formatMarkdownText(currentData)}</p>
                       </div>
                     </div>
+                  ) : viewMode === "text" ? (
+                    // Text view - plain text, no JSON structure, single paragraph
+                    <p className="text-sm text-foreground break-words">
+                      {formatAsPlainText(currentData)}
+                    </p>
+                  ) : viewMode === "formatted" ? (
+                    // Formatted view - tree structure with pill labels
+                    <div className="text-sm text-foreground/90">
+                      {renderFormattedTree(currentData)}
+                    </div>
                   ) : (
-                    <pre className={`whitespace-pre-wrap break-words leading-relaxed text-[11px] ${viewMode === "formatted" ? "px-4" : ""}`}>
+                    // Code view - formatted JSON code
+                    <pre className="whitespace-pre-wrap break-words leading-relaxed text-[11px]">
                       <code className="text-foreground/90">
                         {formatJSON(currentData)}
                       </code>
@@ -523,14 +872,14 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, onPinChange, 
                         <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
                       </button>
                     )}
-                    {/* Maximize button - bottom right */}
+                    {/* Expand button - bottom right */}
                     <button
                       className="absolute bottom-2 right-2 p-1.5 rounded-md bg-background/80 hover:bg-background border border-border/50 hover:border-border shadow-sm transition-colors z-10"
                       onClick={(e) => {
                         e.stopPropagation()
-                        setIsMaximized(true)
+                        setIsModalOpen(true)
                       }}
-                      title="Maximize"
+                      title="Expand in modal"
                     >
                       <Maximize2 className="w-3.5 h-3.5 text-muted-foreground" />
                     </button>
@@ -540,213 +889,36 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, onPinChange, 
             </div>
           </div>
 
-          {/* Full screen modal */}
-          <Dialog open={isMaximized} onOpenChange={setIsMaximized}>
-            <DialogContent 
-              className="!max-w-[60vw] !w-[60vw] !h-[calc(100vh-2rem)] !max-h-[calc(100vh-2rem)] !top-4 !right-4 !left-auto !translate-x-0 !translate-y-0 !m-0 flex flex-col p-0 rounded-lg !border-0 !gap-0"
-              onClick={(e) => {
-                // Stop propagation to prevent closing when clicking inside modal content
-                e.stopPropagation()
-              }}
-            >
-              <DialogHeader className="px-6 py-4 border-b flex-shrink-0 w-full">
-                <div className="flex flex-col gap-4 w-full">
-                  {/* First row: Title with icon */}
-                  <div className="flex items-center gap-3 w-full">
-                    {appName && (
-                      <div className={`w-8 h-8 rounded-lg border flex items-center justify-center flex-shrink-0 ${getNodeIconBg(appName)}`}>
-                        <AppIcon appName={appName} className="w-4 h-4" />
-                      </div>
-                    )}
-                    <DialogTitle className="flex-shrink-0">{actionName || appName || modalTab.charAt(0).toUpperCase() + modalTab.slice(1)}</DialogTitle>
-                  </div>
-                  
-                  {/* Second row: Input/Output/Completion tabs */}
-                  <div className="flex items-center gap-2 w-full">
-                    <button
-                      type="button"
-                      className={`px-3 py-1 text-sm font-normal transition-colors rounded-md whitespace-nowrap ${
-                        modalTab === "input" 
-                          ? "bg-muted text-foreground" 
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setModalTab("input")
-                      }}
-                    >
-                      Input
-                    </button>
-                    <button
-                      type="button"
-                      className={`px-3 py-1 text-sm font-normal transition-colors rounded-md whitespace-nowrap ${
-                        modalTab === "output" 
-                          ? "bg-muted text-foreground" 
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setModalTab("output")
-                      }}
-                    >
-                      Output
-                    </button>
-                    <button
-                      type="button"
-                      className={`px-3 py-1 text-sm font-normal transition-colors rounded-md whitespace-nowrap ${
-                        modalTab === "completion" 
-                          ? "bg-muted text-foreground" 
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setModalTab("completion")
-                      }}
-                    >
-                      Completion
-                    </button>
-                  </div>
-                  
-                </div>
-              </DialogHeader>
-              <div className="flex-1 overflow-hidden p-6 flex flex-col">
-                {/* View Mode Tabs and Action Buttons - right above the gray text field */}
-                <div className="mb-3 flex-shrink-0 flex items-center justify-between">
-                  <ToggleGroup
-                    type="single"
-                    value={viewMode}
-                    onValueChange={(value) => {
-                      if (value) setViewMode(value as "text" | "formatted" | "code")
-                    }}
-                    className="bg-[#f5f5f5] rounded p-[2px] border-0 h-6"
-                  >
-                    <ToggleGroupItem 
-                      value="text" 
-                      aria-label="Text" 
-                      className="px-2.5 h-5 text-[11px] rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
-                    >
-                      Text
-                    </ToggleGroupItem>
-                    {modalTab !== "completion" && (
-                      <ToggleGroupItem 
-                        value="formatted" 
-                        aria-label="Formatted" 
-                        className="px-3 h-5 text-[11px] rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
-                      >
-                        Formatted
-                      </ToggleGroupItem>
-                    )}
-                    <ToggleGroupItem 
-                      value="code" 
-                      aria-label="Code" 
-                      className="px-2.5 h-5 text-[11px] rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
-                    >
-                      Code
-                    </ToggleGroupItem>
-                  </ToggleGroup>
-                  {/* Action Buttons */}
-                  <div className="flex items-center gap-0.5">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 hover:bg-muted text-muted-foreground"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        if (hasModalData) {
-                          const textToCopy = typeof modalData === "string" ? modalData : formatJSON(modalData)
-                          navigator.clipboard.writeText(textToCopy)
-                        }
-                      }}
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                    </Button>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 hover:bg-muted text-muted-foreground"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <Download className="h-3.5 w-3.5" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            if (hasModalData) {
-                              const dataToDownload = modalTab === "input" ? input : modalTab === "completion" ? completion : output
-                              downloadFile(formatJSON(dataToDownload), `${modalTab}-${nodeId}.json`, 'application/json')
-                            }
-                          }}
-                        >
-                          <Download className="h-4 w-4 mr-2" />
-                          Download as JSON
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            if (hasModalData) {
-                              const dataToDownload = modalTab === "input" ? input : modalTab === "completion" ? completion : output
-                              downloadFile(convertToCSV(dataToDownload), `${modalTab}-${nodeId}.csv`, 'text/csv')
-                            }
-                          }}
-                        >
-                          <Download className="h-4 w-4 mr-2" />
-                          Download as CSV
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            if (hasModalData) {
-                              const dataToDownload = modalTab === "input" ? input : modalTab === "completion" ? completion : output
-                              const text = formatJSON(dataToDownload)
-                              window.print()
-                            }
-                          }}
-                        >
-                          <Download className="h-4 w-4 mr-2" />
-                          Download as PDF
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </div>
-                <div 
-                  className="flex-1 w-full bg-gradient-to-br from-muted/60 to-muted/40 rounded-lg p-6 border border-border/50 overflow-x-hidden overflow-y-auto shadow-inner"
-                  onWheel={(e) => {
-                    e.stopPropagation()
-                    e.preventDefault()
-                  }}
-                  style={{ overscrollBehavior: 'contain' }}
-                >
-                  {hasModalData ? (
-                    modalTab === "completion" && viewMode === "text" && typeof modalData === "string" ? (
-                      <div className="text-sm leading-relaxed text-foreground/90 space-y-3 px-2">
-                        <div className="prose prose-sm max-w-none">
-                          <p className="whitespace-pre-wrap">{formatMarkdownText(modalData)}</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <pre className={`whitespace-pre-wrap break-words leading-relaxed text-sm ${viewMode === "formatted" ? "px-4" : ""}`}>
-                        <code className="text-foreground/90">
-                          {formatJSON(modalData)}
-                        </code>
-                      </pre>
-                    )
-                  ) : (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <p className="text-sm">No {modalTab} yet</p>
-                      <p className="text-xs mt-1">Run the flow to see the {modalTab}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
         </div>
       </div>
+      
+      {/* Node Detail Modal */}
+      {isModalOpen && (() => {
+        const node = getNode(nodeId)
+        if (node) {
+          // Create node with all the data for the modal
+          const modalNode: Node = {
+            ...node,
+            data: {
+              ...node.data,
+              input,
+              output,
+              completion,
+              appName: appName || (node.data as any)?.appName || "Unknown",
+              actionName: actionName || (node.data as any)?.actionName || "Node",
+            }
+          }
+          return (
+            <NodeDetailModal
+              node={modalNode}
+              onClose={() => setIsModalOpen(false)}
+              initialTab={activeTab === "completion" ? "completion" : "output"}
+              initialViewMode={viewMode}
+            />
+          )
+        }
+        return null
+      })()}
     </div>
   )
 }

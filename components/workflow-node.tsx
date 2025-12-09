@@ -46,7 +46,7 @@ export function AppIcon({ appName, className }: { appName: string; className?: s
   return iconMap[name] ?? <div className={`bg-muted rounded ${className}`} />
 }
 
-function getNodeIconBg(appName: string): string {
+export function getNodeIconBg(appName: string): string {
   const name = appName.toLowerCase()
 
   const colorMap: Record<string, string> = {
@@ -246,85 +246,90 @@ function WorkflowNode({ data, id }: NodeProps) {
                       <span className="text-sm font-medium text-foreground">GPT 4.1</span>
                     </div>
 
-                    {/* Knowledge Base Row */}
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm text-muted-foreground">knowledge base</span>
-                      <TooltipProvider>
-                        <div className="flex items-center -space-x-2">
-                          {/* Database icons */}
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div className="w-8 h-8 rounded-full bg-muted border-2 border-background flex items-center justify-center relative z-[3] cursor-pointer">
-                                <Database className="w-4 h-4 text-muted-foreground" />
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent className="bg-white text-gray-900 border border-gray-200" hideArrow>
-                              <p>Knowledge Base 1</p>
-                            </TooltipContent>
-                          </Tooltip>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div className="w-8 h-8 rounded-full bg-muted border-2 border-background flex items-center justify-center relative z-[2] cursor-pointer">
-                                <Database className="w-4 h-4 text-muted-foreground" />
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent className="bg-white text-gray-900 border border-gray-200" hideArrow>
-                              <p>Knowledge Base 2</p>
-                            </TooltipContent>
-                          </Tooltip>
-                          {/* +4 badge */}
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div className="w-8 h-8 rounded-full bg-muted border-2 border-background flex items-center justify-center relative z-[1] cursor-pointer">
-                                <span className="text-xs font-medium text-muted-foreground">+4</span>
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent className="bg-white text-gray-900 border border-gray-200" hideArrow>
-                              <p>4 more knowledge bases</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </div>
-                      </TooltipProvider>
-                    </div>
-
-                    {/* Tools Row */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Tools:</span>
-                      <TooltipProvider>
-                        <div className="flex items-center -space-x-2">
-                          {/* 3D cubes */}
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div className="w-8 h-8 rounded-full bg-muted border-2 border-background flex items-center justify-center relative z-[2] cursor-pointer">
-                                <Layers3 className="w-4 h-4 text-muted-foreground" />
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent className="bg-white text-gray-900 border border-gray-200" hideArrow>
-                              <p>Layers Tool</p>
-                            </TooltipContent>
-                          </Tooltip>
-                          {/* Snowflake */}
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div className="w-8 h-8 rounded-full bg-muted border-2 border-background flex items-center justify-center relative z-[1] cursor-pointer">
-                                <div className="w-5 h-5 bg-blue-400 rounded-full flex items-center justify-center">
-                                  <Snowflake className="w-3 h-3 text-white" />
+                    {/* Knowledge Base and Tools Section */}
+                    <div className="flex items-start justify-between w-full">
+                      {/* Knowledge Base Section */}
+                      <div className="flex flex-col">
+                        <span className="text-sm text-muted-foreground mb-2">knowledge base</span>
+                        <TooltipProvider>
+                          <div className="flex items-center -space-x-2">
+                            {/* Database icons */}
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className="w-8 h-8 rounded-full bg-muted border-2 border-background flex items-center justify-center relative z-[3] cursor-pointer">
+                                  <Database className="w-4 h-4 text-muted-foreground" />
                                 </div>
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent className="bg-white text-gray-900 border border-gray-200" hideArrow>
-                              <p>Snowflake</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </div>
-                      </TooltipProvider>
+                              </TooltipTrigger>
+                              <TooltipContent className="bg-white text-gray-900 border border-gray-200" hideArrow>
+                                <p>Knowledge Base 1</p>
+                              </TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className="w-8 h-8 rounded-full bg-muted border-2 border-background flex items-center justify-center relative z-[2] cursor-pointer">
+                                  <Database className="w-4 h-4 text-muted-foreground" />
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent className="bg-white text-gray-900 border border-gray-200" hideArrow>
+                                <p>Knowledge Base 2</p>
+                              </TooltipContent>
+                            </Tooltip>
+                            {/* +4 badge */}
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className="w-8 h-8 rounded-full bg-muted border-2 border-background flex items-center justify-center relative z-[1] cursor-pointer">
+                                  <span className="text-xs font-medium text-muted-foreground">+4</span>
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent className="bg-white text-gray-900 border border-gray-200" hideArrow>
+                                <p>4 more knowledge bases</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </TooltipProvider>
+                      </div>
+
+                      {/* Tools Section */}
+                      <div className="flex flex-col items-end">
+                        <span className="text-sm text-muted-foreground mb-2">Tools</span>
+                        <TooltipProvider>
+                          <div className="flex items-center -space-x-2">
+                            {/* 3D cubes */}
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className="w-8 h-8 rounded-full bg-muted border-2 border-background flex items-center justify-center relative z-[2] cursor-pointer">
+                                  <Layers3 className="w-4 h-4 text-muted-foreground" />
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent className="bg-white text-gray-900 border border-gray-200" hideArrow>
+                                <p>Layers Tool</p>
+                              </TooltipContent>
+                            </Tooltip>
+                            {/* Snowflake */}
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className="w-8 h-8 rounded-full bg-muted border-2 border-background flex items-center justify-center relative z-[1] cursor-pointer">
+                                  <div className="w-5 h-5 bg-blue-400 rounded-full flex items-center justify-center">
+                                    <Snowflake className="w-3 h-3 text-white" />
+                                  </div>
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent className="bg-white text-gray-900 border border-gray-200" hideArrow>
+                                <p>Snowflake</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </TooltipProvider>
+                      </div>
                     </div>
                   </div>
                 ) : (
                   <div className="p-4">
                     {/* Default Header */}
             <div className="flex items-center gap-3 mb-2">
-              <div className={`w-8 h-8 rounded-lg border flex items-center justify-center flex-shrink-0 ${iconBg}`}>
+              <div className={`w-8 h-8 rounded-lg border border-border flex items-center justify-center flex-shrink-0 ${
+                type === "input" ? "bg-white" : "bg-muted"
+              }`}>
                 <AppIcon appName={appName} className="w-4 h-4" />
               </div>
               <span className="text-base font-semibold text-foreground flex-1">{actionName}</span>
@@ -359,12 +364,23 @@ function WorkflowNode({ data, id }: NodeProps) {
 
                 {/* Footer with Output and Completion tabs - only show for action nodes, not input nodes */}
                 {type !== "input" && (
-                <div className="bg-muted/30 px-4 pt-2 pb-0 border-t border-border/50 flex items-center gap-6 relative" data-node-footer>
+                <div 
+                  className="bg-muted/30 px-4 pt-2 pb-0 border-t border-border/50 flex items-center gap-6 relative" 
+                  data-node-footer
+                  onClick={(e) => {
+                    // If clicking on the footer itself (not on a button), open the rightmost tab (Output)
+                    const target = e.target as HTMLElement
+                    if (target === e.currentTarget || !target.closest('button')) {
+                      e.stopPropagation()
+                      handleOutputClick(e)
+                    }
+                  }}
+                >
                   {/* Only show Completion tab for AI Agent nodes */}
                   {appName === "AI Agent" && actionName === "LLM" && (
                     <button
                       type="button"
-                      className={`relative text-sm font-normal transition-colors cursor-pointer leading-none pb-2.5 border-b ${
+                      className={`relative text-sm font-normal transition-colors cursor-pointer leading-none pb-2.5 border-b-2 ${
                         isIOPanelOpen && activeIOTab === "completion" 
                           ? "text-foreground border-gray-400" 
                           : "text-muted-foreground hover:text-foreground border-transparent"
@@ -374,14 +390,14 @@ function WorkflowNode({ data, id }: NodeProps) {
                       <span className="relative inline-block">
                         Completion
                         {isRunMode && !isIOPanelOpen && !isCompletionDismissed && (
-                          <span className="absolute top-0 -right-1.5 w-1.5 h-1.5 bg-black rounded-full ring-1.5 ring-white" />
+                          <span className="absolute top-0 -right-1.5 w-1.5 h-1.5 bg-black rounded-full border border-gray-300" />
                         )}
                       </span>
                     </button>
                   )}
                   <button
                     type="button"
-                    className={`relative text-sm font-normal transition-colors cursor-pointer leading-none pb-2.5 border-b ${
+                    className={`relative text-sm font-normal transition-colors cursor-pointer leading-none pb-2.5 border-b-2 ${
                       isIOPanelOpen && activeIOTab === "output" 
                         ? "text-foreground border-gray-400" 
                         : "text-muted-foreground hover:text-foreground border-transparent"
@@ -391,7 +407,7 @@ function WorkflowNode({ data, id }: NodeProps) {
                     <span className="relative inline-block">
                       Output
                       {isRunMode && !isIOPanelOpen && !isOutputDismissed && (
-                        <span className="absolute top-0 -right-1.5 w-1.5 h-1.5 bg-black rounded-full ring-1.5 ring-white" />
+                        <span className="absolute top-0 -right-1.5 w-1.5 h-1.5 bg-black rounded-full border border-gray-300" />
                       )}
                     </span>
                   </button>
