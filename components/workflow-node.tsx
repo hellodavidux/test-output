@@ -358,7 +358,7 @@ function WorkflowNode({ data, id }: NodeProps) {
             </div>
 
             {/* Description */}
-            <p className="text-sm text-muted-foreground mb-3 leading-relaxed">{description}</p>
+            <p className="text-sm text-muted-foreground mb-3 leading-relaxed bg-gray-50 px-2 py-1 rounded inline-block">{actionName === "User Input" && description === "Collect user input" ? "real madrid" : description}</p>
                   </div>
                 )}
 

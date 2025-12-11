@@ -13,23 +13,50 @@ import type { Node } from "@xyflow/react"
 interface NodeDetailModalProps {
   node: Node | null
   onClose: () => void
-  initialTab?: "input" | "output" | "completion"
+  initialTab?: "input" | "output" | "completion" | "metadata" | "tools"
   initialViewMode?: "text" | "formatted" | "code"
   showRunProgress?: boolean
   runProgressComponent?: React.ReactNode
   onRunProgressClose?: () => void
 }
 
-export function NodeDetailModal({ node, onClose, initialTab = "output", initialViewMode = "text", showRunProgress = false, runProgressComponent, onRunProgressClose }: NodeDetailModalProps) {
-  const [activeTab, setActiveTab] = useState<"input" | "output" | "completion">(initialTab)
+export function NodeDetailModal({ node, onClose, initialTab = "output", initialViewMode = "formatted", showRunProgress = false, runProgressComponent, onRunProgressClose }: NodeDetailModalProps) {
+  // For input nodes, always use "input" tab, for LLM nodes default to "completion" if not specified, otherwise use the provided initialTab
+  const getInitialTab = () => {
+    if (!node) return initialTab || "output"
+    const nodeData = node.data as any
+    if (nodeData?.type === "input") {
+      return "input"
+    }
+    // For LLM nodes, always default to completion (override default "output")
+    if (nodeData?.appName === "AI Agent" && nodeData?.actionName === "LLM") {
+      // If initialTab is the default "output", use "completion" instead
+      // Otherwise use the provided initialTab
+      return initialTab === "output" ? "completion" : (initialTab || "completion")
+    }
+    return initialTab || "output"
+  }
+  
+  const [activeTab, setActiveTab] = useState<"input" | "output" | "completion" | "metadata" | "tools">(getInitialTab())
   const [viewMode, setViewMode] = useState<"text" | "formatted" | "code">(initialViewMode)
   
   // Update activeTab when initialTab changes (when modal opens with different tab)
   useEffect(() => {
-    if (initialTab) {
+    if (!node) return
+    const nodeData = node.data as any
+    const isInput = nodeData?.type === "input"
+    const isAIAgent = nodeData?.appName === "AI Agent" && nodeData?.actionName === "LLM"
+    
+    if (isInput) {
+      setActiveTab("input")
+    } else if (isAIAgent) {
+      // For LLM nodes, default to completion tab (override default "output")
+      // If initialTab is the default "output", use "completion" instead
+      setActiveTab(initialTab === "output" ? "completion" : (initialTab || "completion"))
+    } else if (initialTab) {
       setActiveTab(initialTab)
     }
-  }, [initialTab])
+  }, [initialTab, node])
 
   // Update viewMode when initialViewMode changes (when modal opens with different view mode)
   useEffect(() => {
@@ -37,10 +64,16 @@ export function NodeDetailModal({ node, onClose, initialTab = "output", initialV
       setViewMode(initialViewMode)
     }
   }, [initialViewMode])
-  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set(["tool_invocations", "Tool Invocations"]))
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set(["tool_invocations", "Tool Invocations", "llm-input-in-0", "completion-content"]))
   const [searchQuery, setSearchQuery] = useState("")
   const [mounted, setMounted] = useState(false)
   const modalRef = useRef<HTMLDivElement>(null)
+  const inputTabRef = useRef<HTMLButtonElement>(null)
+  const completionTabRef = useRef<HTMLButtonElement>(null)
+  const outputTabRef = useRef<HTMLButtonElement>(null)
+  const metadataTabRef = useRef<HTMLButtonElement>(null)
+  const toolsTabRef = useRef<HTMLButtonElement>(null)
+  const [indicatorStyle, setIndicatorStyle] = useState<{ left: number; width: number }>({ left: 0, width: 0 })
 
   // Ensure we only render portal on client side
   useEffect(() => {
@@ -48,30 +81,96 @@ export function NodeDetailModal({ node, onClose, initialTab = "output", initialV
     return () => setMounted(false)
   }, [])
 
+  // Get node data
   const nodeData = node?.data as any
   const appName = nodeData?.appName || "Unknown"
   const actionName = nodeData?.actionName || "Node"
   const type = nodeData?.type || "action"
   const isAIAgent = appName === "AI Agent" || appName.toLowerCase().includes("ai agent")
   const isInputNode = type === "input"
-  
+
   const input = nodeData?.input
   const output = nodeData?.output
-  const completion = nodeData?.completion
+  // For LLM nodes, check multiple locations for completion:
+  // 1. output.data.completion (preferred for LLM nodes)
+  // 2. nodeData.completion (direct completion field)
+  // 3. output.completion (fallback)
+  let completion: any = null
+  if (isAIAgent) {
+    completion = output?.data?.completion ?? nodeData?.completion ?? output?.completion ?? null
+  } else {
+    completion = nodeData?.completion ?? output?.completion ?? null
+  }
+  // Extract metadata and tools from output data for LLM nodes
+  // Metadata includes the full output.data structure with tool_invocations, formatted_prompt, provider, params, completion, citations
+  const metadata = isAIAgent && output?.data ? output.data : null
+  const tools = isAIAgent && output?.data?.tool_invocations ? output.data.tool_invocations : (isAIAgent && output?.tool_invocations ? output.tool_invocations : null)
 
-  // Reset view mode when switching tabs
-  useEffect(() => {
-    if (activeTab === "completion" && viewMode === "formatted") {
-      setViewMode("text")
-    }
-  }, [activeTab, viewMode])
+  // Reset view mode when switching tabs (removed completion restriction to allow formatted view)
 
-  // Handle input node - switch to output tab if trying to view input
+  // Handle input node - ensure it shows input tab
   useEffect(() => {
-    if (node && (node.data as any)?.type === "input" && activeTab === "input") {
-      setActiveTab("output")
+    if (node && (node.data as any)?.type === "input" && activeTab !== "input") {
+      setActiveTab("input")
     }
   }, [activeTab, node])
+
+  // Calculate sliding indicator position
+  useEffect(() => {
+    if (!mounted || !node) return
+    
+    const updateIndicator = () => {
+      let activeRef: typeof inputTabRef | typeof completionTabRef | typeof outputTabRef | typeof metadataTabRef | typeof toolsTabRef | null = null
+      
+      if (isInputNode) {
+        activeRef = inputTabRef
+      } else if (isAIAgent) {
+        // LLM nodes have: Input, Metadata, Tools, Completion
+        if (activeTab === "input") {
+          activeRef = inputTabRef
+        } else if (activeTab === "metadata") {
+          activeRef = metadataTabRef
+        } else if (activeTab === "tools") {
+          activeRef = toolsTabRef
+        } else if (activeTab === "completion") {
+          activeRef = completionTabRef
+        }
+      } else {
+        // Other nodes have: Input, Output
+        if (activeTab === "input") {
+          activeRef = inputTabRef
+        } else if (activeTab === "output") {
+          activeRef = outputTabRef
+        }
+      }
+
+      if (activeRef?.current) {
+        const tabContainer = activeRef.current.parentElement
+        if (tabContainer) {
+          const containerRect = tabContainer.getBoundingClientRect()
+          const tabRect = activeRef.current.getBoundingClientRect()
+          setIndicatorStyle({
+            left: tabRect.left - containerRect.left,
+            width: tabRect.width
+          })
+        }
+      }
+    }
+
+    // Use requestAnimationFrame to ensure DOM is fully rendered
+    const rafId = requestAnimationFrame(() => {
+      // Multiple attempts to ensure refs are set and indicator is positioned
+      setTimeout(updateIndicator, 10)
+      setTimeout(updateIndicator, 50)
+      setTimeout(updateIndicator, 100)
+    })
+    window.addEventListener('resize', updateIndicator)
+    
+    return () => {
+      cancelAnimationFrame(rafId)
+      window.removeEventListener('resize', updateIndicator)
+    }
+  }, [activeTab, isInputNode, isAIAgent, node, mounted])
 
   // Handle escape key
   useEffect(() => {
@@ -85,8 +184,19 @@ export function NodeDetailModal({ node, onClose, initialTab = "output", initialV
     return () => document.removeEventListener("keydown", handleEscape)
   }, [onClose])
 
-  const currentData = activeTab === "input" ? input : activeTab === "completion" ? completion : output
-  const hasData = currentData !== null && currentData !== undefined
+  const currentData = activeTab === "input" 
+    ? input 
+    : activeTab === "metadata" 
+    ? metadata 
+    : activeTab === "tools" 
+    ? tools 
+    : activeTab === "completion" 
+    ? completion 
+    : output
+  // For completion, also check if it's a non-empty string
+  const hasData = activeTab === "completion" 
+    ? (completion !== null && completion !== undefined && completion !== "")
+    : (currentData !== null && currentData !== undefined)
 
   // Format JSON with proper indentation
   const formatJSON = (obj: any): string => {
@@ -97,7 +207,7 @@ export function NodeDetailModal({ node, onClose, initialTab = "output", initialV
     }
   }
 
-  // Convert data to plain text format (for text view) - single paragraph, no structure
+  // Convert data to plain text format (for text view) - JSON format in paragraph/sentence layout
   const formatAsPlainText = (data: any): string => {
     if (data === null || data === undefined) {
       return ""
@@ -109,32 +219,32 @@ export function NodeDetailModal({ node, onClose, initialTab = "output", initialV
       return String(data)
     }
     if (Array.isArray(data)) {
-      return data.map(item => formatAsPlainText(item)).join(" ")
+      const items = data.map(item => formatAsPlainText(item))
+      return `[ ${items.join(", ")} ]`
     }
     if (typeof data === "object") {
-      // Flatten object to plain text - recursively extract all values
-      const extractValues = (obj: any): string[] => {
-        const values: string[] = []
+      // Format object as JSON in paragraph format with keys and brackets
+      const formatObject = (obj: any): string => {
+        const entries: string[] = []
         for (const [key, value] of Object.entries(obj)) {
           if (value === null || value === undefined) {
-            continue
-          } else if (typeof value === "object" && !Array.isArray(value)) {
-            values.push(...extractValues(value))
+            entries.push(`"${key}": null`)
+          } else if (typeof value === "string") {
+            entries.push(`"${key}": "${value}"`)
+          } else if (typeof value === "number" || typeof value === "boolean") {
+            entries.push(`"${key}": ${value}`)
           } else if (Array.isArray(value)) {
-            value.forEach(item => {
-              if (typeof item === "object" && item !== null) {
-                values.push(...extractValues(item))
-              } else {
-                values.push(String(item))
-              }
-            })
+            const items = value.map(item => formatAsPlainText(item))
+            entries.push(`"${key}": [ ${items.join(", ")} ]`)
+          } else if (typeof value === "object") {
+            entries.push(`"${key}": ${formatObject(value)}`)
           } else {
-            values.push(String(value))
+            entries.push(`"${key}": "${String(value)}"`)
           }
         }
-        return values
+        return `{ ${entries.join(", ")} }`
       }
-      return extractValues(data).join(" ")
+      return formatObject(data)
     }
     return String(data)
   }
@@ -207,6 +317,77 @@ export function NodeDetailModal({ node, onClose, initialTab = "output", initialV
     }
     
     return <>{parts}</>
+  }
+
+  // Render formatted accordion-style view for tools (uses action_id as headers)
+  const renderToolsFormatted = (data: any): React.ReactNode => {
+    if (data === null || data === undefined) {
+      return <div className="text-muted-foreground italic text-sm py-2">No data</div>
+    }
+
+    // Check if data is an array (tool_invocations)
+    if (Array.isArray(data)) {
+      if (data.length === 0) {
+        return <div className="text-muted-foreground italic text-sm py-2">No tool invocations</div>
+      }
+
+      return (
+        <div className="space-y-0 border border-gray-200 rounded-lg overflow-hidden">
+          {data.map((toolInvocation, index) => {
+            const actionId = toolInvocation?.action_id || `tool_${index}`
+            const sectionPath = `tool_${actionId}_${index}`
+            const isExpanded = expandedItems.has(sectionPath)
+            const hasNestedData = typeof toolInvocation === "object" && toolInvocation !== null && Object.keys(toolInvocation).length > 0
+
+            return (
+              <div key={index} className="border-b border-gray-200 last:border-b-0">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setExpandedItems(prev => {
+                      const newSet = new Set(prev)
+                      if (newSet.has(sectionPath)) {
+                        newSet.delete(sectionPath)
+                      } else {
+                        newSet.add(sectionPath)
+                      }
+                      return newSet
+                    })
+                  }}
+                  className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors ${
+                    isExpanded ? "bg-gray-50" : "bg-white hover:bg-gray-50"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Settings className="w-4 h-4 text-gray-600" />
+                    <span className="text-sm font-medium text-foreground">{actionId}</span>
+                  </div>
+                  {isExpanded ? (
+                    <ChevronUp className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                  )}
+                </button>
+                {isExpanded && (
+                  <div className="bg-white px-4 py-3">
+                    {hasNestedData ? (
+                      renderFormattedTree(toolInvocation, 0, sectionPath)
+                    ) : (
+                      <div className="text-sm text-foreground">
+                        {String(toolInvocation || "No content available")}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )
+    }
+
+    // Fallback to regular formatted accordion if not an array
+    return renderFormattedAccordion(data)
   }
 
   // Render formatted accordion-style view
@@ -826,91 +1007,140 @@ export function NodeDetailModal({ node, onClose, initialTab = "output", initialV
         </div>
 
         {/* Tabs */}
-        <div className="flex items-center gap-6 px-6 border-b flex-shrink-0 mt-4">
-          {!isInputNode && (
+        <div className="relative flex items-center gap-6 px-6 border-b flex-shrink-0 mt-4">
+          {isInputNode ? (
             <button
+              ref={inputTabRef}
               onClick={() => setActiveTab("input")}
-              className={`relative text-sm font-normal transition-colors cursor-pointer leading-none pb-3 border-b-2 ${
+              className={`relative text-sm font-normal transition-colors cursor-pointer leading-none pb-3 ${
                 activeTab === "input"
-                  ? "text-foreground border-gray-400"
-                  : "text-muted-foreground hover:text-foreground border-transparent"
+                  ? "text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               Input
             </button>
+          ) : isAIAgent ? (
+            <>
+              {/* LLM nodes: Input, Metadata, Tools, Completion */}
+              <button
+                ref={inputTabRef}
+                onClick={() => setActiveTab("input")}
+                className={`relative text-sm font-normal transition-colors cursor-pointer leading-none pb-3 ${
+                  activeTab === "input"
+                    ? "text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Input
+              </button>
+              <button
+                ref={metadataTabRef}
+                onClick={() => setActiveTab("metadata")}
+                className={`relative text-sm font-normal transition-colors cursor-pointer leading-none pb-3 ${
+                  activeTab === "metadata"
+                    ? "text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Metadata
+              </button>
+              <button
+                ref={toolsTabRef}
+                onClick={() => setActiveTab("tools")}
+                className={`relative text-sm font-normal transition-colors cursor-pointer leading-none pb-3 ${
+                  activeTab === "tools"
+                    ? "text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Tools
+              </button>
+              <button
+                ref={completionTabRef}
+                onClick={() => setActiveTab("completion")}
+                className={`relative text-sm font-normal transition-colors cursor-pointer leading-none pb-3 ${
+                  activeTab === "completion"
+                    ? "text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Completion
+              </button>
+            </>
+          ) : (
+            <>
+              {/* Other nodes: Input, Output */}
+              <button
+                ref={inputTabRef}
+                onClick={() => setActiveTab("input")}
+                className={`relative text-sm font-normal transition-colors cursor-pointer leading-none pb-3 ${
+                  activeTab === "input"
+                    ? "text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Input
+              </button>
+              <button
+                ref={outputTabRef}
+                onClick={() => setActiveTab("output")}
+                className={`relative text-sm font-normal transition-colors cursor-pointer leading-none pb-3 ${
+                  activeTab === "output"
+                    ? "text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Output
+              </button>
+            </>
           )}
-          {isAIAgent && (
-            <button
-              onClick={() => setActiveTab("completion")}
-              className={`relative text-sm font-normal transition-colors cursor-pointer leading-none pb-3 border-b-2 ${
-                activeTab === "completion"
-                  ? "text-foreground border-gray-400"
-                  : "text-muted-foreground hover:text-foreground border-transparent"
-              }`}
-            >
-              Completion
-            </button>
-          )}
-          <button
-            onClick={() => setActiveTab("output")}
-            className={`relative text-sm font-normal transition-colors cursor-pointer leading-none pb-3 border-b-2 ${
-              activeTab === "output"
-                ? "text-foreground border-gray-400"
-                : "text-muted-foreground hover:text-foreground border-transparent"
-            }`}
-          >
-            Output
-          </button>
+          {/* Sliding indicator */}
+          <div
+            className="absolute bottom-0 h-0.5 bg-gray-400 transition-all duration-300 ease-in-out"
+            style={{
+              left: `${indicatorStyle.left}px`,
+              width: `${indicatorStyle.width}px`,
+            }}
+          />
         </div>
 
         {/* Search Bar, View Mode and Actions Row */}
         <div className="flex items-center justify-between gap-4 px-6 pb-2 bg-background flex-shrink-0 pt-6">
-          {/* Search Bar on the left */}
-          <div className="relative flex-1 max-w-xs">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              type="text"
-              placeholder="Search..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-
-          {/* View Mode Tabs and Action Icons on the right */}
+          {/* View Mode Tabs and Action Icons on the left */}
           <div className="flex items-center gap-2">
-            <ToggleGroup
-              type="single"
-              value={viewMode}
-              onValueChange={(value) => {
-                if (value) setViewMode(value as "text" | "formatted" | "code")
-              }}
-              className="bg-[#f5f5f5] rounded p-1 border-0 h-8"
-            >
-              <ToggleGroupItem 
-                value="text" 
-                aria-label="Text" 
-                className="px-4 h-7 text-sm rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
+            {!isInputNode && (
+              <ToggleGroup
+                type="single"
+                value={viewMode}
+                onValueChange={(value) => {
+                  if (value) setViewMode(value as "text" | "formatted" | "code")
+                }}
+                className="bg-[#f5f5f5] rounded p-1 border-0 h-8"
               >
-                Text
-              </ToggleGroupItem>
-              {activeTab !== "completion" && (
+                <ToggleGroupItem 
+                  value="text" 
+                  aria-label="Text" 
+                  className="px-6 h-7 text-sm rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
+                >
+                  Text
+                </ToggleGroupItem>
                 <ToggleGroupItem 
                   value="formatted" 
                   aria-label="Formatted" 
-                  className="px-4 h-7 text-sm rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
+                  className="px-6 h-7 text-sm rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
                 >
                   Formatted
                 </ToggleGroupItem>
-              )}
-              <ToggleGroupItem 
-                value="code" 
-                aria-label="Code" 
-                className="px-4 h-7 text-sm rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
-              >
-                Code
-              </ToggleGroupItem>
-            </ToggleGroup>
+                <ToggleGroupItem 
+                  value="code" 
+                  aria-label="Code" 
+                  className="px-6 h-7 text-sm rounded-sm border-0 text-muted-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm transition-all"
+                >
+                  Code
+                </ToggleGroupItem>
+              </ToggleGroup>
+            )}
 
             <div className="flex items-center gap-0.5">
               <Button
@@ -960,50 +1190,255 @@ export function NodeDetailModal({ node, onClose, initialTab = "output", initialV
               </DropdownMenu>
             </div>
           </div>
+
+          {/* Search Bar on the right */}
+          <div className="relative flex-1 max-w-xs">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Search..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto bg-background px-6 py-4">
           <div className="relative">
-            <div 
-              className={`${
-                viewMode === "formatted" 
-                  ? "" 
-                  : activeTab === "completion" && viewMode === "text" && typeof currentData === "string" 
-                    ? "bg-gradient-to-br from-muted/60 to-muted/40 rounded-lg p-4 border border-border/50 overflow-x-hidden shadow-inner font-sans" 
+            {isInputNode ? (
+              // For input nodes, always show as JSON with specific format
+              <div className="bg-gradient-to-br from-muted/60 to-muted/40 rounded-lg p-4 border border-border/50 overflow-x-hidden shadow-inner font-mono text-xs">
+                <pre className="whitespace-pre-wrap break-words leading-relaxed text-[11px]">
+                  <code className="text-foreground/90">
+{`{
+  "text": "real madrid"
+}`}
+                  </code>
+                </pre>
+              </div>
+            ) : isAIAgent && activeTab === "input" ? (
+              // Special handling for LLM node input tab
+              <div 
+                className={`${
+                  viewMode === "formatted" 
+                    ? "" 
                     : "bg-gradient-to-br from-muted/60 to-muted/40 rounded-lg p-4 border border-border/50 overflow-x-hidden shadow-inner font-mono text-xs"
-              }`}
-            >
-              {hasData ? (
-                activeTab === "completion" && viewMode === "text" && typeof currentData === "string" ? (
-                  <div className="text-sm leading-relaxed text-foreground/90 space-y-3 px-2">
-                    <div className="prose prose-sm max-w-none">
-                      <p className="whitespace-pre-wrap">{formatMarkdownText(currentData)}</p>
+                }`}
+              >
+                {viewMode === "text" ? (
+                  // Text view: { "in-0": "real madrid"}
+                  <p className="text-sm text-foreground break-words">
+                    {`{ "in-0": "real madrid"}`}
+                  </p>
+                ) : viewMode === "formatted" ? (
+                  // Formatted view: in-0 as collapsible header, real madrid as content
+                  <div className="space-y-0 border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="border-b border-gray-200 last:border-b-0">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setExpandedItems(prev => {
+                            const newSet = new Set(prev)
+                            const itemPath = "llm-input-in-0"
+                            if (newSet.has(itemPath)) {
+                              newSet.delete(itemPath)
+                            } else {
+                              newSet.add(itemPath)
+                            }
+                            return newSet
+                          })
+                        }}
+                        className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors ${
+                          expandedItems.has("llm-input-in-0") ? "bg-gray-50" : "bg-white hover:bg-gray-50"
+                        }`}
+                      >
+                        <span className="text-sm font-medium text-foreground">in-0</span>
+                        {expandedItems.has("llm-input-in-0") ? (
+                          <ChevronUp className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                        )}
+                      </button>
+                      {expandedItems.has("llm-input-in-0") && (
+                        <div className="bg-white px-4 py-3">
+                          <span className="text-sm text-foreground">real madrid</span>
+                        </div>
+                      )}
                     </div>
                   </div>
-                ) : viewMode === "text" ? (
-                  // Text view - plain text, no JSON structure, single paragraph
+                ) : (
+                  // Code view: { "in-0": "real madrid" } with proper formatting
+                  <pre className="whitespace-pre-wrap break-words leading-relaxed text-[11px]">
+                    <code className="text-foreground/90">
+{`{
+  "in-0": "real madrid"
+}`}
+                    </code>
+                  </pre>
+                )}
+              </div>
+            ) : isAIAgent && activeTab === "metadata" ? (
+              // Special handling for LLM node metadata tab - show as text, formatted, or code based on viewMode
+              <div 
+                className={`${
+                  viewMode === "formatted" 
+                    ? "" 
+                    : "bg-gradient-to-br from-muted/60 to-muted/40 rounded-lg p-4 border border-border/50 overflow-x-hidden shadow-inner font-mono text-xs"
+                }`}
+              >
+                {viewMode === "text" ? (
+                  // Text view: Show as single line JSON string
                   <p className="text-sm text-foreground break-words">
                     {formatAsPlainText(currentData)}
                   </p>
                 ) : viewMode === "formatted" ? (
+                  // Formatted view: Show as accordion-style formatted view
                   <div className="text-sm text-foreground/90">
                     {renderFormattedAccordion(currentData)}
                   </div>
                 ) : (
+                  // Code view: Show as formatted JSON
                   <pre className="whitespace-pre-wrap break-words leading-relaxed text-[11px]">
                     <code className="text-foreground/90">
                       {formatJSON(currentData)}
                     </code>
                   </pre>
-                )
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  <p className="text-sm">No {activeTab} yet</p>
-                  <p className="text-xs mt-1">Run the flow to see the {activeTab}</p>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            ) : isAIAgent && activeTab === "tools" ? (
+              // Special handling for LLM node tools tab - support text, formatted, and code views
+              <div 
+                className={`${
+                  viewMode === "formatted" 
+                    ? "" 
+                    : "bg-gradient-to-br from-muted/60 to-muted/40 rounded-lg p-4 border border-border/50 overflow-x-hidden shadow-inner font-mono text-xs"
+                }`}
+              >
+                {viewMode === "text" ? (
+                  // Text view: Show as plain text
+                  <p className="text-sm text-foreground break-words">
+                    {formatAsPlainText(currentData)}
+                  </p>
+                ) : viewMode === "formatted" ? (
+                  // Formatted view: Show as accordion-style formatted view with action_id as headers
+                  <div className="text-sm text-foreground/90">
+                    {renderToolsFormatted(currentData)}
+                  </div>
+                ) : (
+                  // Code view: Show as formatted JSON
+                  <pre className="whitespace-pre-wrap break-words leading-relaxed text-[11px]">
+                    <code className="text-foreground/90">
+                      {formatJSON(currentData)}
+                    </code>
+                  </pre>
+                )}
+              </div>
+            ) : (
+              <div 
+                className={`${
+                  activeTab === "completion" && (viewMode === "formatted" || (viewMode === "text" && typeof currentData === "string"))
+                    ? "" 
+                    : viewMode === "formatted" 
+                    ? "" 
+                    : activeTab === "completion" && viewMode === "text" && typeof currentData === "string" 
+                      ? "bg-gradient-to-br from-muted/60 to-muted/40 rounded-lg p-4 border border-border/50 overflow-x-hidden shadow-inner font-sans" 
+                      : "bg-gradient-to-br from-muted/60 to-muted/40 rounded-lg p-4 border border-border/50 overflow-x-hidden shadow-inner font-mono text-xs"
+                }`}
+              >
+                {hasData ? (
+                  activeTab === "completion" ? (
+                    // Special handling for completion tab
+                    viewMode === "text" && typeof currentData === "string" ? (
+                      // Text view: Show markdown-rendered text with background
+                      <div className="bg-gradient-to-br from-muted/60 to-muted/40 rounded-lg p-4 border border-border/50 overflow-x-hidden shadow-inner font-sans">
+                        <div className="text-sm leading-relaxed text-foreground/90 space-y-3 px-2">
+                          <div className="prose prose-sm max-w-none">
+                            <p className="whitespace-pre-wrap">{formatMarkdownText(currentData)}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : viewMode === "formatted" && typeof currentData === "string" ? (
+                      // Formatted view: Show as accordion-style with collapsible header
+                      <div className="space-y-0 border border-gray-200 rounded-lg overflow-hidden">
+                        <div className="border-b border-gray-200 last:border-b-0">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setExpandedItems(prev => {
+                                const newSet = new Set(prev)
+                                const itemPath = "completion-content"
+                                if (newSet.has(itemPath)) {
+                                  newSet.delete(itemPath)
+                                } else {
+                                  newSet.add(itemPath)
+                                }
+                                return newSet
+                              })
+                            }}
+                            className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors ${
+                              expandedItems.has("completion-content") ? "bg-gray-50" : "bg-white hover:bg-gray-50"
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <FileText className="w-4 h-4 text-gray-600" />
+                              <span className="text-sm font-medium text-foreground">Completion</span>
+                            </div>
+                            {expandedItems.has("completion-content") ? (
+                              <ChevronUp className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                            )}
+                          </button>
+                          {expandedItems.has("completion-content") && (
+                            <div className="bg-white px-4 py-3">
+                              <div className="text-sm leading-relaxed text-foreground/90">
+                                <div className="prose prose-sm max-w-none">
+                                  <p className="whitespace-pre-wrap">{formatMarkdownText(currentData)}</p>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      // Code view: Show JSON with completion field
+                      <div className="bg-gradient-to-br from-muted/60 to-muted/40 rounded-lg p-4 border border-border/50 overflow-x-hidden shadow-inner font-mono text-xs">
+                        <pre className="whitespace-pre-wrap break-words leading-relaxed text-[11px]">
+                          <code className="text-foreground/90">
+                            {typeof currentData === "string" 
+                              ? formatJSON({ completion: currentData })
+                              : formatJSON(currentData)
+                            }
+                          </code>
+                        </pre>
+                      </div>
+                    )
+                  ) : viewMode === "text" ? (
+                    // Text view - plain text, no JSON structure, single paragraph
+                    <p className="text-sm text-foreground break-words">
+                      {formatAsPlainText(currentData)}
+                    </p>
+                  ) : viewMode === "formatted" ? (
+                    <div className="text-sm text-foreground/90">
+                      {renderFormattedAccordion(currentData)}
+                    </div>
+                  ) : (
+                    <pre className="whitespace-pre-wrap break-words leading-relaxed text-[11px]">
+                      <code className="text-foreground/90">
+                        {formatJSON(currentData)}
+                      </code>
+                    </pre>
+                  )
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <p className="text-sm">No {activeTab === "metadata" ? "metadata" : activeTab === "tools" ? "tools" : activeTab} yet</p>
+                    <p className="text-xs mt-1">Run the flow to see the {activeTab === "metadata" ? "metadata" : activeTab === "tools" ? "tools" : activeTab}</p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
         </div>

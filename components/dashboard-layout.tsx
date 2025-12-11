@@ -65,6 +65,7 @@ import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import type { SelectedAction } from "@/lib/types"
+import { Analytics } from "@/components/analytics"
 
 interface DashboardLayoutProps {
   children: React.ReactNode
@@ -255,7 +256,7 @@ export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLa
 
         {/* Canvas Area */}
         <div className="flex-1 overflow-hidden relative">
-          {children}
+          {activeTab === "Analytics" ? <Analytics /> : children}
         </div>
       </div>
     </div>

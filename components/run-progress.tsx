@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useRef } from "react"
-import { Clock, X, ChevronUp, CheckCircle2, Loader2 } from "lucide-react"
+import { Clock, X, ChevronUp, CheckCircle2, Loader2, Edit, Bot } from "lucide-react"
 import type { Node } from "@xyflow/react"
 import { getNodeIconBg, AppIcon } from "./workflow-node"
 import { NodeDetailModal } from "./node-detail-modal"
@@ -82,9 +82,16 @@ export function RunProgress({ nodes, isRunning = false, runStatus = "success", s
     if (type === "input") {
       identifier = `in-${index}`
     } else if (type === "output") {
-      identifier = `out-${index}`
-    } else if (appName.toLowerCase().includes("openai") || appName.toLowerCase().includes("anthropic")) {
-      identifier = `llm-${index}`
+      // Count output nodes separately
+      const outputIndex = nodes.slice(0, index + 1).filter(n => (n.data as any)?.type === "output").length - 1
+      identifier = `out-${outputIndex}`
+    } else if ((appName === "AI Agent" && actionName === "LLM") || appName.toLowerCase().includes("openai") || appName.toLowerCase().includes("anthropic")) {
+      // Count LLM nodes separately
+      const llmIndex = nodes.slice(0, index + 1).filter(n => {
+        const d = n.data as any
+        return (d?.appName === "AI Agent" && d?.actionName === "LLM") || d?.appName?.toLowerCase().includes("openai") || d?.appName?.toLowerCase().includes("anthropic")
+      }).length - 1
+      identifier = `llm-${llmIndex}`
     } else if (actionName.toLowerCase().includes("if") || actionName.toLowerCase().includes("else")) {
       identifier = `ifelse-${index}`
     } else if (actionName.toLowerCase().includes("loop")) {
@@ -107,8 +114,8 @@ export function RunProgress({ nodes, isRunning = false, runStatus = "success", s
 
     // Generate duration for certain node types
     let duration: number | undefined
-    if (type === "action" && appName.toLowerCase().includes("openai")) {
-      duration = 6.2
+    if ((appName === "AI Agent" && actionName === "LLM") || appName.toLowerCase().includes("openai")) {
+      duration = 11.3 // Match the image example
     } else if (actionName.toLowerCase().includes("delay")) {
       duration = 5.0
     }
@@ -229,62 +236,93 @@ export function RunProgress({ nodes, isRunning = false, runStatus = "success", s
 
         {/* Content - Scrollable list */}
         <div className={`${isInModal ? 'rounded-b-lg' : 'flex-1'} overflow-y-auto px-4 py-4`}>
-          <div className="space-y-1">
-            {nodeProgress.map((nodeProgressItem) => (
-              <div
-                key={nodeProgressItem.id}
-                onClick={() => handleNodeClick(nodeProgressItem)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer border ${
-                  selectedNode?.id === nodeProgressItem.id 
-                    ? "bg-gray-100 border-gray-300" 
-                    : "bg-white border-gray-100"
-                }`}
-              >
-                {/* Icon */}
-                <div className="flex-shrink-0">
-                  {nodeProgressItem.nodeData.appName === "AI Agent" && nodeProgressItem.nodeData.actionName === "LLM" ? (
-                    // Special case for AI Agent/LLM - use the same SVG icon as in the node
-                    <div className="w-8 h-8 flex items-center justify-center flex-shrink-0 border border-border rounded">
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-foreground">
-                        <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                        <path d="M2 17l10 5 10-5" />
-                        <path d="M2 12l10 5 10-5" />
-                      </svg>
-                    </div>
-                  ) : (
-                    <div className={`w-8 h-8 rounded-lg border border-border flex items-center justify-center ${
-                      nodeProgressItem.type === "input" ? "bg-white" : "bg-muted"
-                    }`}>
-                      <AppIcon appName={nodeProgressItem.nodeData.appName} className="w-4 h-4" />
-                    </div>
-                  )}
-                </div>
-
-                {/* Node name with identifier */}
-                <div className="flex-1 min-w-0 flex items-center gap-2">
-                  <div className="text-sm font-medium text-foreground truncate">{nodeProgressItem.name}</div>
-                  <span className="px-2 py-0.5 text-xs font-normal text-gray-400 bg-white border border-gray-200 rounded-md">
-                    {nodeProgressItem.identifier}
-                  </span>
-                </div>
-
-                {/* Duration */}
-                {nodeProgressItem.duration && (
-                  <div className="flex-shrink-0 text-xs text-gray-500">
-                    {nodeProgressItem.duration}s
+          <div className="space-y-3">
+            {nodeProgress.map((nodeProgressItem, index) => {
+              // Determine icon based on node type
+              const isLLM = nodeProgressItem.nodeData.appName === "AI Agent" && nodeProgressItem.nodeData.actionName === "LLM"
+              const isInput = nodeProgressItem.type === "input"
+              const isOutput = nodeProgressItem.type === "output"
+              
+              const isSelected = selectedNode?.id === nodeProgressItem.id
+              
+              return (
+                <div key={nodeProgressItem.id} className="flex items-center gap-3">
+                  {/* Icon container with dotted line connection - outside and to the left */}
+                  <div className="relative flex-shrink-0">
+                    {/* Dotted vertical line connector - only show if not last item */}
+                    {index < nodeProgress.length - 1 && (
+                      <div className="absolute left-1/2 top-10 -translate-x-1/2 w-0.5 h-8 border-l-2 border-dashed border-gray-300" />
+                    )}
+                    {isLLM ? (
+                      // Robot icon for LLM nodes - square div with selected state
+                      <div className={`w-10 h-10 flex items-center justify-center flex-shrink-0 border rounded-full transition-all ${
+                        isSelected 
+                          ? "border-black bg-gray-100" 
+                          : "border-gray-300"
+                      }`}>
+                        <Bot className={`w-5 h-5 transition-colors ${
+                          isSelected ? "text-black" : "text-foreground"
+                        }`} />
+                      </div>
+                    ) : (
+                      // Edit/pencil icon for input/output nodes - square div with selected state
+                      <div className={`w-10 h-10 flex items-center justify-center flex-shrink-0 border rounded-full transition-all ${
+                        isSelected 
+                          ? "border-black bg-gray-100" 
+                          : "border-gray-300"
+                      }`}>
+                        <Edit className={`w-5 h-5 transition-colors ${
+                          isSelected ? "text-black" : "text-foreground"
+                        }`} />
+                      </div>
+                    )}
                   </div>
-                )}
 
-                {/* Checkmark/Status Icon */}
-                <div className="flex-shrink-0">
-                  {nodeProgressItem.status === "running" ? (
-                    <Loader2 className="w-5 h-5 text-purple-600 animate-spin" />
-                  ) : (
-                    <CheckCircle2 className="w-5 h-5 text-green-600" />
-                  )}
+                  {/* Card content - separate div */}
+                  <div
+                    onClick={() => handleNodeClick(nodeProgressItem)}
+                    className={`flex-1 flex items-center gap-4 px-4 h-10 rounded-lg hover:bg-gray-50 transition-all cursor-pointer ${
+                      isSelected 
+                        ? "bg-gray-100 border border-black shadow-sm" 
+                        : "bg-white border border-gray-200"
+                    }`}
+                  >
+                          {/* Node name and identifier */}
+                          <div className="flex-1 min-w-0 flex items-center gap-2">
+                            <div className={`text-sm font-medium transition-colors ${
+                              isSelected ? "text-black font-semibold" : "text-foreground"
+                            }`}>
+                              {isLLM ? "OpenAI" : nodeProgressItem.name}
+                            </div>
+                            <span className={`px-2 py-0.5 text-xs font-normal rounded-md whitespace-nowrap transition-colors ${
+                              isSelected 
+                                ? "text-black bg-gray-200 border border-black" 
+                                : "text-gray-400 bg-gray-50 border border-gray-200"
+                            }`}>
+                              {nodeProgressItem.identifier}
+                            </span>
+                            {/* Duration for LLM nodes */}
+                            {nodeProgressItem.duration && (
+                              <span className={`text-xs whitespace-nowrap ml-1 transition-colors ${
+                                isSelected ? "text-black font-medium" : "text-gray-500"
+                              }`}>
+                                {nodeProgressItem.duration.toFixed(1)}s
+                              </span>
+                            )}
+                          </div>
+
+                    {/* Checkmark/Status Icon */}
+                    <div className="flex-shrink-0">
+                      {nodeProgressItem.status === "running" ? (
+                        <Loader2 className="w-5 h-5 text-purple-600 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="w-5 h-5 text-green-600" />
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       </div>

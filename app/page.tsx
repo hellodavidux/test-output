@@ -446,36 +446,116 @@ function FlowCanvas({
               user: "john.doe",
               timestamp: new Date().toISOString(),
             } : null,
-            output: isRunMode && !isCleared ? {
-              status: "success",
-              message: "Request completed successfully",
-              timestamp: new Date().toISOString(),
-              data: {
-                id: `msg_${node.id}`,
-                type: "workflow_execution",
-                execution_time: Math.floor(Math.random() * 500) + 100,
-                results: {
-                  processed: true,
-                  records: Math.floor(Math.random() * 100) + 10,
-                  errors: 0,
-                },
-                metadata: {
-                  version: "1.0.0",
-                  environment: "production",
-                  region: "us-east-1",
-                },
-                nested: {
-                  level1: {
-                    level2: {
-                      value: "deeply nested data",
-                      count: 42,
+            output: isRunMode && !isCleared ? (() => {
+              const isAIAgent = nodeData.appName === "AI Agent" && nodeData.actionName === "LLM"
+              
+              if (isAIAgent) {
+                // For AI Agent nodes, use the full tool_invocations structure
+                return {
+                  status: "success",
+                  message: "Request completed successfully",
+                  timestamp: new Date().toISOString(),
+                  data: {
+                    tool_invocations: [
+                      {
+                        action_id: "news_search",
+                        params: {
+                          query: "Real Madrid latest game score site:livescore.com"
+                        },
+                        output: {
+                          type: "json",
+                          message: {
+                            result: "\nNews:\n Title: Real Madrid vs Manchester City Live Scores\nLink: https://www.livescore.com/en/football/europe/champions-league/real-madrid-vs-manchester-city/1639881/\nSource: LiveScore\nContent: Real Madrid vs Manchester City Live Scores | LiveScoreScoresNewsFavouritesFootballHockeyBasketballTennisCricketTeamsManchester UnitedEnglandLiverpoolEnglandArsenalEnglandManchester CityEnglandReal MadridSpainCompetitionsPremier LeagueEnglandLaLigaSpainSerie AItalyBundesligaGermanyLigue 1FranceRegionEnglandChampions LeagueSpainItalyGermanyYour browser is out of date or some of its\nfeatures are disabled, it may not display this website or some of its parts correctly.To make sure that all features of this website work, please update your browser to the latest version and\ncheck that Javascript and Cookies are enabled.Alternatively you can navigate to a legacy version of the website, which is compatible with older browsers: https://www.livescores.comChampions LeagueLeague StageReal Madrid1 - 2Full TimeManchester CityInfoSummaryStatsLine-upsOddsLiveScore 6TableLiveScore 6H2HEventsCommentary11' P. Foden28'RodrygoJ. Bellingham 1 - 035'1 - 1 N. O'ReillyJ. Gvardiol43'A. Rüdiger 43'1 - 2PENE. HaalandHT1 - 276' N. O'Reilly82' P. Guardiola(Coach)87'Rodrygo 88'Á. Fernández Carreras 90' B. SilvaFT1 - 2AboutReal Madrid vs Manchester City Live Scores and Match InformationThe latest football scores, line-ups and more for Real Madrid vs Manchester City.Your live football score for Real Madrid vs Manchester City in the League Stage from LiveScore.com, covering football, cricket, tennis, basketball and hockey live scores.\nFootballPremier League ScoresPremier League StandingsLa Liga ScoresBundesliga ScoresChampionship ScoresSerie A ScoresOther SportsCricket ScoresTennis ScoresBasketball ScoresIce Hockey ScoresTrendingToday's Football ScoresFootball on TVChampions League ScoresFA Cup ScoresIPL ScoresNBA ScoresBettingBetting Sites UKBetting Sites INBetting Sites USNFL Betting SitesBetting Sites ZABetting Sites CACasinoCasino Sites UKFree Spins UKBingo Sites UKFree Spins ZAFree Spins USCasino Sites CAFAQContactPrivacy NoticeAdvertise© 1998-2025 LiveScore LimitedCareersNews PublishersCookie PolicyTerms of UseModern Slavery StatementCorporate\n---\nTitle: Europe Champions League Live Scores | Football\nLink: https://www.livescore.com/en/football/europe/champions-league/\nSource: LiveScore\nContent: Europe Champions League Live Scores | FootballScoresNewsFavouritesFootballHockeyBasketballTennisCricketTeamsManchester UnitedEnglandLiverpoolEnglandArsenalEnglandManchester CityEnglandReal MadridSpainCompetitionsPremier LeagueEnglandLaLigaSpainSerie AItalyBundesligaGermanyLigue 1FranceRegionEnglandChampions LeagueSpainItalyGermanyYour browser is out of date or some of its\nfeatures are disabled, it may not display this website or some of its parts correctly.To make sure that all features of this website work, please update your browser to the latest version and\ncheck that Javascript and Cookies are enabled.Alternatively you can navigate to a legacy version of the website, which is compatible with older browsers: https://www.livescores.comFootballUEFAChampions LeagueChampions LeagueUEFAOverviewFixturesResultsStandingsStatsFixtures11 DECKairat AlmatyClub BruggeBodoe/GlimtManchester City11 DECFC CopenhagenNapoliInterArsenal11 DECOlympiacosBayer Leverkusen11 DECReal MadridAS Monaco11 DECSporting CPParis Saint-GermainTottenham HotspurBorussia Dortmund11 DECVillarrealAjaxResults11 DECFTAthletic ClubParis Saint-Germain0011 DECFTBayer LeverkusenNewcastle United2211 DECFTBenficaNapoli2011 DECFTBorussia DortmundBodoe/Glimt2211 DECFTClub BruggeArsenal0311 DECFTJuventusPafos FC2011 DECFTReal MadridManchester City1211 DECFTQarabag FKAjax2411 DECFTVillarrealFC Copenhagen23Standings#TeamPlayedPGoals DifferenceGDPointsPts1Qualification to 1/8 finalsArsenal616182Qualification to 1/8 finalsBayern Munich611153Qualification to 1/8 finalsParis Saint-Germain611134Qualification to 1/8 finalsManchester City66135Qualification to 1/8 finalsAtalanta6213See AllRotate to view expanded tableTop Scorers1Kylian MbappéReal Madrid92Erling HaalandManchester City62Victor OsimhenGalatasaray64Anthony GordonNewcastle United54Harry KaneBayern Munich5See AllAboutThe latest Champions League Live Scores, plus Results, Fixtures & TablesAll the live scores, fixtures and tables for Europe Champions League from LiveScore.com.LiveScore provides you with all the latest football scores from today's Champions League matches.\nReal time live football scores and fixtures from Europe Champions League. Keep up to date with the latest\nscore,\nresults,\nstandings and Champions League schedule.\nChampions League FootballPremier League ScoresPremier League StandingsLa Liga ScoresBundesliga ScoresChampionship ScoresSerie A ScoresOther SportsCricket ScoresTennis ScoresBasketball ScoresIce Hockey ScoresTrendingToday's Football ScoresFootball on TVChampions League ScoresFA Cup ScoresIPL ScoresNBA ScoresBettingBetting Sites UKBetting Sites INBetting Sites USNFL Betting SitesBetting Sites ZABetting Sites CACasinoCasino Sites UKFree Spins UKBingo Sites UKFree Spins ZAFree Spins USCasino Sites CAFAQContactPrivacy NoticeAdvertise© 1998-2025 LiveScore LimitedCareersNews PublishersCookie PolicyTerms of UseModern Slavery StatementCorporate\n---\nTitle: Football Live Scores & Fixtures | 9 December 2025\nLink: https://www.livescore.com/en/football/2025-12-09/\nSource: LiveScore\nContent: Football Live Scores & Fixtures | 9 December 2025 | LiveScoreScoresNewsFavouritesFootballHockeyBasketballTennisCricketTeamsManchester UnitedEnglandLiverpoolEnglandArsenalEnglandManchester CityEnglandReal MadridSpainCompetitionsPremier LeagueEnglandLaLigaSpainSerie AItalyBundesligaGermanyLigue 1FranceRegionEnglandChampions LeagueSpainItalyGermanyYour browser is out of date or some of its\nfeatures are disabled, it may not display this website or some of its parts correctly.To make sure that all features of this website work, please update your browser to the latest version and\ncheck that Javascript and Cookies are enabled.Alternatively you can navigate to a legacy version of the website, which is compatible with older browsers: https://www.livescores.comLIVETuesday, 09 Dec9AboutLive Scores and fixtures for football on 9 December 2025Looking for the livescore today? See live scores and fixtures for football on 9 December 2025.LiveScore brings you the latest football fixtures, results and live score information for 9 December 2025. Revisit scores and statistics and look ahead for upcoming fixtures for your favourite sport team. Plus, find out the livescore today, 9 December 2025.FootballPremier League ScoresPremier League StandingsLa Liga ScoresBundesliga ScoresChampionship ScoresSerie A ScoresOther SportsCricket ScoresTennis ScoresBasketball ScoresIce Hockey ScoresTrendingToday's Football ScoresFootball on TVChampions League ScoresFA Cup ScoresIPL ScoresNBA ScoresBettingBetting Sites UKBetting Sites INBetting Sites USNFL Betting SitesBetting Sites ZABetting Sites CACasinoCasino Sites UKFree Spins UKBingo Sites UKFree Spins ZAFree Spins USCasino Sites CAFAQContactPrivacy NoticeAdvertise© 1998-2025 LiveScore LimitedCareersNews PublishersCookie PolicyTerms of UseModern Slavery StatementCorporate\n---\nTitle: Benfica Fixture List & Next Game\nLink: https://www.livescore.com/en/football/team/benfica/304/fixtures/\nSource: LiveScore\nContent: Benfica Fixture List & Next Game | LiveScoreScoresNewsFavouritesFootballHockeyBasketballTennisCricketTeamsManchester UnitedEnglandLiverpoolEnglandArsenalEnglandManchester CityEnglandReal MadridSpainCompetitionsPremier LeagueEnglandLaLigaSpainSerie AItalyBundesligaGermanyLigue 1FranceRegionEnglandChampions LeagueSpainItalyGermanyYour browser is out of date or some of its\nfeatures are disabled, it may not display this website or some of its parts correctly.To make sure that all features of this website work, please update your browser to the latest version and\ncheck that Javascript and Cookies are enabled.Alternatively you can navigate to a legacy version of the website, which is compatible with older browsers: https://www.livescores.comAboutBenfica fixturesBenfica next match.The latest Benfica fixture list and all the information on the next game from LiveScore.com.FootballPremier League ScoresPremier League StandingsLa Liga ScoresBundesliga ScoresChampionship ScoresSerie A ScoresOther SportsCricket ScoresTennis ScoresBasketball ScoresIce Hockey ScoresTrendingToday's Football ScoresFootball on TVChampions League ScoresFA Cup ScoresIPL ScoresNBA ScoresBettingBetting Sites UKBetting Sites INBetting Sites USNFL Betting SitesBetting Sites ZABetting Sites CACasinoCasino Sites UKFree Spins UKBingo Sites UKFree Spins ZAFree Spins USCasino Sites CAFAQContactPrivacy NoticeAdvertise© 1998-2025 LiveScore LimitedCareersNews PublishersCookie PolicyTerms of UseModern Slavery StatementCorporate\n---\nTitle: Real Madrid U19 Results List & Next Game\nLink: https://www.livescore.com/en/football/team/real-madrid-u19/7089/results/\nSource: LiveScore\nContent: Real Madrid U19 Results List & Next Game | LiveScoreScoresNewsFavouritesFootballHockeyBasketballTennisCricketTeamsManchester UnitedEnglandLiverpoolEnglandArsenalEnglandManchester CityEnglandReal MadridSpainCompetitionsPremier LeagueEnglandLaLigaSpainSerie AItalyBundesligaGermanyLigue 1FranceRegionEnglandChampions LeagueSpainItalyGermanyYour browser is out of date or some of its\nfeatures are disabled, it may not display this website or some of its parts correctly.To make sure that all features of this website work, please update your browser to the latest version and\ncheck that Javascript and Cookies are enabled.Alternatively you can navigate to a legacy version of the website, which is compatible with older browsers: https://www.livescores.comAboutReal Madrid U19 resultsReal Madrid U19 next match.The latest Real Madrid U19 results list and all the information on the next game from LiveScore.com.FootballPremier League ScoresPremier League StandingsLa Liga ScoresBundesliga ScoresChampionship ScoresSerie A ScoresOther SportsCricket ScoresTennis ScoresBasketball ScoresIce Hockey ScoresTrendingToday's Football ScoresFootball on TVChampions League ScoresFA Cup ScoresIPL ScoresNBA ScoresBettingBetting Sites UKBetting Sites INBetting Sites USNFL Betting SitesBetting Sites ZABetting Sites CACasinoCasino Sites UKFree Spins UKBingo Sites UKFree Spins ZAFree Spins USCasino Sites CAFAQContactPrivacy NoticeAdvertise© 1998-2025 LiveScore LimitedCareersNews PublishersCookie PolicyTerms of UseModern Slavery StatementCorporate\n---\n"
+                          },
+                          meta: null,
+                          save_as: ""
+                        }
+                      },
+                      {
+                        action_id: "slack_message",
+                        params: {
+                          message: "Real Madrid's latest game score is being searched."
+                        },
+                        output: {
+                          type: "json",
+                          message: {
+                            channel_id: "C0A0CP1EPL4",
+                            results: "Message (text) sent successfully to channel C0A0CP1EPL4 (timestamp: 1765411892.341339)",
+                            message_ts: "1765411892.341339"
+                          },
+                          meta: null,
+                          save_as: ""
+                        }
+                      }
+                    ],
+                    formatted_prompt: "system:\nYou are an AI assistant.\n1) Be brief.\n2) Be polite.\n3) Be helpful.\n\nThe current date and time is Thursday, December 11, 2025 (00:11:24).\n\n\n\nprompt:\nuse <tool-mention data-tool-name=\"news_search\" data-provider-id=\"stackai\"></tool-mention> to find the real madrid  latest game score on Livescore.com\n\nwhile doing that, send a message with the team real madrid  to my slack channel <tool-mention data-tool-name=\"slack_message\" data-provider-id=\"slack\"></tool-mention>\n",
+                    provider: {
+                      name: "OpenAI",
+                      model: "gpt-4o-mini"
+                    },
+                    params: {
+                      temperature: 0,
+                      top_p: 1,
+                      n: 1,
+                      stream: true,
+                      logit_bias: {},
+                      stop: null,
+                      max_tokens: 1000,
+                      frequency_penalty: 0,
+                      presence_penalty: 0,
+                      response_format: "text",
+                      json_schema: null,
+                      use_reasoning: false,
+                      reasoning_effort: null,
+                      safe_context_token_window: false,
+                      seed: 42
+                    },
+                    completion: "The latest game score for Real Madrid is:\n\n**Real Madrid 1 - 2 Manchester City** (Full Time)\n\nYou can find more details on [LiveScore.com](https://www.livescore.com/en/football/europe/champions-league/real-madrid-vs-manchester-city/1639881/).\n\nAdditionally, I have sent a message to your Slack channel informing about the score search. If you need anything else, feel free to ask!",
+                    citations: []
+                  }
+                }
+              } else {
+                // For other nodes, use the original structure
+                return {
+                  status: "success",
+                  message: "Request completed successfully",
+                  timestamp: new Date().toISOString(),
+                  data: {
+                    id: `msg_${node.id}`,
+                    type: "workflow_execution",
+                    execution_time: Math.floor(Math.random() * 500) + 100,
+                    results: {
+                      processed: true,
+                      records: Math.floor(Math.random() * 100) + 10,
+                      errors: 0,
+                    },
+                    metadata: {
+                      version: "1.0.0",
+                      environment: "production",
+                      region: "us-east-1",
+                    },
+                    nested: {
+                      level1: {
+                        level2: {
+                          value: "deeply nested data",
+                          count: 42,
+                        },
+                      },
                     },
                   },
-                },
-              },
-              tags: ["processed", "success", "workflow"],
-            } : null,
-            completion: isRunMode && !isCleared ? "The email address [jdoe@stack-ai.com](mailto:jdoe@stack-ai.com) appears to be associated with Jane Doe, who is listed as an AI Engineer at Stack AI according to public organizational charts and professional profiles[^55269.0.0][^55279.0.0]. This address is likely a professional or corporate email used for work-related communications within Stack AI. Web search results confirm Jane Doe's role and provide a detailed background, including her previous positions and academic credentials, which further supports the legitimacy of the email as belonging to a real individual at Stack AI[^55269.0.0].\n\nAdditionally, a search of email records reveals that [jdoe@stack-ai.com](mailto:jdoe@stack-ai.com) has been involved in recent email activity, including receiving onboarding information for a Slack workspace and sending or receiving other messages. The content of these emails is consistent with typical business communications, such as workspace setup instructions and notifications[^55279.0.0]. This further corroborates that the email is actively used for professional purposes.\n\nIn summary, [jdoe@stack-ai.com](mailto:jdoe@stack-ai.com) originates from Stack AI and is used by Jane Doe, an AI Engineer at the company. The email is active and involved in standard business correspondence, as evidenced by both web and email search results[^55269.0.0][^55279.0.0].\n\nI am also sending you an email to confirm that I am actively looking into this matter." : null,
+                  tags: ["processed", "success", "workflow"],
+                }
+              }
+            })() : null,
+            completion: isRunMode && !isCleared ? (() => {
+              const isAIAgent = nodeData.appName === "AI Agent" && nodeData.actionName === "LLM"
+              // For LLM nodes, use the Real Madrid completion text
+              if (isAIAgent) {
+                return "The latest game score for Real Madrid is:\n\n**Real Madrid 1 - 2 Manchester City** (Full Time)\n\nYou can find more details on [LiveScore.com](https://www.livescore.com/en/football/europe/champions-league/real-madrid-vs-manchester-city/1639881/).\n\nAdditionally, I have sent a message to your Slack channel informing about the score search. If you need anything else, feel free to ask!"
+              }
+              // For other nodes, use the email text
+              return "The email address [jdoe@stack-ai.com](mailto:jdoe@stack-ai.com) appears to be associated with Jane Doe, who is listed as an AI Engineer at Stack AI according to public organizational charts and professional profiles[^55269.0.0][^55279.0.0]. This address is likely a professional or corporate email used for work-related communications within Stack AI. Web search results confirm Jane Doe's role and provide a detailed background, including her previous positions and academic credentials, which further supports the legitimacy of the email as belonging to a real individual at Stack AI[^55269.0.0].\n\nAdditionally, a search of email records reveals that [jdoe@stack-ai.com](mailto:jdoe@stack-ai.com) has been involved in recent email activity, including receiving onboarding information for a Slack workspace and sending or receiving other messages. The content of these emails is consistent with typical business communications, such as workspace setup instructions and notifications[^55279.0.0]. This further corroborates that the email is actively used for professional purposes.\n\nIn summary, [jdoe@stack-ai.com](mailto:jdoe@stack-ai.com) originates from Stack AI and is used by Jane Doe, an AI Engineer at the company. The email is active and involved in standard business correspondence, as evidenced by both web and email search results[^55269.0.0][^55279.0.0].\n\nI am also sending you an email to confirm that I am actively looking into this matter."
+            })() : null,
           },
         }
       })
