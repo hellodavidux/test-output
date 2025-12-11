@@ -296,7 +296,7 @@ export function RunProgress({ nodes, isRunning = false, runStatus = "success", s
                             </div>
                             <span className={`px-2 py-0.5 text-xs font-normal rounded-md whitespace-nowrap transition-colors ${
                               isSelected 
-                                ? "text-black bg-gray-200 border border-black" 
+                                ? "text-black bg-gray-200" 
                                 : "text-gray-400 bg-gray-50 border border-gray-200"
                             }`}>
                               {nodeProgressItem.identifier}
