@@ -2,12 +2,13 @@
 
 import React, { useState, useRef, useEffect } from "react"
 import { createPortal } from "react-dom"
-import { X, Copy, Download, Trash2, Search, ChevronDown, ChevronUp, Settings, FileText, Building2, Code2 } from "lucide-react"
+import { X, Copy, Download, Trash2, Search, ChevronDown, ChevronUp, Settings, FileText, Building2, Code2, AlertCircle, Bot } from "lucide-react"
 import { AppIcon } from "./workflow-node"
 import { Button } from "@/components/ui/button"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import type { Node } from "@xyflow/react"
 
 interface NodeDetailModalProps {
@@ -1348,7 +1349,21 @@ export function NodeDetailModal({ node, onClose, initialTab = "output", initialV
                 }`}
               >
                 {hasData ? (
-                  activeTab === "completion" ? (
+                  activeTab === "output" && typeof currentData === "string" && currentData.startsWith("Error:") ? (
+                    <Alert variant="destructive" className="rounded-lg border-destructive/50 bg-destructive/5 [&>svg]:text-destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertTitle className="font-semibold text-destructive">This node failed</AlertTitle>
+                      <AlertDescription className="flex flex-col gap-3 text-destructive/90">
+                        <p className="text-sm whitespace-pre-wrap">
+                          {(node?.data as any)?.actionName ?? (node?.data as any)?.appName ?? "This node"} did not complete successfully. Check the output for details or get help resolving the issue.
+                        </p>
+                        <Button size="sm" variant="outline" className="w-fit gap-2 border-destructive/40 bg-destructive/5 text-destructive hover:bg-destructive/10 hover:border-destructive/60">
+                          <Bot className="h-3.5 w-3.5" />
+                          Ask AI
+                        </Button>
+                      </AlertDescription>
+                    </Alert>
+                  ) : activeTab === "completion" ? (
                     // Special handling for completion tab
                     viewMode === "text" && typeof currentData === "string" ? (
                       // Text view: Show markdown-rendered text with background

@@ -8,7 +8,9 @@ import WorkflowNode from "@/components/workflow-node"
 import { NodeSettingsSidebar } from "@/components/node-settings-sidebar"
 import { RunProgress } from "@/components/run-progress"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuTrigger } from "@/components/ui/context-menu"
-import { Play, StickyNote, Clipboard, ClipboardX } from "lucide-react"
+import { Alert } from "@/components/ui/alert"
+import { Button } from "@/components/ui/button"
+import { Play, StickyNote, Clipboard, ClipboardX, AlertCircle, Bot, X, Copy, Crosshair } from "lucide-react"
 import type { Node, Edge } from "@xyflow/react"
 import type { WorkflowNodeData, SelectedAction } from "@/lib/types"
 
@@ -44,6 +46,9 @@ function FlowCanvas({
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null)
   const [shouldExpandRunProgress, setShouldExpandRunProgress] = useState(false)
+  const [runStatusResult, setRunStatusResult] = useState<"success" | "error">("success")
+  const [runErrorDismissed, setRunErrorDismissed] = useState(false)
+  const [runErrorMessage] = useState("Error in Node Send Email (email-node): Send Email did not complete successfully. Check configuration, credentials, or inputs and try again.")
   const { screenToFlowPosition } = useReactFlow()
 
   const handleActionSelect = (action: SelectedAction, sourceNodeId?: string, side?: "left" | "right") => {
@@ -232,20 +237,22 @@ function FlowCanvas({
     
     // Show running state immediately
     setIsRunning(true)
+    setRunErrorDismissed(false)
     
     // After a short delay, stop loading
     setTimeout(() => {
       setIsLoading(false)
     }, 500) // Loading animation for 500ms
     
-    // After running for a bit, show success
+    // After run completes, show error (matches Gantt where Send Email fails)
     setTimeout(() => {
       setIsRunning(false)
       setIsRunMode(true)
+      setRunStatusResult("error")
       // Show notification dot on output buttons
       const defaultTabs = new Map(nodes.map(n => [n.id, "output" as const]))
       setActiveIOTabs(defaultTabs)
-    }, 2000) // Run for 2 seconds
+    }, 5000) // Run for 5 seconds (matches Gantt animation duration)
   }
 
   const handleClearOutput = useCallback((nodeId: string) => {
@@ -715,10 +722,41 @@ function FlowCanvas({
       <RunProgress 
         nodes={nodes} 
         isRunning={isRunning}
-        runStatus={isRunning ? "running" : isRunMode ? "success" : "success"}
+        runStatus={isRunning ? "running" : runStatusResult}
         shouldExpand={shouldExpandRunProgress}
         onExpandChange={(expanded) => setShouldExpandRunProgress(expanded)}
       />
+      {/* Run error banner - fixed below top bar (h-14 = 56px) */}
+      {runStatusResult === "error" && !runErrorDismissed && (
+        <div className="fixed left-0 right-0 top-14 z-50 px-4 py-2">
+          <Alert variant="destructive" className="rounded-lg border-destructive/50 bg-destructive/5 [&>svg]:text-destructive">
+            <AlertCircle className="h-4 w-4 flex-shrink-0" />
+            <div className="col-start-2 flex flex-1 items-center justify-between gap-4 min-w-0">
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold text-destructive">Run error</div>
+                <div className="text-destructive/90 text-sm mt-0.5 truncate" title={runErrorMessage}>
+                  {runErrorMessage}
+                </div>
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <Button size="sm" variant="outline" className="gap-2 border-destructive/40 bg-destructive/5 text-destructive hover:bg-destructive/10 hover:border-destructive/60">
+                  <Bot className="h-3.5 w-3.5" />
+                  Ask AI
+                </Button>
+                <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => navigator.clipboard.writeText(runErrorMessage)} title="Copy">
+                  <Copy className="h-4 w-4" />
+                </Button>
+                <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:bg-destructive/10" title="Locate">
+                  <Crosshair className="h-4 w-4" />
+                </Button>
+                <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => setRunErrorDismissed(true)} title="Dismiss">
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </Alert>
+        </div>
+      )}
     </>
   )
 }

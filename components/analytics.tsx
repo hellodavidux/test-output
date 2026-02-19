@@ -1,20 +1,30 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
+import { createPortal } from "react-dom"
 import { 
   RefreshCw, 
   Calendar as CalendarIcon, 
   Download, 
   Filter, 
   ChevronDown,
+  ChevronLeft,
   Search,
   ArrowUpDown,
   Info,
   Workflow,
-  CheckCircle2,
   X,
-  Edit,
-  Bot
+  Hash,
+  MessageCircle,
+  Clock,
+  Bot,
+  User,
+  Link2,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  AlertCircle,
+  Maximize2,
+  Locate
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -22,12 +32,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { cn } from "@/lib/utils"
 import { format } from "date-fns"
-import { NodeDetailModal } from "@/components/node-detail-modal"
-import { AppIcon } from "@/components/workflow-node"
-import type { Node } from "@xyflow/react"
-
+import { WorkflowGantt, type GanttNode } from "@/components/workflow-gantt"
+import { TabContext } from "@/components/dashboard-layout"
 interface RunData {
   runId: string
   conversationId: string
@@ -51,147 +61,148 @@ const mockRuns: RunData[] = [
     latency: "1.45s",
     tokens: 71,
     user: "dhidalgo@stack-ai.com"
+  },
+  {
+    runId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    conversationId: "conv-xyz-001",
+    created: "12/05/25 09:15 AM",
+    status: "success",
+    input: "Summarize this document",
+    output: "Summary: The document covers key metrics and next steps.",
+    latency: "2.12s",
+    tokens: 142,
+    user: "user@example.com"
+  },
+  {
+    runId: "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+    conversationId: "N/A",
+    created: "12/06/25 02:30 PM",
+    status: "error",
+    input: "Generate a report",
+    output: "Error: Rate limit exceeded.",
+    latency: "0.89s",
+    tokens: 12,
+    user: "dhidalgo@stack-ai.com"
+  },
+  {
+    runId: "c3d4e5f6-a7b8-9012-cdef-123456789012",
+    conversationId: "conv-abc-002",
+    created: "12/07/25 11:00 AM",
+    status: "success",
+    input: "Translate to Spanish",
+    output: "Hola! ¿En qué puedo ayudarte hoy?",
+    latency: "1.22s",
+    tokens: 58,
+    user: "other@stack-ai.com"
+  },
+  {
+    runId: "d4e5f6a7-b8c9-0123-def0-234567890123",
+    conversationId: "conv-def-003",
+    created: "12/08/25 04:45 PM",
+    status: "running",
+    input: "Analyze sentiment",
+    output: "",
+    latency: "-",
+    tokens: 0,
+    user: "dhidalgo@stack-ai.com"
   }
 ]
 
-export function Analytics() {
+// Per-node input/output for Run Details sidebar (different text per node)
+function getNodeInputOutput(node: { id: string; label: string } | null): { input: string; output: string } {
+  if (!node) return { input: "—", output: "—" }
+  const byId: Record<string, { input: string; output: string }> = {
+    "1": { input: "Trigger: New message received from user.", output: "Message payload forwarded to the workflow." },
+    "2": { input: "User asked: What are you capable of?", output: "I can answer questions, search the web, and help with tasks. Here’s a short overview of my capabilities." },
+    "2a": { input: "Context from previous step + query: Summarize the key points.", output: "Summary: The conversation covered capabilities, examples, and next steps the user can take." },
+    "3": { input: "User intent and message content for routing.", output: "Route: Search path (confidence 0.92)." },
+    "4": { input: "Query: Latest Real Madrid score. Source: LiveScore.", output: "Real Madrid 1 - 2 Manchester City (Full Time). Match details and link returned." },
+    "5": { input: "To: user@example.com\nSubject: Your requested summary\nBody: [Generated summary].", output: "Email sent successfully. Message ID: msg_abc123." },
+    "6": { input: "Condition: search_results.count > 0. Branch: true.", output: "Taking the true branch; continuing to Notion step." },
+    "7": { input: "Title: Meeting notes\nContent: [Formatted summary from AI].", output: "Page created in Notion. URL: https://notion.so/..." },
+    "8": { input: "Final assembled response and metadata.", output: "Response delivered to user. Run completed." },
+    "9": { input: "Subflow trigger with project context.", output: "Subflow finished. 3 nodes executed." },
+  }
+  return byId[node.id] ?? { input: `Input for ${node.label}.`, output: `Output for ${node.label}.` }
+}
+
+// AI Agent–specific tab content (input, tools, completion) per instance
+function getAiAgentTabContent(nodeId: string): { input: string; tools: string; completion: string } {
+  const byId: Record<string, { input: string; tools: string; completion: string }> = {
+    "2": {
+      input: "User message: \"What are you capable of?\"\nContext: First message in conversation.",
+      tools: "Tools used: None (direct reply).",
+      completion: "The latest game score for Real Madrid is: **Real Madrid 1 - 2 Manchester City** (Full Time). You can find more details on LiveScore.\n\nI looked up the current result using the search tool. The match was part of the Champions League. Manchester City took the lead in the first half, and despite a second-half goal from Real Madrid, the visitors held on for the win.\n\nIf you need lineups, stats, or another match, say which one.",
+    },
+    "2a": {
+      input: "Previous completion + user: \"Summarize that in three bullet points.\"",
+      tools: "Tools used: None.",
+      completion: "• **Real Madrid 1 - 2 Manchester City** (Champions League).\n• Manchester City led and held on for an away win.\n• More details (lineups, stats) available on request.",
+    },
+    "4": {
+      input: "Query: \"What was the latest Real Madrid score?\"\nTool choice: Search (LiveScore).",
+      tools: "Tools used: Search – LiveScore API. Query: \"Real Madrid latest score\". Result: 1 - 2 vs Manchester City.",
+      completion: "The latest game score for Real Madrid is: **Real Madrid 1 - 2 Manchester City** (Full Time). You can find more details on LiveScore.\n\nI looked up the current result using the search tool. The match was part of the Champions League. Manchester City took the lead in the first half, and despite a second-half goal from Real Madrid, the visitors held on for the win.\n\nIf you need lineups, stats, or another match, say which one.",
+    },
+  }
+  return byId[nodeId] ?? {
+    input: "Input for AI Agent.",
+    tools: "Tools used for AI Agent.",
+    completion: "Completion for AI Agent.",
+  }
+}
+
+interface AnalyticsProps {
+  onSwitchToWorkflow?: () => void
+}
+
+export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
+  const tabContext = React.useContext(TabContext)
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
     from: new Date(2025, 11, 4), // Dec 4, 2025
     to: new Date(2025, 11, 10)   // Dec 10, 2025
   })
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
-  const [selectedRun, setSelectedRun] = useState<RunData | null>(null)
-  const [selectedNode, setSelectedNode] = useState<Node | null>(null)
-  const [activeDetailTab, setActiveDetailTab] = useState<"general" | "workflow">("workflow")
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
+  const [selectedGanttNode, setSelectedGanttNode] = useState<GanttNode | null>(null)
+  const [sidebarShowGeneral, setSidebarShowGeneral] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [completionModalOpen, setCompletionModalOpen] = useState(false)
 
-  // Mock workflow nodes for the selected run
-  const getWorkflowNodes = (): Node[] => {
-    if (!selectedRun) return []
-    
-    return [
-      {
-        id: "input-node",
-        type: "workflowNode",
-        position: { x: 0, y: 0 },
-        data: {
-          appName: "Input",
-          actionName: "User Input",
-          description: "Collect user input",
-          type: "input",
-          version: "v1.0.0",
-          input: {
-            message: selectedRun.input,
-            timestamp: selectedRun.created,
-          },
-          output: {
-            status: "success",
-            message: selectedRun.input,
-            timestamp: selectedRun.created,
-          },
-        },
-      },
-      {
-        id: "ai-agent-node",
-        type: "workflowNode",
-        position: { x: 0, y: 0 },
-        data: {
-          appName: "AI Agent",
-          actionName: "LLM",
-          description: "Process text using a large language model",
-          type: "action",
-          version: "v1.0.0",
-          input: {
-            "in-0": "real madrid"
-          },
-          output: {
-            status: "success",
-            message: "Request completed successfully",
-            timestamp: selectedRun.created,
-            data: {
-              tool_invocations: [
-                {
-                  action_id: "news_search",
-                  params: {
-                    query: "Real Madrid latest game score site:livescore.com"
-                  },
-                  output: {
-                    type: "json",
-                    message: {
-                      result: "\nNews:\n Title: Real Madrid vs Manchester City Live Scores\nLink: https://www.livescore.com/en/football/europe/champions-league/real-madrid-vs-manchester-city/1639881/\nSource: LiveScore\nContent: Real Madrid vs Manchester City Live Scores | LiveScoreScoresNewsFavouritesFootballHockeyBasketballTennisCricketTeamsManchester UnitedEnglandLiverpoolEnglandArsenalEnglandManchester CityEnglandReal MadridSpainCompetitionsPremier LeagueEnglandLaLigaSpainSerie AItalyBundesligaGermanyLigue 1FranceRegionEnglandChampions LeagueSpainItalyGermanyYour browser is out of date or some of its\nfeatures are disabled, it may not display this website or some of its parts correctly.To make sure that all features of this website work, please update your browser to the latest version and\ncheck that Javascript and Cookies are enabled.Alternatively you can navigate to a legacy version of the website, which is compatible with older browsers: https://www.livescores.comChampions LeagueLeague StageReal Madrid1 - 2Full TimeManchester CityInfoSummaryStatsLine-upsOddsLiveScore 6TableLiveScore 6H2HEventsCommentary11' P. Foden28'RodrygoJ. Bellingham 1 - 035'1 - 1 N. O'ReillyJ. Gvardiol43'A. Rüdiger 43'1 - 2PENE. HaalandHT1 - 276' N. O'Reilly82' P. Guardiola(Coach)87'Rodrygo 88'Á. Fernández Carreras 90' B. SilvaFT1 - 2AboutReal Madrid vs Manchester City Live Scores and Match InformationThe latest football scores, line-ups and more for Real Madrid vs Manchester City.Your live football score for Real Madrid vs Manchester City in the League Stage from LiveScore.com, covering football, cricket, tennis, basketball and hockey live scores.\nFootballPremier League ScoresPremier League StandingsLa Liga ScoresBundesliga ScoresChampionship ScoresSerie A ScoresOther SportsCricket ScoresTennis ScoresBasketball ScoresIce Hockey ScoresTrendingToday's Football ScoresFootball on TVChampions League ScoresFA Cup ScoresIPL ScoresNBA ScoresBettingBetting Sites UKBetting Sites INBetting Sites USNFL Betting SitesBetting Sites ZABetting Sites CACasinoCasino Sites UKFree Spins UKBingo Sites UKFree Spins ZAFree Spins USCasino Sites CAFAQContactPrivacy NoticeAdvertise© 1998-2025 LiveScore LimitedCareersNews PublishersCookie PolicyTerms of UseModern Slavery StatementCorporate\n---\nTitle: Europe Champions League Live Scores | Football\nLink: https://www.livescore.com/en/football/europe/champions-league/\nSource: LiveScore\nContent: Europe Champions League Live Scores | FootballScoresNewsFavouritesFootballHockeyBasketballTennisCricketTeamsManchester UnitedEnglandLiverpoolEnglandArsenalEnglandManchester CityEnglandReal MadridSpainCompetitionsPremier LeagueEnglandLaLigaSpainSerie AItalyBundesligaGermanyLigue 1FranceRegionEnglandChampions LeagueSpainItalyGermanyYour browser is out of date or some of its\nfeatures are disabled, it may not display this website or some of its parts correctly.To make sure that all features of this website work, please update your browser to the latest version and\ncheck that Javascript and Cookies are enabled.Alternatively you can navigate to a legacy version of the website, which is compatible with older browsers: https://www.livescores.comFootballUEFAChampions LeagueChampions LeagueUEFAOverviewFixturesResultsStandingsStatsFixtures11 DECKairat AlmatyClub BruggeBodoe/GlimtManchester City11 DECFC CopenhagenNapoliInterArsenal11 DECOlympiacosBayer Leverkusen11 DECReal MadridAS Monaco11 DECSporting CPParis Saint-GermainTottenham HotspurBorussia Dortmund11 DECVillarrealAjaxResults11 DECFTAthletic ClubParis Saint-Germain0011 DECFTBayer LeverkusenNewcastle United2211 DECFTBenficaNapoli2011 DECFTBorussia DortmundBodoe/Glimt2211 DECFTClub BruggeArsenal0311 DECFTJuventusPafos FC2011 DECFTReal MadridManchester City1211 DECFTQarabag FKAjax2411 DECFTVillarrealFC Copenhagen23Standings#TeamPlayedPGoals DifferenceGDPointsPts1Qualification to 1/8 finalsArsenal616182Qualification to 1/8 finalsBayern Munich611153Qualification to 1/8 finalsParis Saint-Germain611134Qualification to 1/8 finalsManchester City66135Qualification to 1/8 finalsAtalanta6213See AllRotate to view expanded tableTop Scorers1Kylian MbappéReal Madrid92Erling HaalandManchester City62Victor OsimhenGalatasaray64Anthony GordonNewcastle United54Harry KaneBayern Munich5See AllAboutThe latest Champions League Live Scores, plus Results, Fixtures & TablesAll the live scores, fixtures and tables for Europe Champions League from LiveScore.com.LiveScore provides you with all the latest football scores from today's Champions League matches.\nReal time live football scores and fixtures from Europe Champions League. Keep up to date with the latest\nscore,\nresults,\nstandings and Champions League schedule.\nChampions League FootballPremier League ScoresPremier League StandingsLa Liga ScoresBundesliga ScoresChampionship ScoresSerie A ScoresOther SportsCricket ScoresTennis ScoresBasketball ScoresIce Hockey ScoresTrendingToday's Football ScoresFootball on TVChampions League ScoresFA Cup ScoresIPL ScoresNBA ScoresBettingBetting Sites UKBetting Sites INBetting Sites USNFL Betting SitesBetting Sites ZABetting Sites CACasinoCasino Sites UKFree Spins UKBingo Sites UKFree Spins ZAFree Spins USCasino Sites CAFAQContactPrivacy NoticeAdvertise© 1998-2025 LiveScore LimitedCareersNews PublishersCookie PolicyTerms of UseModern Slavery StatementCorporate\n---\nTitle: Football Live Scores & Fixtures | 9 December 2025\nLink: https://www.livescore.com/en/football/2025-12-09/\nSource: LiveScore\nContent: Football Live Scores & Fixtures | 9 December 2025 | LiveScoreScoresNewsFavouritesFootballHockeyBasketballTennisCricketTeamsManchester UnitedEnglandLiverpoolEnglandArsenalEnglandManchester CityEnglandReal MadridSpainCompetitionsPremier LeagueEnglandLaLigaSpainSerie AItalyBundesligaGermanyLigue 1FranceRegionEnglandChampions LeagueSpainItalyGermanyYour browser is out of date or some of its\nfeatures are disabled, it may not display this website or some of its parts correctly.To make sure that all features of this website work, please update your browser to the latest version and\ncheck that Javascript and Cookies are enabled.Alternatively you can navigate to a legacy version of the website, which is compatible with older browsers: https://www.livescores.comLIVETuesday, 09 Dec9AboutLive Scores and fixtures for football on 9 December 2025Looking for the livescore today? See live scores and fixtures for football on 9 December 2025.LiveScore brings you the latest football fixtures, results and live score information for 9 December 2025. Revisit scores and statistics and look ahead for upcoming fixtures for your favourite sport team. Plus, find out the livescore today, 9 December 2025.FootballPremier League ScoresPremier League StandingsLa Liga ScoresBundesliga ScoresChampionship ScoresSerie A ScoresOther SportsCricket ScoresTennis ScoresBasketball ScoresIce Hockey ScoresTrendingToday's Football ScoresFootball on TVChampions League ScoresFA Cup ScoresIPL ScoresNBA ScoresBettingBetting Sites UKBetting Sites INBetting Sites USNFL Betting SitesBetting Sites ZABetting Sites CACasinoCasino Sites UKFree Spins UKBingo Sites UKFree Spins ZAFree Spins USCasino Sites CAFAQContactPrivacy NoticeAdvertise© 1998-2025 LiveScore LimitedCareersNews PublishersCookie PolicyTerms of UseModern Slavery StatementCorporate\n---\nTitle: Benfica Fixture List & Next Game\nLink: https://www.livescore.com/en/football/team/benfica/304/fixtures/\nSource: LiveScore\nContent: Benfica Fixture List & Next Game | LiveScoreScoresNewsFavouritesFootballHockeyBasketballTennisCricketTeamsManchester UnitedEnglandLiverpoolEnglandArsenalEnglandManchester CityEnglandReal MadridSpainCompetitionsPremier LeagueEnglandLaLigaSpainSerie AItalyBundesligaGermanyLigue 1FranceRegionEnglandChampions LeagueSpainItalyGermanyYour browser is out of date or some of its\nfeatures are disabled, it may not display this website or some of its parts correctly.To make sure that all features of this website work, please update your browser to the latest version and\ncheck that Javascript and Cookies are enabled.Alternatively you can navigate to a legacy version of the website, which is compatible with older browsers: https://www.livescores.comAboutBenfica fixturesBenfica next match.The latest Benfica fixture list and all the information on the next game from LiveScore.com.FootballPremier League ScoresPremier League StandingsLa Liga ScoresBundesliga ScoresChampionship ScoresSerie A ScoresOther SportsCricket ScoresTennis ScoresBasketball ScoresIce Hockey ScoresTrendingToday's Football ScoresFootball on TVChampions League ScoresFA Cup ScoresIPL ScoresNBA ScoresBettingBetting Sites UKBetting Sites INBetting Sites USNFL Betting SitesBetting Sites ZABetting Sites CACasinoCasino Sites UKFree Spins UKBingo Sites UKFree Spins ZAFree Spins USCasino Sites CAFAQContactPrivacy NoticeAdvertise© 1998-2025 LiveScore LimitedCareersNews PublishersCookie PolicyTerms of UseModern Slavery StatementCorporate\n---\nTitle: Real Madrid U19 Results List & Next Game\nLink: https://www.livescore.com/en/football/team/real-madrid-u19/7089/results/\nSource: LiveScore\nContent: Real Madrid U19 Results List & Next Game | LiveScoreScoresNewsFavouritesFootballHockeyBasketballTennisCricketTeamsManchester UnitedEnglandLiverpoolEnglandArsenalEnglandManchester CityEnglandReal MadridSpainCompetitionsPremier LeagueEnglandLaLigaSpainSerie AItalyBundesligaGermanyLigue 1FranceRegionEnglandChampions LeagueSpainItalyGermanyYour browser is out of date or some of its\nfeatures are disabled, it may not display this website or some of its parts correctly.To make sure that all features of this website work, please update your browser to the latest version and\ncheck that Javascript and Cookies are enabled.Alternatively you can navigate to a legacy version of the website, which is compatible with older browsers: https://www.livescores.comAboutReal Madrid U19 resultsReal Madrid U19 next match.The latest Real Madrid U19 results list and all the information on the next game from LiveScore.com.FootballPremier League ScoresPremier League StandingsLa Liga ScoresBundesliga ScoresChampionship ScoresSerie A ScoresOther SportsCricket ScoresTennis ScoresBasketball ScoresIce Hockey ScoresTrendingToday's Football ScoresFootball on TVChampions League ScoresFA Cup ScoresIPL ScoresNBA ScoresBettingBetting Sites UKBetting Sites INBetting Sites USNFL Betting SitesBetting Sites ZABetting Sites CACasinoCasino Sites UKFree Spins UKBingo Sites UKFree Spins ZAFree Spins USCasino Sites CAFAQContactPrivacy NoticeAdvertise© 1998-2025 LiveScore LimitedCareersNews PublishersCookie PolicyTerms of UseModern Slavery StatementCorporate\n---\n"
-                    },
-                    meta: null,
-                    save_as: ""
-                  }
-                },
-                {
-                  action_id: "slack_message",
-                  params: {
-                    message: "Real Madrid's latest game score is being searched."
-                  },
-                  output: {
-                    type: "json",
-                    message: {
-                      channel_id: "C0A0CP1EPL4",
-                      results: "Message (text) sent successfully to channel C0A0CP1EPL4 (timestamp: 1765411892.341339)",
-                      message_ts: "1765411892.341339"
-                    },
-                    meta: null,
-                    save_as: ""
-                  }
-                }
-              ],
-              formatted_prompt: "system:\nYou are an AI assistant.\n1) Be brief.\n2) Be polite.\n3) Be helpful.\n\nThe current date and time is Thursday, December 11, 2025 (00:11:24).\n\n\n\nprompt:\nuse <tool-mention data-tool-name=\"news_search\" data-provider-id=\"stackai\"></tool-mention> to find the real madrid  latest game score on Livescore.com\n\nwhile doing that, send a message with the team real madrid  to my slack channel <tool-mention data-tool-name=\"slack_message\" data-provider-id=\"slack\"></tool-mention>\n",
-              provider: {
-                name: "OpenAI",
-                model: "gpt-4o-mini"
-              },
-              params: {
-                temperature: 0,
-                top_p: 1,
-                n: 1,
-                stream: true,
-                logit_bias: {},
-                stop: null,
-                max_tokens: 1000,
-                frequency_penalty: 0,
-                presence_penalty: 0,
-                response_format: "text",
-                json_schema: null,
-                use_reasoning: false,
-                reasoning_effort: null,
-                safe_context_token_window: false,
-                seed: 42
-              },
-              completion: "The latest game score for Real Madrid is:\n\n**Real Madrid 1 - 2 Manchester City** (Full Time)\n\nYou can find more details on [LiveScore.com](https://www.livescore.com/en/football/europe/champions-league/real-madrid-vs-manchester-city/1639881/).\n\nAdditionally, I have sent a message to your Slack channel informing about the score search. If you need anything else, feel free to ask!",
-              citations: []
-            },
-          },
-          completion: "The latest game score for Real Madrid is:\n\n**Real Madrid 1 - 2 Manchester City** (Full Time)\n\nYou can find more details on [LiveScore.com](https://www.livescore.com/en/football/europe/champions-league/real-madrid-vs-manchester-city/1639881/).\n\nAdditionally, I have sent a message to your Slack channel informing about the score search. If you need anything else, feel free to ask!",
-        },
-      },
-      {
-        id: "send-email-node",
-        type: "workflowNode",
-        position: { x: 0, y: 0 },
-        data: {
-          appName: "Send Email",
-          actionName: "Send Email",
-          description: "Send an email message",
-          type: "action",
-          version: "v1.0.0",
-          input: {
-            message: selectedRun.output,
-            timestamp: selectedRun.created,
-          },
-          output: {
-            status: "success",
-            message: "Email sent successfully",
-            timestamp: selectedRun.created,
-          },
-        },
-      },
-    ]
-  }
+  // When opened from Run Progress "Expand", land on run detail view
+  useEffect(() => {
+    if (tabContext?.openAnalyticsRunDetail && mockRuns.length > 0) {
+      setSelectedRunId(mockRuns[0].runId)
+      tabContext.setOpenAnalyticsRunDetail(false)
+    }
+  }, [tabContext?.openAnalyticsRunDetail])
+
+  // When landing on run detail, show General in sidebar and no node selected
+  useEffect(() => {
+    if (selectedRunId) {
+      setSelectedGanttNode(null)
+      setSidebarShowGeneral(true)
+      setSidebarOpen(true)
+    }
+  }, [selectedRunId])
+
+  // When switching selected node, show node-specific view and open sidebar if closed
+  useEffect(() => {
+    if (selectedGanttNode?.id) {
+      setSidebarShowGeneral(false)
+      setSidebarOpen(true)
+    }
+  }, [selectedGanttNode?.id])
+
+  // Close completion modal on Escape
+  useEffect(() => {
+    if (!completionModalOpen) return
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setCompletionModalOpen(false)
+    }
+    document.addEventListener("keydown", handleEscape)
+    return () => document.removeEventListener("keydown", handleEscape)
+  }, [completionModalOpen])
 
   const metrics = [
     {
@@ -220,10 +231,311 @@ export function Analytics() {
     }
   ]
 
+  // Run detail subpage with main content + sidebar
+  const selectedRun = mockRuns.find((r) => r.runId === selectedRunId)
+  if (selectedRunId && selectedRun) {
+    return (
+      <div className="flex h-full bg-background overflow-hidden">
+        {/* Left: main content */}
+        <div className="flex flex-1 flex-col min-w-0 overflow-hidden bg-muted">
+          <div className="flex items-center flex-shrink-0 px-10 py-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-2 -ml-2 text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                setSelectedRunId(null)
+                setSelectedGanttNode(null)
+              }}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Back to Analytics
+            </Button>
+          </div>
+          <div className="flex-1 overflow-auto px-10 pb-6">
+            <h1 className="text-xl font-semibold tracking-tight mb-1">Run Details</h1>
+            <p className="text-sm text-muted-foreground mb-6">Inspect a single run: timing, inputs, outputs, and node results.</p>
+            <WorkflowGantt
+              selectedNodeId={selectedGanttNode?.id ?? null}
+              onNodeSelect={setSelectedGanttNode}
+            />
+          </div>
+        </div>
+
+        {/* Right: Run sidebar - can be closed when on General */}
+        {sidebarOpen && (
+        <aside className="w-96 border-l border-border bg-card flex-shrink-0 flex flex-col overflow-hidden">
+          <div className="flex items-center justify-between p-4 border-b border-border gap-2">
+            <div className="flex items-center gap-1 min-w-0">
+              {selectedGanttNode && !sidebarShowGeneral ? (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0 -ml-1"
+                  onClick={() => setSidebarShowGeneral(true)}
+                  aria-label="Back to General"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+              ) : null}
+              <div className="flex items-center gap-2 min-w-0">
+                <h2 className="text-base font-semibold truncate">
+                  {!selectedGanttNode || sidebarShowGeneral
+                    ? "General"
+                    : selectedGanttNode.label === "AI Agent"
+                      ? "AI Agent"
+                      : selectedGanttNode.label}
+                </h2>
+                {(!selectedGanttNode || sidebarShowGeneral) && selectedRun && (
+                  <span
+                    className={cn(
+                      "shrink-0 px-2.5 py-0.5 text-xs font-medium rounded-full",
+                      selectedRun.status === "success"
+                        ? "bg-green-100 text-green-700"
+                        : selectedRun.status === "error"
+                          ? "bg-red-100 text-red-700"
+                          : "bg-amber-100 text-amber-700"
+                    )}
+                  >
+                    {selectedRun.status === "success"
+                      ? "Success"
+                      : selectedRun.status === "error"
+                        ? "Failure"
+                        : "Running"}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-0.5 shrink-0">
+              {onSwitchToWorkflow && selectedGanttNode && !sidebarShowGeneral && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  onClick={onSwitchToWorkflow}
+                  aria-label="Locate in workflow"
+                  title="Locate in workflow"
+                >
+                  <Locate className="h-4 w-4" />
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0"
+              onClick={() => setSidebarOpen(false)}
+              aria-label="Close panel"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+          {(() => {
+            const isAiAgent = selectedGanttNode?.label === "AI Agent"
+            const triggerClass = "rounded-md px-4 text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+            if (!selectedGanttNode || sidebarShowGeneral) {
+              return (
+                <div key="general-details" className="flex-1 flex flex-col min-h-0 p-4 overflow-auto">
+                  <div className="flex flex-col text-sm">
+                    {[
+                      { icon: Hash, label: "Run ID", value: selectedRun.runId },
+                      { icon: MessageCircle, label: "Conversation ID", value: selectedRun.conversationId },
+                      { icon: CalendarIcon, label: "Date", value: selectedRun.created },
+                      { icon: Clock, label: "Duration", value: selectedRun.latency },
+                      { icon: Bot, label: "AI Model", value: "OpenAI" },
+                      { icon: User, label: "User ID", value: selectedRun.user },
+                      { icon: Link2, label: "Used Tokens", value: String(selectedRun.tokens) },
+                      { icon: ArrowDownToLine, label: "Input", value: selectedRun.input || "—" },
+                      { icon: ArrowUpFromLine, label: "Output", value: selectedRun.output || "—" },
+                      { icon: AlertCircle, label: "Errors", value: selectedRun.status === "error" ? selectedRun.output || "Error" : "N/A" },
+                    ].map(({ icon: Icon, label, value }) =>
+                      label === "Input" || label === "Output" ? (
+                        <div key={label} className="py-3 border-b border-border/60 last:border-b-0">
+                          <div className="flex items-center gap-2.5 mb-2">
+                            <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            <span className="text-muted-foreground font-medium">{label}</span>
+                          </div>
+                          <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm text-foreground/90 whitespace-pre-wrap break-words">
+                            {value}
+                          </div>
+                        </div>
+                      ) : (
+                        <div key={label} className="flex items-center justify-between gap-4 py-3 border-b border-border/60 last:border-b-0">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            <span className="text-muted-foreground font-medium">{label}</span>
+                          </div>
+                          <span className={cn("text-right font-mono text-xs truncate max-w-[200px]", label === "Run ID" && "text-[11px]")} title={value}>
+                            {value}
+                          </span>
+                        </div>
+                      )
+                    )}
+                  </div>
+                </div>
+              )
+            }
+            if (isAiAgent) {
+              return (
+              <Tabs key="ai-agent" defaultValue="completion" className="flex-1 flex flex-col min-h-0 p-4 gap-4">
+                <TabsList className="w-fit rounded-lg bg-muted p-1 h-9">
+                  <TabsTrigger value="input" className={triggerClass}>input</TabsTrigger>
+                  <TabsTrigger value="tools" className={triggerClass}>tools used</TabsTrigger>
+                  <TabsTrigger value="completion" className={triggerClass}>completion</TabsTrigger>
+                </TabsList>
+                <TabsContent value="input" className="flex-1 p-4 mt-0 overflow-auto">
+                  <p className="text-sm text-muted-foreground">Input for AI Agent.</p>
+                </TabsContent>
+                <TabsContent value="tools" className="flex-1 p-4 mt-0 overflow-auto">
+                  <p className="text-sm text-muted-foreground">Tools used for AI Agent.</p>
+                </TabsContent>
+                <TabsContent value="completion" className="flex-1 mt-0 overflow-hidden flex flex-col min-h-0">
+                  <div className="flex flex-1 flex-col gap-2 min-h-0">
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <Tabs defaultValue="formatted" className="w-fit">
+                        <TabsList className="rounded-lg bg-muted p-1 h-8">
+                          <TabsTrigger value="text" className="rounded-md px-3 text-xs text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm h-7">Text</TabsTrigger>
+                          <TabsTrigger value="formatted" className="rounded-md px-3 text-xs text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm h-7">Formatted</TabsTrigger>
+                        </TabsList>
+                      </Tabs>
+                      <div className="ml-auto flex items-center gap-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" />
+                        <Button variant="ghost" size="icon" className="h-8 w-8" />
+                      </div>
+                    </div>
+                    <div className="relative rounded-lg border border-border bg-muted/30 p-3 flex-1 min-h-0 text-sm overflow-auto">
+                      <p className="text-foreground/90 whitespace-pre-wrap break-words pr-8">
+                        The latest game score for Real Madrid is: **Real Madrid 1 - 2 Manchester City** (Full Time). You can find more details on LiveScore.
+                        {"\n\n"}
+                        I looked up the current result using the search tool. The match was part of the Champions League. Manchester City took the lead in the first half, and despite a second-half goal from Real Madrid, the visitors held on for the win.
+                        {"\n\n"}
+                        If you need lineups, stats, or another match, say which one.
+                      </p>
+                      <button
+                        type="button"
+                        className="absolute top-2 right-2 p-1.5 rounded-md bg-background/80 hover:bg-background border border-border/50 hover:border-border shadow-sm transition-colors z-10"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setCompletionModalOpen(true)
+                        }}
+                        title="Expand in modal"
+                        aria-label="Expand in modal"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5 text-muted-foreground" />
+                      </button>
+                    </div>
+                  </div>
+                </TabsContent>
+              </Tabs>
+              )
+            }
+            return (
+              <Tabs key={selectedGanttNode?.id ?? "general"} defaultValue="output" className="flex-1 flex flex-col min-h-0 p-4 gap-3">
+                {selectedGanttNode?.status === "error" && (
+                  <Alert variant="destructive" className="rounded-lg border-destructive/50 bg-destructive/5 [&>svg]:text-destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle className="font-semibold text-destructive">This node failed</AlertTitle>
+                    <AlertDescription className="flex flex-col gap-3 text-destructive/90">
+                      <p className="text-sm">
+                        {selectedGanttNode?.label} did not complete successfully. Check the output for details or get help resolving the issue.
+                      </p>
+                      <Button size="sm" variant="outline" className="w-fit gap-2 border-destructive/40 bg-destructive/5 text-destructive hover:bg-destructive/10 hover:border-destructive/60">
+                        <Bot className="h-3.5 w-3.5" />
+                        Ask AI
+                      </Button>
+                    </AlertDescription>
+                  </Alert>
+                )}
+                <TabsList className="w-fit rounded-lg bg-muted p-1 h-9 flex-shrink-0">
+                  <TabsTrigger value="input" className="rounded-md px-4 text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
+                    Input
+                  </TabsTrigger>
+                  <TabsTrigger value="output" className="rounded-md px-4 text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
+                    Output
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="input" className="flex-1 mt-0 overflow-hidden min-h-0 flex flex-col">
+                  <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm flex-1 min-h-0 overflow-auto flex flex-col">
+                    <p className="text-foreground/90 whitespace-pre-wrap break-words">
+                      {getNodeInputOutput(selectedGanttNode).input}
+                    </p>
+                  </div>
+                </TabsContent>
+                <TabsContent value="output" className="flex-1 mt-3 overflow-hidden min-h-0 flex flex-col">
+                  <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm flex-1 min-h-0 overflow-auto flex flex-col">
+                    <p className="text-foreground/90 whitespace-pre-wrap break-words">
+                      {getNodeInputOutput(selectedGanttNode).output}
+                    </p>
+                  </div>
+                </TabsContent>
+              </Tabs>
+            )
+          })()}
+        </aside>
+        )}
+        {/* Completion expand modal - slide-in from right like NodeDetailModal */}
+        {completionModalOpen &&
+          createPortal(
+            <>
+              <div
+                data-completion-modal="backdrop"
+                className="fixed inset-0 bg-black/20 z-[100]"
+                onClick={() => setCompletionModalOpen(false)}
+                aria-hidden
+              />
+              <div
+                data-completion-modal="content"
+                className="fixed right-0 top-0 bottom-0 z-[101] flex flex-col bg-card shadow-2xl rounded-l-lg overflow-hidden"
+                style={{
+                  marginTop: "24px",
+                  marginBottom: "24px",
+                  marginRight: "24px",
+                  height: "calc(100vh - 48px)",
+                  width: "60%",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex flex-1 flex-col overflow-hidden min-h-0">
+                  <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
+                    <h2 className="text-xl font-semibold">AI Agent – Completion</h2>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      onClick={() => setCompletionModalOpen(false)}
+                      aria-label="Close"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="flex-1 flex flex-col min-h-0 p-6 overflow-hidden">
+                    <div className="flex items-center gap-2 flex-shrink-0 mb-4">
+                      <Tabs defaultValue="formatted" className="w-fit">
+                        <TabsList className="rounded-lg bg-muted p-1 h-8">
+                          <TabsTrigger value="text" className="rounded-md px-3 text-xs text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm h-7">Text</TabsTrigger>
+                          <TabsTrigger value="formatted" className="rounded-md px-3 text-xs text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm h-7">Formatted</TabsTrigger>
+                        </TabsList>
+                      </Tabs>
+                    </div>
+                    <div className="rounded-lg border border-border bg-muted/30 p-4 flex-1 min-h-0 text-sm overflow-auto">
+                      <p className="text-foreground/90 whitespace-pre-wrap break-words">
+                        {getAiAgentTabContent(selectedGanttNode?.id ?? "").completion}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>,
+            document.body
+          )}
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden">
       {/* Header Section */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0 bg-muted">
         <div className="flex items-center gap-3">
           <Button variant="outline" size="sm" className="gap-2">
             <RefreshCw className="h-4 w-4" />
@@ -268,7 +580,7 @@ export function Analytics() {
       {/* Content Area with Side Pane */}
       <div className="flex flex-1 overflow-hidden">
         {/* Main Content */}
-        <div className="flex-1 overflow-auto px-6 py-4">
+        <div className="flex-1 overflow-auto px-6 py-4 bg-muted">
         {/* Metrics Cards */}
         <div className="grid grid-cols-2 gap-3 mb-6">
           {metrics.map((metric, index) => (
@@ -331,30 +643,27 @@ export function Analytics() {
           ))}
         </div>
 
+        {/* Filters - outside card */}
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="outline" size="sm" className="gap-2">
+            <Filter className="h-4 w-4" />
+            Filters
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2">
+                Columns
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {/* Column visibility options would go here */}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
         {/* Data Table */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base font-semibold">Runs</CardTitle>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" className="gap-2">
-                  <Filter className="h-4 w-4" />
-                  Filters
-                </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="gap-2">
-                      Columns
-                      <ChevronDown className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    {/* Column visibility options would go here */}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </div>
-          </CardHeader>
+        <Card className="py-4 gap-0">
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <Table>
@@ -403,10 +712,10 @@ export function Analytics() {
                 </TableHeader>
                 <TableBody>
                   {mockRuns.map((run) => (
-                    <TableRow 
+                    <TableRow
                       key={run.runId}
                       className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => setSelectedRun(run)}
+                      onClick={() => setSelectedRunId(run.runId)}
                     >
                       <TableCell className="font-mono text-xs">{run.runId}</TableCell>
                       <TableCell className="text-muted-foreground">{run.conversationId}</TableCell>
@@ -444,186 +753,7 @@ export function Analytics() {
           </CardContent>
         </Card>
         </div>
-        
-        {/* Side Pane */}
-        {selectedRun && (
-          <div className="w-96 border-l border-border bg-background flex flex-col flex-shrink-0">
-            <div className="flex items-center justify-between p-4 border-b border-border">
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-semibold">Run details</h2>
-                <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-700">
-                  Success
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                {/* Tabs */}
-                <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
-                  <button
-                    onClick={() => setActiveDetailTab("general")}
-                    className={cn(
-                      "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
-                      activeDetailTab === "general"
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    General
-                  </button>
-                  <button
-                    onClick={() => setActiveDetailTab("workflow")}
-                    className={cn(
-                      "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
-                      activeDetailTab === "workflow"
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    Workflow
-                  </button>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => setSelectedRun(null)}
-                  className="h-8 w-8"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto px-4 py-4">
-              {activeDetailTab === "workflow" ? (
-                <div className="space-y-3">
-                  {getWorkflowNodes().map((node, index) => {
-                    const data = node.data as any
-                    const appName = data?.appName || "Unknown"
-                    const actionName = data?.actionName || "Node"
-                    const type = data?.type || "action"
-                    const isLLM = appName === "AI Agent" && actionName === "LLM"
-                    
-                    // Generate identifier - match RunProgress logic
-                    let identifier = ""
-                    if (type === "input") {
-                      identifier = `in-${index}`
-                    } else if (type === "output") {
-                      const outputIndex = getWorkflowNodes().slice(0, index + 1).filter(n => (n.data as any)?.type === "output").length - 1
-                      identifier = `out-${outputIndex}`
-                    } else if (isLLM || appName.toLowerCase().includes("openai") || appName.toLowerCase().includes("anthropic")) {
-                      const llmIndex = getWorkflowNodes().slice(0, index + 1).filter(n => {
-                        const d = n.data as any
-                        return (d?.appName === "AI Agent" && d?.actionName === "LLM") || d?.appName?.toLowerCase().includes("openai") || d?.appName?.toLowerCase().includes("anthropic")
-                      }).length - 1
-                      identifier = `llm-${llmIndex}`
-                    } else {
-                      identifier = node.id.includes("-") 
-                        ? node.id.split("-").slice(-2).join("-")
-                        : node.id
-                    }
-
-                    // Get duration for LLM nodes
-                    const duration = isLLM ? 11.3 : undefined
-
-                    return (
-                      <div key={node.id} className="flex items-center gap-3">
-                        {/* Icon container with dotted line connection - outside and to the left */}
-                        <div className="relative flex-shrink-0">
-                          {/* Dotted vertical line connector - only show if not last item */}
-                          {index < getWorkflowNodes().length - 1 && (
-                            <div className="absolute left-1/2 top-10 -translate-x-1/2 w-0.5 h-8 border-l-2 border-dashed border-gray-300" />
-                          )}
-                          {isLLM ? (
-                            // Robot icon for LLM nodes - square div
-                            <div className="w-10 h-10 flex items-center justify-center flex-shrink-0 border border-gray-300 rounded-full">
-                              <Bot className="w-5 h-5 text-foreground" />
-                            </div>
-                          ) : (
-                            // Edit/pencil icon for input/output nodes - square div
-                            <div className="w-10 h-10 flex items-center justify-center flex-shrink-0 border border-gray-300 rounded-full">
-                              <Edit className="w-5 h-5 text-foreground" />
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Card content - separate div */}
-                        <div
-                          onClick={() => setSelectedNode(node)}
-                          className={`flex-1 flex items-center gap-4 px-4 h-10 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer bg-white border border-gray-200`}
-                        >
-                          {/* Node name and identifier */}
-                          <div className="flex-1 min-w-0 flex items-center gap-2">
-                            <div className="text-sm font-medium text-foreground">
-                              {isLLM ? "OpenAI" : actionName}
-                            </div>
-                            <span className="px-2 py-0.5 text-xs font-normal text-gray-400 bg-gray-50 border border-gray-200 rounded-md whitespace-nowrap">
-                              {identifier}
-                            </span>
-                            {/* Duration for LLM nodes */}
-                            {duration && (
-                              <span className="text-xs text-gray-500 whitespace-nowrap ml-1">
-                                {duration.toFixed(1)}s
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Checkmark/Status Icon */}
-                          <div className="flex-shrink-0">
-                            <CheckCircle2 className="w-5 h-5 text-green-600" />
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="text-sm font-medium text-muted-foreground mb-2">Run ID</h3>
-                    <p className="font-mono text-xs break-all">{selectedRun.runId}</p>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-muted-foreground mb-2">Conversation ID</h3>
-                    <p className="text-sm">{selectedRun.conversationId}</p>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-muted-foreground mb-2">Created</h3>
-                    <p className="text-sm">{selectedRun.created}</p>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-muted-foreground mb-2">Input</h3>
-                    <p className="text-sm bg-muted p-3 rounded-md">{selectedRun.input}</p>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-muted-foreground mb-2">Output</h3>
-                    <p className="text-sm bg-muted p-3 rounded-md">{selectedRun.output}</p>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-muted-foreground mb-2">Latency</h3>
-                    <p className="text-sm">{selectedRun.latency}</p>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-muted-foreground mb-2">Tokens</h3>
-                    <p className="text-sm">{selectedRun.tokens}</p>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-muted-foreground mb-2">User</h3>
-                    <p className="text-sm">{selectedRun.user}</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
       </div>
-
-      {/* Node Detail Modal */}
-      {selectedNode && (
-        <NodeDetailModal
-          node={selectedNode}
-          onClose={() => setSelectedNode(null)}
-          initialTab="output"
-          initialViewMode="formatted"
-        />
-      )}
     </div>
   )
 }

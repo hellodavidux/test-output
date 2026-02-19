@@ -67,6 +67,13 @@ import { cn } from "@/lib/utils"
 import type { SelectedAction } from "@/lib/types"
 import { Analytics } from "@/components/analytics"
 
+export const TabContext = React.createContext<{
+  setActiveTab: (tab: string) => void
+  setResetAnalyticsKey?: React.Dispatch<React.SetStateAction<number>>
+  openAnalyticsRunDetail: boolean
+  setOpenAnalyticsRunDetail: (v: boolean) => void
+} | null>(null)
+
 interface DashboardLayoutProps {
   children: React.ReactNode
   onActionSelect?: (action: SelectedAction) => void
@@ -75,8 +82,11 @@ interface DashboardLayoutProps {
 
 export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLayoutProps) {
   const [activeTab, setActiveTab] = React.useState("Workflow")
+  const [resetAnalyticsKey, setResetAnalyticsKey] = React.useState(0)
+  const [openAnalyticsRunDetail, setOpenAnalyticsRunDetail] = React.useState(false)
 
   return (
+    <TabContext.Provider value={{ setActiveTab, setResetAnalyticsKey, openAnalyticsRunDetail, setOpenAnalyticsRunDetail }}>
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background">
       {/* Top Bar */}
       <div className="flex h-14 items-center justify-between border-b border-border bg-background px-4">
@@ -93,7 +103,12 @@ export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLa
           {["Workflow", "Export", "Analytics", "Manager"].map((tab) => (
             <button
               key={tab}
-              onClick={() => setActiveTab(tab)}
+              onClick={() => {
+                if (tab === "Analytics") {
+                  setResetAnalyticsKey((k) => k + 1)
+                }
+                setActiveTab(tab)
+              }}
               className={cn(
                 "px-4 py-2 text-sm font-medium transition-colors rounded-md",
                 activeTab === tab
@@ -106,11 +121,8 @@ export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLa
           ))}
         </div>
 
-        {/* Right: User Profile and Actions */}
+        {/* Right: Actions */}
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted border border-border">
-            <User className="h-4 w-4 text-muted-foreground" />
-          </div>
           <Button variant="ghost" size="icon-sm" className="h-8 w-8">
             <Upload className="h-4 w-4" />
           </Button>
@@ -256,10 +268,11 @@ export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLa
 
         {/* Canvas Area */}
         <div className="flex-1 overflow-hidden relative">
-          {activeTab === "Analytics" ? <Analytics /> : children}
+          {activeTab === "Analytics" ? <Analytics key={resetAnalyticsKey} onSwitchToWorkflow={() => setActiveTab("Workflow")} /> : children}
         </div>
       </div>
     </div>
+    </TabContext.Provider>
   )
 }
 

@@ -1,10 +1,12 @@
 "use client"
 
 import React, { useState, useEffect, useRef } from "react"
-import { Clock, X, ChevronUp, CheckCircle2, Loader2, Edit, Bot } from "lucide-react"
+import { Clock, X, ChevronUp, Maximize2 } from "lucide-react"
 import type { Node } from "@xyflow/react"
 import { getNodeIconBg, AppIcon } from "./workflow-node"
 import { NodeDetailModal } from "./node-detail-modal"
+import { WorkflowGantt, type GanttNode } from "./workflow-gantt"
+import { TabContext } from "./dashboard-layout"
 
 interface RunProgressProps {
   nodes: Node[]
@@ -28,8 +30,16 @@ interface NodeProgress {
 export function RunProgress({ nodes, isRunning = false, runStatus = "success", shouldExpand = false, onExpandChange }: RunProgressProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [selectedNode, setSelectedNode] = useState<Node | null>(null)
+  const [selectedGanttNodeId, setSelectedGanttNodeId] = useState<string | null>(null)
+  const [runStartTime, setRunStartTime] = useState<number | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const tabContext = React.useContext(TabContext)
+
+  React.useEffect(() => {
+    if (isRunning) setRunStartTime((t) => t ?? Date.now())
+    else setRunStartTime(null)
+  }, [isRunning])
 
   // Sync with external shouldExpand prop
   useEffect(() => {
@@ -50,11 +60,10 @@ export function RunProgress({ nodes, isRunning = false, runStatus = "success", s
     return nodes.find(n => n.id === nodeId)
   }
 
-  // Handle node click to open modal
+  // Handle node click to open modal (from list)
   const handleNodeClick = (nodeProgressItem: NodeProgress) => {
     const node = findNodeById(nodeProgressItem.id)
     if (node) {
-      // Store the identifier in the node data temporarily for the modal
       const nodeWithIdentifier = {
         ...node,
         data: {
@@ -64,6 +73,49 @@ export function RunProgress({ nodes, isRunning = false, runStatus = "success", s
         }
       }
       setSelectedNode(nodeWithIdentifier)
+    }
+  }
+
+  // Handle Gantt node click (compact panel) – open modal for that node
+  const handleGanttNodeSelect = (ganttNode: GanttNode | null) => {
+    if (!ganttNode) {
+      setSelectedNode(null)
+      setSelectedGanttNodeId(null)
+      return
+    }
+    setSelectedGanttNodeId(ganttNode.id)
+    const duration = ganttNode.endSec - ganttNode.startSec
+    const isError = ganttNode.status === "error"
+    const errorOutput = isError
+      ? `Error: ${ganttNode.label} failed to complete.\n\nThis node did not run successfully. Check configuration, credentials, or inputs and try again.`
+      : undefined
+    const match = nodes.find(
+      (n) =>
+        (n.data as any)?.actionName === ganttNode.label ||
+        (n.data as any)?.appName === ganttNode.label
+    )
+    if (match) {
+      setSelectedNode({
+        ...match,
+        data: {
+          ...match.data,
+          _duration: duration,
+          ...(errorOutput != null && { output: errorOutput }),
+        },
+      } as Node)
+    } else {
+      const syntheticNode: Node = {
+        id: ganttNode.id,
+        position: { x: 0, y: 0 },
+        data: {
+          appName: ganttNode.label,
+          actionName: ganttNode.label,
+          type: "action",
+          _duration: duration,
+          ...(errorOutput != null && { output: errorOutput }),
+        },
+      } as Node
+      setSelectedNode(syntheticNode)
     }
   }
 
@@ -201,7 +253,7 @@ export function RunProgress({ nodes, isRunning = false, runStatus = "success", s
         {/* Header */}
         <div className={`flex items-center justify-between px-6 py-4 border-b flex-shrink-0 ${isInModal ? 'rounded-t-lg' : ''}`}>
           <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold">Run Progress</h2>
+            <h2 className="text-base font-semibold">Run Progress</h2>
             <span className={`px-2.5 py-0.5 text-xs font-medium rounded-full ${
               runStatus === "success" 
                 ? "bg-green-100 text-green-700" 
@@ -212,118 +264,47 @@ export function RunProgress({ nodes, isRunning = false, runStatus = "success", s
               {runStatus === "success" ? "Success" : runStatus === "error" ? "Error" : "Running"}
             </span>
           </div>
-          {isInModal && onModalClose ? (
-            <button
-              onClick={() => {
-                onModalClose()
-                onStandaloneClose?.()
-              }}
-              className="rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden p-1"
-              aria-label="Close"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          ) : !selectedNode ? (
-            <button
-              onClick={() => handleExpandChange(false)}
-              className="rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden p-1"
-              aria-label="Close"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          ) : null}
+          <div className="flex items-center gap-1">
+            {!isInModal && tabContext && (
+              <button
+                onClick={() => {
+                  tabContext.setOpenAnalyticsRunDetail(true)
+                  tabContext.setActiveTab("Analytics")
+                  tabContext.setResetAnalyticsKey?.((k) => k + 1)
+                  handleExpandChange(false)
+                }}
+                className="rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden p-1"
+                aria-label="Expand to Analytics"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {isInModal && onModalClose ? (
+              <button
+                onClick={() => {
+                  onModalClose()
+                  onStandaloneClose?.()
+                }}
+                className="rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden p-1"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            ) : !selectedNode ? (
+              <button
+                onClick={() => handleExpandChange(false)}
+                className="rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden p-1"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            ) : null}
+          </div>
         </div>
 
-        {/* Content - Scrollable list */}
-        <div className={`${isInModal ? 'rounded-b-lg' : 'flex-1'} overflow-y-auto px-4 py-4`}>
-          <div className="space-y-3">
-            {nodeProgress.map((nodeProgressItem, index) => {
-              // Determine icon based on node type
-              const isLLM = nodeProgressItem.nodeData.appName === "AI Agent" && nodeProgressItem.nodeData.actionName === "LLM"
-              const isInput = nodeProgressItem.type === "input"
-              const isOutput = nodeProgressItem.type === "output"
-              
-              const isSelected = selectedNode?.id === nodeProgressItem.id
-              
-              return (
-                <div key={nodeProgressItem.id} className="flex items-center gap-3">
-                  {/* Icon container with dotted line connection - outside and to the left */}
-                  <div className="relative flex-shrink-0">
-                    {/* Dotted vertical line connector - only show if not last item */}
-                    {index < nodeProgress.length - 1 && (
-                      <div className="absolute left-1/2 top-10 -translate-x-1/2 w-0.5 h-8 border-l-2 border-dashed border-gray-300" />
-                    )}
-                    {isLLM ? (
-                      // Robot icon for LLM nodes - square div with selected state
-                      <div className={`w-10 h-10 flex items-center justify-center flex-shrink-0 border rounded-full transition-all ${
-                        isSelected 
-                          ? "border-black bg-gray-100" 
-                          : "border-gray-300"
-                      }`}>
-                        <Bot className={`w-5 h-5 transition-colors ${
-                          isSelected ? "text-black" : "text-foreground"
-                        }`} />
-                      </div>
-                    ) : (
-                      // Edit/pencil icon for input/output nodes - square div with selected state
-                      <div className={`w-10 h-10 flex items-center justify-center flex-shrink-0 border rounded-full transition-all ${
-                        isSelected 
-                          ? "border-black bg-gray-100" 
-                          : "border-gray-300"
-                      }`}>
-                        <Edit className={`w-5 h-5 transition-colors ${
-                          isSelected ? "text-black" : "text-foreground"
-                        }`} />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Card content - separate div */}
-                  <div
-                    onClick={() => handleNodeClick(nodeProgressItem)}
-                    className={`flex-1 flex items-center gap-4 px-4 h-10 rounded-lg hover:bg-gray-50 transition-all cursor-pointer ${
-                      isSelected 
-                        ? "bg-gray-100 border border-black shadow-sm" 
-                        : "bg-white border border-gray-200"
-                    }`}
-                  >
-                          {/* Node name and identifier */}
-                          <div className="flex-1 min-w-0 flex items-center gap-2">
-                            <div className={`text-sm font-medium transition-colors ${
-                              isSelected ? "text-black font-semibold" : "text-foreground"
-                            }`}>
-                              {isLLM ? "OpenAI" : nodeProgressItem.name}
-                            </div>
-                            <span className={`px-2 py-0.5 text-xs font-normal rounded-md whitespace-nowrap transition-colors ${
-                              isSelected 
-                                ? "text-black bg-gray-200" 
-                                : "text-gray-400 bg-gray-50 border border-gray-200"
-                            }`}>
-                              {nodeProgressItem.identifier}
-                            </span>
-                            {/* Duration for LLM nodes */}
-                            {nodeProgressItem.duration && (
-                              <span className={`text-xs whitespace-nowrap ml-1 transition-colors ${
-                                isSelected ? "text-black font-medium" : "text-gray-500"
-                              }`}>
-                                {nodeProgressItem.duration.toFixed(1)}s
-                              </span>
-                            )}
-                          </div>
-
-                    {/* Checkmark/Status Icon */}
-                    <div className="flex-shrink-0">
-                      {nodeProgressItem.status === "running" ? (
-                        <Loader2 className="w-5 h-5 text-purple-600 animate-spin" />
-                      ) : (
-                        <CheckCircle2 className="w-5 h-5 text-green-600" />
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+        {/* Content - Compact Gantt (scrollable sideways) */}
+        <div className={`${isInModal ? "rounded-b-lg" : "flex-1 min-h-0 flex flex-col"} overflow-hidden px-3 py-3 bg-muted/30`}>
+          <WorkflowGantt compact onNodeSelect={handleGanttNodeSelect} selectedNodeId={selectedGanttNodeId} isRunning={isRunning} runStartTime={runStartTime} />
         </div>
       </div>
     </div>
@@ -354,12 +335,14 @@ export function RunProgress({ nodes, isRunning = false, runStatus = "success", s
           node={selectedNode}
           onClose={() => {
             setSelectedNode(null)
+            setSelectedGanttNodeId(null)
             // Also close the RunProgress panel when modal closes
             handleExpandChange(false)
           }}
           showRunProgress={true}
           runProgressComponent={renderRunProgressPanel(true, () => {
             setSelectedNode(null)
+            setSelectedGanttNodeId(null)
             handleExpandChange(false)
           }, () => handleExpandChange(false))}
         />
