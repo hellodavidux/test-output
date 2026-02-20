@@ -464,79 +464,53 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
             }
             if (isAiAgent) {
               return (
-              <Tabs key="ai-agent" defaultValue="completion" className="flex-1 flex flex-col min-h-0 p-4 gap-4">
+              <Tabs key="ai-agent" defaultValue="completion" className="flex-1 flex flex-col min-h-0 p-4 gap-4 overflow-auto">
                 <TabsList className="w-fit rounded-lg bg-muted p-1 h-9">
-                  <TabsTrigger value="context" className={triggerClass}>Context</TabsTrigger>
                   <TabsTrigger value="input" className={triggerClass}>input</TabsTrigger>
                   <TabsTrigger value="tools" className={triggerClass}>Tools</TabsTrigger>
                   <TabsTrigger value="completion" className={triggerClass}>Completion</TabsTrigger>
                 </TabsList>
-                <TabsContent value="context" className="flex-1 mt-0 overflow-auto">
+                <TabsContent value="input" className="flex-1 mt-0 flex flex-col gap-4">
+                  <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm overflow-auto shrink-0 min-h-[230px]">
+                    <p className="text-foreground/90 whitespace-pre-wrap break-words">
+                      {getAiAgentTabContent(selectedGanttNode?.id ?? "").input}
+                    </p>
+                  </div>
                   {(() => {
-                    const { inputFrom, outputTo } = getNodeContext(selectedGanttNode, runGanttNodes)
+                    const { inputFrom } = getNodeContext(selectedGanttNode, runGanttNodes)
                     return (
-                      <div className="flex flex-col gap-4">
-                        <div>
-                          <div className="text-sm font-medium flex items-center gap-2 py-1 text-muted-foreground">
-                            <ArrowLeft className="h-4 w-4" />
-                            Receives input from:
-                          </div>
-                          {inputFrom.length === 0 ? (
-                            <p className="text-xs text-muted-foreground py-1">No upstream node.</p>
-                          ) : (
-                            inputFrom.map((n) => (
-                              <button
-                                key={n.id}
-                                type="button"
-                                className="flex w-full items-center gap-2 rounded-md bg-muted/20 py-2 px-3 text-left hover:bg-muted/30 hover:border-border/50 border border-transparent cursor-pointer transition-colors"
-                                onClick={() => setSelectedGanttNode(n)}
-                                onMouseEnter={() => setHoveredContextNodeId(n.id)}
-                                onMouseLeave={() => setHoveredContextNodeId(null)}
-                              >
-                                <GanttNodeIcon type={n.icon} />
-                                <span className="text-sm font-medium truncate flex-1 min-w-0">{n.label}</span>
-                                <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{(n.endSec - n.startSec).toFixed(1)}</span>
-                              </button>
-                            ))
-                          )}
+                      <div className="flex flex-col gap-2 pr-1 shrink-0">
+                        <div className="text-sm font-medium flex items-center gap-2 py-1 text-muted-foreground">
+                          <ArrowLeft className="h-4 w-4" />
+                          Receives input from:
                         </div>
-                        <Separator className="my-0" />
-                        <div>
-                          <div className="text-sm font-medium flex items-center gap-2 py-1 text-muted-foreground">
-                            <ArrowRight className="h-4 w-4" />
-                            Sends Output to:
-                          </div>
-                          {outputTo.length === 0 ? (
-                            <p className="text-xs text-muted-foreground py-1">No downstream node.</p>
-                          ) : (
-                            outputTo.map((n) => (
-                              <button
-                                key={n.id}
-                                type="button"
-                                className="flex w-full items-center gap-2 rounded-md bg-muted/20 py-2 px-3 text-left hover:bg-muted/30 hover:border-border/50 border border-transparent cursor-pointer transition-colors"
-                                onClick={() => setSelectedGanttNode(n)}
-                                onMouseEnter={() => setHoveredContextNodeId(n.id)}
-                                onMouseLeave={() => setHoveredContextNodeId(null)}
-                              >
-                                <GanttNodeIcon type={n.icon} />
-                                <span className="text-sm font-medium truncate flex-1 min-w-0">{n.label}</span>
-                                <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{(n.endSec - n.startSec).toFixed(1)}</span>
-                              </button>
-                            ))
-                          )}
-                        </div>
+                        {inputFrom.length === 0 ? (
+                          <p className="text-xs text-muted-foreground py-1">No upstream node.</p>
+                        ) : (
+                          inputFrom.map((n) => (
+                            <button
+                              key={n.id}
+                              type="button"
+                              className="flex w-full items-center gap-2 rounded-md bg-muted/20 py-2 px-3 text-left hover:bg-muted/30 hover:border-border/50 border border-transparent cursor-pointer transition-colors"
+                              onClick={() => setSelectedGanttNode(n)}
+                              onMouseEnter={() => setHoveredContextNodeId(n.id)}
+                              onMouseLeave={() => setHoveredContextNodeId(null)}
+                            >
+                              <GanttNodeIcon type={n.icon} />
+                              <span className="text-sm font-medium truncate flex-1 min-w-0">{n.label}</span>
+                              <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{(n.endSec - n.startSec).toFixed(1)}</span>
+                            </button>
+                          ))
+                        )}
                       </div>
                     )
                   })()}
                 </TabsContent>
-                <TabsContent value="input" className="flex-1 p-4 mt-0 overflow-auto">
-                  <p className="text-sm text-muted-foreground">Input for AI Agent.</p>
-                </TabsContent>
                 <TabsContent value="tools" className="flex-1 p-4 mt-0 overflow-auto">
                   <p className="text-sm text-muted-foreground">Tools invoked by AI Agent.</p>
                 </TabsContent>
-                <TabsContent value="completion" className="flex-1 mt-0 overflow-hidden flex flex-col min-h-0">
-                  <div className="flex flex-1 flex-col gap-2 min-h-0">
+                <TabsContent value="completion" className="mt-0 flex flex-col gap-4">
+                  <div className="flex flex-col gap-2 shrink-0">
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <Tabs defaultValue="formatted" className="w-fit">
                         <TabsList className="rounded-lg bg-muted p-1 h-8">
@@ -576,7 +550,7 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                         </Button>
                       </div>
                     </div>
-                    <div className="relative rounded-lg border border-border bg-muted/30 p-3 flex-1 min-h-0 text-sm overflow-auto">
+                    <div className="relative rounded-lg border border-border bg-muted/30 p-3 min-h-[230px] text-sm overflow-auto shrink-0">
                       <p className="text-foreground/90 whitespace-pre-wrap break-words pr-8">
                         {getAiAgentTabContent(selectedGanttNode?.id ?? "").completion}
                       </p>
@@ -594,6 +568,35 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                       </button>
                     </div>
                   </div>
+                  {(() => {
+                    const { outputTo } = getNodeContext(selectedGanttNode, runGanttNodes)
+                    return (
+                      <div className="flex flex-col gap-2 shrink-0">
+                        <div className="text-sm font-medium flex items-center gap-2 py-1 text-muted-foreground">
+                          <ArrowRight className="h-4 w-4" />
+                          Sends Output to:
+                        </div>
+                        {outputTo.length === 0 ? (
+                          <p className="text-xs text-muted-foreground py-1">No downstream node.</p>
+                        ) : (
+                          outputTo.map((n) => (
+                            <button
+                              key={n.id}
+                              type="button"
+                              className="flex w-full items-center gap-2 rounded-md bg-muted/20 py-2 px-3 text-left hover:bg-muted/30 hover:border-border/50 border border-transparent cursor-pointer transition-colors"
+                              onClick={() => setSelectedGanttNode(n)}
+                              onMouseEnter={() => setHoveredContextNodeId(n.id)}
+                              onMouseLeave={() => setHoveredContextNodeId(null)}
+                            >
+                              <GanttNodeIcon type={n.icon} />
+                              <span className="text-sm font-medium truncate flex-1 min-w-0">{n.label}</span>
+                              <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{(n.endSec - n.startSec).toFixed(1)}</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )
+                  })()}
                 </TabsContent>
               </Tabs>
               )
@@ -660,15 +663,13 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                   })()}
                 </TabsContent>
                 <TabsContent value="output" className="flex-1 mt-0 overflow-auto min-h-0 flex flex-col gap-4">
-                  <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm overflow-auto flex flex-col shrink-0 min-h-[230px]">
-                    {selectedGanttNode?.status === "error" ? (
-                      <p className="text-muted-foreground">No output (this node failed).</p>
-                    ) : (
+                  {selectedGanttNode?.status !== "error" && (
+                    <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm overflow-auto flex flex-col shrink-0 min-h-[230px]">
                       <p className="text-foreground/90 whitespace-pre-wrap break-words">
                         {getNodeInputOutput(selectedGanttNode).output}
                       </p>
-                    )}
-                  </div>
+                    </div>
+                  )}
                   {(() => {
                     const { outputTo } = getNodeContext(selectedGanttNode, runGanttNodes)
                     return (

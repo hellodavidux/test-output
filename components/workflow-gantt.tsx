@@ -410,10 +410,14 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                   key={sec}
                   className="flex flex-1 min-w-0 flex-col items-center pb-0.5"
                 >
-                  <div className="w-px h-1.5 shrink-0 bg-border/60 rounded-full" aria-hidden />
-                  <span className="text-[10px] text-muted-foreground tabular-nums text-center">
-                    {sec % 2 === 0 ? `${sec}s` : ""}
-                  </span>
+                  {sec % 2 === 0 ? (
+                    <>
+                      <span className="text-[10px] text-muted-foreground tabular-nums text-center">
+                        {sec}s
+                      </span>
+                      <div className="w-px h-1.5 shrink-0 bg-border/60 rounded-full mt-0.5" aria-hidden />
+                    </>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -431,7 +435,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                   <div
                     key={node.id}
                     className={cn(
-                      "group flex items-center flex-shrink-0 cursor-pointer hover:bg-muted/20 border-b border-border/30 pr-8",
+                      "group flex items-center flex-shrink-0 cursor-pointer hover:bg-muted/30 border-b border-border/30 pr-8",
                       index === 0 && "border-t border-border/30",
                       isSelected && "bg-muted/10 shadow-[inset_2px_0_0_0_hsl(var(--primary))]",
                       isHighlighted && "bg-primary/5 hover:bg-primary/5"
