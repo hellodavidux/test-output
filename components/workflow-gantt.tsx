@@ -408,9 +408,12 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
               {Array.from({ length: Math.ceil(maxSec) + 1 }, (_, i) => i).map((sec) => (
                 <div
                   key={sec}
-                  className="text-[10px] text-muted-foreground tabular-nums flex-1 min-w-0 text-center pb-0.5"
+                  className="flex flex-1 min-w-0 flex-col items-center pb-0.5"
                 >
-                  {sec % 2 === 0 ? `${sec}s` : ""}
+                  <div className="w-px h-1.5 shrink-0 bg-border/60 rounded-full" aria-hidden />
+                  <span className="text-[10px] text-muted-foreground tabular-nums text-center">
+                    {sec % 2 === 0 ? `${sec}s` : ""}
+                  </span>
                 </div>
               ))}
             </div>
@@ -419,7 +422,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
           {/* Body: one row per node so list and bar stay aligned */}
           <ScrollArea className="flex-1 min-h-0">
             <div className="flex flex-col min-w-0">
-              {visibleNodes.map((node) => {
+              {visibleNodes.map((node, index) => {
                 const isSelected = selectedNodeId === node.id
                 const isHighlighted = highlightNodeId === node.id
                 const leftPct = (node.startSec / maxSec) * 100
@@ -429,7 +432,8 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                     key={node.id}
                     className={cn(
                       "group flex items-center flex-shrink-0 cursor-pointer hover:bg-muted/20 border-b border-border/30 pr-8",
-                      isSelected && "bg-muted/10 border-l-2 border-l-primary",
+                      index === 0 && "border-t border-border/30",
+                      isSelected && "bg-muted/10 shadow-[inset_2px_0_0_0_hsl(var(--primary))]",
                       isHighlighted && "bg-primary/5 hover:bg-primary/5"
                     )}
                     style={{ minHeight: ROW_HEIGHT }}

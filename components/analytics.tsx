@@ -601,9 +601,6 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
             return (
               <Tabs key={selectedGanttNode?.id ?? "general"} defaultValue="output" className="flex-1 flex flex-col min-h-0 p-4 gap-3">
                 <TabsList className="w-fit rounded-lg bg-muted p-1 h-9 flex-shrink-0">
-                  <TabsTrigger value="context" className="rounded-md px-4 text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
-                    Context
-                  </TabsTrigger>
                   <TabsTrigger value="input" className="rounded-md px-4 text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
                     Input
                   </TabsTrigger>
@@ -626,73 +623,44 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                     </AlertDescription>
                   </Alert>
                 )}
-                <TabsContent value="context" className="flex-1 mt-0 overflow-auto min-h-0 flex flex-col gap-4">
-                  {(() => {
-                    const { inputFrom, outputTo } = getNodeContext(selectedGanttNode, runGanttNodes)
-                    return (
-                      <div className="flex flex-col gap-4 pr-1">
-                        <div>
-                          <div className="text-sm font-medium flex items-center gap-2 py-1 text-muted-foreground">
-                            <ArrowLeft className="h-4 w-4" />
-                            Receives input from:
-                          </div>
-                          {inputFrom.length === 0 ? (
-                            <p className="text-xs text-muted-foreground py-1">No upstream node (this node starts first or has no prior node).</p>
-                          ) : (
-                            inputFrom.map((n) => (
-                              <button
-                                key={n.id}
-                                type="button"
-                                className="flex w-full items-center gap-2 rounded-md bg-muted/20 py-2 px-3 text-left hover:bg-muted/30 hover:border-border/50 border border-transparent cursor-pointer transition-colors"
-                                onClick={() => setSelectedGanttNode(n)}
-                                onMouseEnter={() => setHoveredContextNodeId(n.id)}
-                                onMouseLeave={() => setHoveredContextNodeId(null)}
-                              >
-                                <GanttNodeIcon type={n.icon} />
-                                <span className="text-sm font-medium truncate flex-1 min-w-0">{n.label}</span>
-                                <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{(n.endSec - n.startSec).toFixed(1)}</span>
-                              </button>
-                            ))
-                          )}
-                        </div>
-                        <Separator className="my-0" />
-                        <div>
-                          <div className="text-sm font-medium flex items-center gap-2 py-1 text-muted-foreground">
-                            <ArrowRight className="h-4 w-4" />
-                            Sends Output to:
-                          </div>
-                          {outputTo.length === 0 ? (
-                            <p className="text-xs text-muted-foreground py-1">No downstream node (this node is last or output is terminal).</p>
-                          ) : (
-                            outputTo.map((n) => (
-                              <button
-                                key={n.id}
-                                type="button"
-                                className="flex w-full items-center gap-2 rounded-md bg-muted/20 py-2 px-3 text-left hover:bg-muted/30 hover:border-border/50 border border-transparent cursor-pointer transition-colors"
-                                onClick={() => setSelectedGanttNode(n)}
-                                onMouseEnter={() => setHoveredContextNodeId(n.id)}
-                                onMouseLeave={() => setHoveredContextNodeId(null)}
-                              >
-                                <GanttNodeIcon type={n.icon} />
-                                <span className="text-sm font-medium truncate flex-1 min-w-0">{n.label}</span>
-                                <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{(n.endSec - n.startSec).toFixed(1)}</span>
-                              </button>
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })()}
-                </TabsContent>
-                <TabsContent value="input" className="flex-1 mt-0 overflow-hidden min-h-0 flex flex-col">
-                  <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm flex-1 min-h-0 overflow-auto flex flex-col">
+                <TabsContent value="input" className="flex-1 mt-0 overflow-auto min-h-0 flex flex-col gap-4">
+                  <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm overflow-auto flex flex-col shrink-0 min-h-[230px]">
                     <p className="text-foreground/90 whitespace-pre-wrap break-words">
                       {getNodeInputOutput(selectedGanttNode).input}
                     </p>
                   </div>
+                  {(() => {
+                    const { inputFrom } = getNodeContext(selectedGanttNode, runGanttNodes)
+                    return (
+                      <div className="flex flex-col gap-2 pr-1 shrink-0">
+                        <div className="text-sm font-medium flex items-center gap-2 py-1 text-muted-foreground">
+                          <ArrowLeft className="h-4 w-4" />
+                          Receives input from:
+                        </div>
+                        {inputFrom.length === 0 ? (
+                          <p className="text-xs text-muted-foreground py-1">No upstream node (this node starts first or has no prior node).</p>
+                        ) : (
+                          inputFrom.map((n) => (
+                            <button
+                              key={n.id}
+                              type="button"
+                              className="flex w-full items-center gap-2 rounded-md bg-muted/20 py-2 px-3 text-left hover:bg-muted/30 hover:border-border/50 border border-transparent cursor-pointer transition-colors"
+                              onClick={() => setSelectedGanttNode(n)}
+                              onMouseEnter={() => setHoveredContextNodeId(n.id)}
+                              onMouseLeave={() => setHoveredContextNodeId(null)}
+                            >
+                              <GanttNodeIcon type={n.icon} />
+                              <span className="text-sm font-medium truncate flex-1 min-w-0">{n.label}</span>
+                              <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{(n.endSec - n.startSec).toFixed(1)}</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )
+                  })()}
                 </TabsContent>
-                <TabsContent value="output" className="flex-1 mt-3 overflow-hidden min-h-0 flex flex-col">
-                  <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm flex-1 min-h-0 overflow-auto flex flex-col">
+                <TabsContent value="output" className="flex-1 mt-0 overflow-auto min-h-0 flex flex-col gap-4">
+                  <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm overflow-auto flex flex-col shrink-0 min-h-[230px]">
                     {selectedGanttNode?.status === "error" ? (
                       <p className="text-muted-foreground">No output (this node failed).</p>
                     ) : (
@@ -701,6 +669,35 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                       </p>
                     )}
                   </div>
+                  {(() => {
+                    const { outputTo } = getNodeContext(selectedGanttNode, runGanttNodes)
+                    return (
+                      <div className="flex flex-col gap-2 pr-1 shrink-0">
+                        <div className="text-sm font-medium flex items-center gap-2 py-1 text-muted-foreground">
+                          <ArrowRight className="h-4 w-4" />
+                          Sends Output to:
+                        </div>
+                        {outputTo.length === 0 ? (
+                          <p className="text-xs text-muted-foreground py-1">No downstream node (this node is last or output is terminal).</p>
+                        ) : (
+                          outputTo.map((n) => (
+                            <button
+                              key={n.id}
+                              type="button"
+                              className="flex w-full items-center gap-2 rounded-md bg-muted/20 py-2 px-3 text-left hover:bg-muted/30 hover:border-border/50 border border-transparent cursor-pointer transition-colors"
+                              onClick={() => setSelectedGanttNode(n)}
+                              onMouseEnter={() => setHoveredContextNodeId(n.id)}
+                              onMouseLeave={() => setHoveredContextNodeId(null)}
+                            >
+                              <GanttNodeIcon type={n.icon} />
+                              <span className="text-sm font-medium truncate flex-1 min-w-0">{n.label}</span>
+                              <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{(n.endSec - n.startSec).toFixed(1)}</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )
+                  })()}
                 </TabsContent>
               </Tabs>
             )
