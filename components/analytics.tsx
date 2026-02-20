@@ -558,6 +558,17 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
             }
             return (
               <Tabs key={selectedGanttNode?.id ?? "general"} defaultValue="output" className="flex-1 flex flex-col min-h-0 p-4 gap-3">
+                <TabsList className="w-fit rounded-lg bg-muted p-1 h-9 flex-shrink-0">
+                  <TabsTrigger value="context" className="rounded-md px-4 text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
+                    Context
+                  </TabsTrigger>
+                  <TabsTrigger value="input" className="rounded-md px-4 text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
+                    Input
+                  </TabsTrigger>
+                  <TabsTrigger value="output" className="rounded-md px-4 text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
+                    Output
+                  </TabsTrigger>
+                </TabsList>
                 {selectedGanttNode?.status === "error" && (
                   <Alert variant="destructive" className="rounded-lg border-destructive/50 bg-destructive/5 [&>svg]:text-destructive">
                     <AlertCircle className="h-4 w-4" />
@@ -573,17 +584,6 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                     </AlertDescription>
                   </Alert>
                 )}
-                <TabsList className="w-fit rounded-lg bg-muted p-1 h-9 flex-shrink-0">
-                  <TabsTrigger value="context" className="rounded-md px-4 text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
-                    Context
-                  </TabsTrigger>
-                  <TabsTrigger value="output" className="rounded-md px-4 text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
-                    Output
-                  </TabsTrigger>
-                  <TabsTrigger value="input" className="rounded-md px-4 text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
-                    Input
-                  </TabsTrigger>
-                </TabsList>
                 <TabsContent value="context" className="flex-1 p-4 mt-0 overflow-auto min-h-0 flex flex-col gap-4">
                   {(() => {
                     const { inputFrom, outputTo } = getNodeContext(selectedGanttNode)
