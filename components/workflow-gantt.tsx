@@ -510,9 +510,23 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                           }
                         }}
                       >
-                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted/60 border border-border/50">
-                          <GanttNodeIcon type={node.icon} />
-                        </span>
+                        {node.hasChildren ? (
+                          <button
+                            type="button"
+                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted/60 border border-border/50 hover:bg-muted cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              toggle(node.id)
+                            }}
+                            aria-label={collapsed.has(node.id) ? "Expand" : "Collapse"}
+                          >
+                            <GanttNodeIcon type={node.icon} />
+                          </button>
+                        ) : (
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted/60 border border-border/50">
+                            <GanttNodeIcon type={node.icon} />
+                          </span>
+                        )}
                         <span className="truncate text-foreground flex-1 min-w-0">
                           {node.label}
                         </span>

@@ -504,7 +504,7 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                       <div className="flex flex-col gap-2 pr-1 shrink-0">
                         <div className="text-sm font-medium flex items-center gap-2 py-1 text-muted-foreground">
                           <ArrowLeft className="h-4 w-4" />
-                          Receives input from:
+                          Nodes connected from.
                         </div>
                         {inputFrom.length === 0 ? (
                           <p className="text-xs text-muted-foreground py-1">No upstream node.</p>
@@ -520,7 +520,6 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                             >
                               <GanttNodeIcon type={n.icon} />
                               <span className="text-sm font-medium truncate flex-1 min-w-0">{n.label}</span>
-                              <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{(n.endSec - n.startSec).toFixed(1)}</span>
                             </button>
                           ))
                         )}
@@ -596,7 +595,7 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                       <div className="flex flex-col gap-2 shrink-0">
                         <div className="text-sm font-medium flex items-center gap-2 py-1 text-muted-foreground">
                           <ArrowRight className="h-4 w-4" />
-                          Sends Output to:
+                          Nodes that connects to
                         </div>
                         {outputTo.length === 0 ? (
                           <p className="text-xs text-muted-foreground py-1">No downstream node.</p>
@@ -612,7 +611,6 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                             >
                               <GanttNodeIcon type={n.icon} />
                               <span className="text-sm font-medium truncate flex-1 min-w-0">{n.label}</span>
-                              <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{(n.endSec - n.startSec).toFixed(1)}</span>
                             </button>
                           ))
                         )}
@@ -660,7 +658,7 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                       <div className="flex flex-col gap-2 pr-1 shrink-0">
                         <div className="text-sm font-medium flex items-center gap-2 py-1 text-muted-foreground">
                           <ArrowLeft className="h-4 w-4" />
-                          Receives input from:
+                          Nodes connected from.
                         </div>
                         {inputFrom.length === 0 ? (
                           <p className="text-xs text-muted-foreground py-1">No upstream node (this node starts first or has no prior node).</p>
@@ -676,7 +674,6 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                             >
                               <GanttNodeIcon type={n.icon} />
                               <span className="text-sm font-medium truncate flex-1 min-w-0">{n.label}</span>
-                              <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{(n.endSec - n.startSec).toFixed(1)}</span>
                             </button>
                           ))
                         )}
@@ -698,7 +695,7 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                       <div className="flex flex-col gap-2 pr-1 shrink-0">
                         <div className="text-sm font-medium flex items-center gap-2 py-1 text-muted-foreground">
                           <ArrowRight className="h-4 w-4" />
-                          Sends Output to:
+                          Nodes that connects to
                         </div>
                         {outputTo.length === 0 ? (
                           <p className="text-xs text-muted-foreground py-1">No downstream node (this node is last or output is terminal).</p>
@@ -714,7 +711,6 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                             >
                               <GanttNodeIcon type={n.icon} />
                               <span className="text-sm font-medium truncate flex-1 min-w-0">{n.label}</span>
-                              <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{(n.endSec - n.startSec).toFixed(1)}</span>
                             </button>
                           ))
                         )}
