@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { 
   RefreshCw, 
@@ -27,7 +27,8 @@ import {
   Maximize2,
   Locate,
   ArrowRight,
-  ArrowLeft
+  ArrowLeft,
+  LayoutDashboard
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -40,7 +41,7 @@ import { Separator } from "@/components/ui/separator"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { cn } from "@/lib/utils"
 import { format } from "date-fns"
-import { WorkflowGantt, type GanttNode, GANTT_NODES, getNodeIdentifier, GanttNodeIcon } from "@/components/workflow-gantt"
+import { WorkflowGantt, type GanttNode, GANTT_NODES, getNodeIdentifier, GanttNodeIcon, varyGanttNodesByRunId } from "@/components/workflow-gantt"
 import { TabContext } from "@/components/dashboard-layout"
 interface RunData {
   runId: string
@@ -245,6 +246,12 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
     }
   ]
 
+  // Run-specific Gantt data so Previous/Next run show different bar timings
+  const runGanttNodes = useMemo(
+    () => varyGanttNodesByRunId(selectedRunId ?? "", GANTT_NODES),
+    [selectedRunId]
+  )
+
   // Run detail subpage with main content + sidebar
   const selectedRun = mockRuns.find((r) => r.runId === selectedRunId)
   if (selectedRunId && selectedRun) {
@@ -267,48 +274,51 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
             </Button>
           </div>
           <div className="flex-1 overflow-auto px-10 pb-6">
-            <h1 className="text-xl font-semibold tracking-tight mb-1">Run Details</h1>
+            <div className="flex items-center justify-between gap-4 mb-1">
+              <h1 className="text-xl font-semibold tracking-tight">Run Details</h1>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5 text-muted-foreground hover:text-foreground"
+                  disabled={!selectedRun || mockRuns.findIndex((r) => r.runId === selectedRunId) <= 0}
+                  onClick={() => {
+                    const idx = mockRuns.findIndex((r) => r.runId === selectedRunId)
+                    if (idx > 0) {
+                      setSelectedRunId(mockRuns[idx - 1].runId)
+                      setSelectedGanttNode(null)
+                    }
+                  }}
+                  aria-label="Previous run"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Previous run
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5 text-muted-foreground hover:text-foreground"
+                  disabled={!selectedRun || mockRuns.findIndex((r) => r.runId === selectedRunId) >= mockRuns.length - 1}
+                  onClick={() => {
+                    const idx = mockRuns.findIndex((r) => r.runId === selectedRunId)
+                    if (idx >= 0 && idx < mockRuns.length - 1) {
+                      setSelectedRunId(mockRuns[idx + 1].runId)
+                      setSelectedGanttNode(null)
+                    }
+                  }}
+                  aria-label="Next run"
+                >
+                  Next run
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
             <p className="text-sm text-muted-foreground mb-6">Inspect a single run: timing, inputs, outputs, and node results.</p>
             <WorkflowGantt
+              nodes={runGanttNodes}
               selectedNodeId={selectedGanttNode?.id ?? null}
               onNodeSelect={setSelectedGanttNode}
             />
-            <div className="flex items-center justify-center gap-2 mt-4">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-1.5 text-muted-foreground hover:text-foreground"
-                disabled={!selectedRun || mockRuns.findIndex((r) => r.runId === selectedRunId) <= 0}
-                onClick={() => {
-                  const idx = mockRuns.findIndex((r) => r.runId === selectedRunId)
-                  if (idx > 0) {
-                    setSelectedRunId(mockRuns[idx - 1].runId)
-                    setSelectedGanttNode(null)
-                  }
-                }}
-                aria-label="Previous run"
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Previous run
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-1.5 text-muted-foreground hover:text-foreground"
-                disabled={!selectedRun || mockRuns.findIndex((r) => r.runId === selectedRunId) >= mockRuns.length - 1}
-                onClick={() => {
-                  const idx = mockRuns.findIndex((r) => r.runId === selectedRunId)
-                  if (idx >= 0 && idx < mockRuns.length - 1) {
-                    setSelectedRunId(mockRuns[idx + 1].runId)
-                    setSelectedGanttNode(null)
-                  }
-                }}
-                aria-label="Next run"
-              >
-                Next run
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
           </div>
         </div>
 
@@ -329,6 +339,11 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                 </Button>
               ) : null}
               <div className="flex items-center gap-2 min-w-0">
+                {selectedGanttNode && !sidebarShowGeneral ? (
+                  <GanttNodeIcon type={selectedGanttNode.icon} />
+                ) : (
+                  <LayoutDashboard className="h-4 w-4 shrink-0 text-muted-foreground" />
+                )}
                 <h2 className="text-base font-semibold truncate">
                   {!selectedGanttNode || sidebarShowGeneral
                     ? "General"
@@ -562,11 +577,11 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                   <TabsTrigger value="context" className="rounded-md px-4 text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
                     Context
                   </TabsTrigger>
-                  <TabsTrigger value="input" className="rounded-md px-4 text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
-                    Input
-                  </TabsTrigger>
                   <TabsTrigger value="output" className="rounded-md px-4 text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
                     Output
+                  </TabsTrigger>
+                  <TabsTrigger value="input" className="rounded-md px-4 text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
+                    Input
                   </TabsTrigger>
                 </TabsList>
                 <TabsContent value="context" className="flex-1 p-4 mt-0 overflow-auto min-h-0 flex flex-col gap-4">

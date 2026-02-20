@@ -36,6 +36,26 @@ export const GANTT_NODES: GanttNode[] = [
 
 const MOCK_NODES = GANTT_NODES
 
+/** Deterministic hash from string for seeding. */
+function hash(s: string): number {
+  return Math.abs(s.split("").reduce((a, c) => (a << 5) - a + c.charCodeAt(0), 0) | 0)
+}
+
+/** Returns a copy of nodes with startSec/endSec varied by runId so each run shows different Gantt timings. */
+export function varyGanttNodesByRunId(runId: string, nodes: GanttNode[]): GanttNode[] {
+  if (!runId) return nodes
+  const seed = hash(runId)
+  return nodes.map((node, i) => {
+    const h = hash(`${runId}-${node.id}-${i}-${seed}`)
+    const startDelta = ((h % 7) - 3) * 0.5
+    const durDelta = (((h >> 3) % 5) - 2) * 0.6
+    const newStartSec = Math.max(0, node.startSec + startDelta)
+    const duration = node.endSec - node.startSec
+    const newEndSec = Math.max(newStartSec + 0.3, Math.min(20, newStartSec + Math.max(0.3, duration + durDelta)))
+    return { ...node, startSec: newStartSec, endSec: newEndSec }
+  })
+}
+
 export const FIRST_GANTT_NODE: GanttNode = MOCK_NODES[1] // AI Agent - default when opening run detail
 
 const ROW_HEIGHT = 36
@@ -118,9 +138,12 @@ interface WorkflowGanttProps {
   compact?: boolean
   isRunning?: boolean
   runStartTime?: number | null
+  /** When provided, use these nodes instead of default (e.g. per-run varied data). */
+  nodes?: GanttNode[]
 }
 
-export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = false, isRunning = false, runStartTime = null }: WorkflowGanttProps) {
+export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = false, isRunning = false, runStartTime = null, nodes: nodesProp }: WorkflowGanttProps) {
+  const sourceNodes = nodesProp ?? MOCK_NODES
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set(["9"]))
   const [now, setNow] = useState(() => Date.now())
   const compactScrollRef = React.useRef<HTMLDivElement>(null)
@@ -152,7 +175,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
     const visible: GanttNode[] = []
     let hideDepth = -1
 
-    for (const node of MOCK_NODES) {
+    for (const node of sourceNodes) {
       if (hideDepth >= 0 && node.depth > hideDepth) {
         continue
       }
@@ -166,7 +189,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
       if (node.endSec > maxSec) maxSec = node.endSec
     }
     return { visibleNodes: visible, maxSec: Math.min(Math.max(maxSec + 2, SECONDS_MAX), SECONDS_MAX) }
-  }, [collapsed])
+  }, [collapsed, sourceNodes])
 
   const simulatedSec = useMemo(() => {
     if (!compact || !isRunning || runStartTime == null) return null
