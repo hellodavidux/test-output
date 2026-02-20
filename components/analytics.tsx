@@ -9,6 +9,7 @@ import {
   Filter, 
   ChevronDown,
   ChevronLeft,
+  ChevronRight,
   Search,
   ArrowUpDown,
   Info,
@@ -24,7 +25,9 @@ import {
   ArrowUpFromLine,
   AlertCircle,
   Maximize2,
-  Locate
+  Locate,
+  ArrowRight,
+  ArrowLeft
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -33,10 +36,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Separator } from "@/components/ui/separator"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { cn } from "@/lib/utils"
 import { format } from "date-fns"
-import { WorkflowGantt, type GanttNode } from "@/components/workflow-gantt"
+import { WorkflowGantt, type GanttNode, GANTT_NODES, getNodeIdentifier, GanttNodeIcon } from "@/components/workflow-gantt"
 import { TabContext } from "@/components/dashboard-layout"
 interface RunData {
   runId: string
@@ -107,6 +111,16 @@ const mockRuns: RunData[] = [
     user: "dhidalgo@stack-ai.com"
   }
 ]
+
+// Single immediate predecessor/successor for Context tab (1 node input, 1 node output)
+function getNodeContext(node: GanttNode | null): { inputFrom: GanttNode | null; outputTo: GanttNode | null } {
+  if (!node) return { inputFrom: null, outputTo: null }
+  const candidatesIn = GANTT_NODES.filter((n) => n.id !== node.id && n.endSec <= node.startSec)
+  const candidatesOut = GANTT_NODES.filter((n) => n.id !== node.id && n.startSec >= node.endSec)
+  const inputFrom = candidatesIn.length === 0 ? null : candidatesIn.reduce((best, n) => (n.endSec > (best?.endSec ?? -1) ? n : best))
+  const outputTo = candidatesOut.length === 0 ? null : candidatesOut.reduce((best, n) => (best == null || n.startSec < best.startSec ? n : best))
+  return { inputFrom, outputTo }
+}
 
 // Per-node input/output for Run Details sidebar (different text per node)
 function getNodeInputOutput(node: { id: string; label: string } | null): { input: string; output: string } {
@@ -259,6 +273,42 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
               selectedNodeId={selectedGanttNode?.id ?? null}
               onNodeSelect={setSelectedGanttNode}
             />
+            <div className="flex items-center justify-center gap-2 mt-4">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 text-muted-foreground hover:text-foreground"
+                disabled={!selectedRun || mockRuns.findIndex((r) => r.runId === selectedRunId) <= 0}
+                onClick={() => {
+                  const idx = mockRuns.findIndex((r) => r.runId === selectedRunId)
+                  if (idx > 0) {
+                    setSelectedRunId(mockRuns[idx - 1].runId)
+                    setSelectedGanttNode(null)
+                  }
+                }}
+                aria-label="Previous run"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Previous run
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 text-muted-foreground hover:text-foreground"
+                disabled={!selectedRun || mockRuns.findIndex((r) => r.runId === selectedRunId) >= mockRuns.length - 1}
+                onClick={() => {
+                  const idx = mockRuns.findIndex((r) => r.runId === selectedRunId)
+                  if (idx >= 0 && idx < mockRuns.length - 1) {
+                    setSelectedRunId(mockRuns[idx + 1].runId)
+                    setSelectedGanttNode(null)
+                  }
+                }}
+                aria-label="Next run"
+              >
+                Next run
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -286,6 +336,19 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                       ? "AI Agent"
                       : selectedGanttNode.label}
                 </h2>
+                {selectedGanttNode && !sidebarShowGeneral && (
+                  <>
+                    <span
+                      className="shrink-0 rounded-md border border-border/60 bg-background py-0.5 px-1.5 text-[11px] font-medium text-muted-foreground"
+                      title={`Identifier: ${getNodeIdentifier(selectedGanttNode, GANTT_NODES)}`}
+                    >
+                      {getNodeIdentifier(selectedGanttNode, GANTT_NODES)}
+                    </span>
+                    <span className="shrink-0 text-[11px] font-medium text-muted-foreground tabular-nums">
+                      {(selectedGanttNode.endSec - selectedGanttNode.startSec).toFixed(1)}s
+                    </span>
+                  </>
+                )}
                 {(!selectedGanttNode || sidebarShowGeneral) && selectedRun && (
                   <span
                     className={cn(
@@ -379,10 +442,59 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
               return (
               <Tabs key="ai-agent" defaultValue="completion" className="flex-1 flex flex-col min-h-0 p-4 gap-4">
                 <TabsList className="w-fit rounded-lg bg-muted p-1 h-9">
+                  <TabsTrigger value="context" className={triggerClass}>Context</TabsTrigger>
                   <TabsTrigger value="input" className={triggerClass}>input</TabsTrigger>
-                  <TabsTrigger value="tools" className={triggerClass}>tools used</TabsTrigger>
-                  <TabsTrigger value="completion" className={triggerClass}>completion</TabsTrigger>
+                  <TabsTrigger value="tools" className={triggerClass}>Tools</TabsTrigger>
+                  <TabsTrigger value="completion" className={triggerClass}>Completion</TabsTrigger>
                 </TabsList>
+                <TabsContent value="context" className="flex-1 p-4 mt-0 overflow-auto">
+                  {(() => {
+                    const { inputFrom, outputTo } = getNodeContext(selectedGanttNode)
+                    return (
+                      <div className="flex flex-col gap-4">
+                        <div>
+                          <div className="text-sm font-medium flex items-center gap-2 py-1 text-muted-foreground">
+                            <ArrowLeft className="h-4 w-4" />
+                            Input derived from
+                          </div>
+                          {!inputFrom ? (
+                            <p className="text-xs text-muted-foreground py-1">No upstream node.</p>
+                          ) : (
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-2 rounded-md bg-muted/30 py-2 px-3 text-left hover:bg-muted/50 cursor-pointer transition-colors"
+                              onClick={() => setSelectedGanttNode(inputFrom)}
+                            >
+                              <GanttNodeIcon type={inputFrom.icon} />
+                              <span className="text-sm font-medium truncate flex-1 min-w-0">{inputFrom.label}</span>
+                              <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{(inputFrom.endSec - inputFrom.startSec).toFixed(1)}</span>
+                            </button>
+                          )}
+                        </div>
+                        <Separator className="my-0" />
+                        <div>
+                          <div className="text-sm font-medium flex items-center gap-2 py-1 text-muted-foreground">
+                            <ArrowRight className="h-4 w-4" />
+                            Output goes to
+                          </div>
+                          {!outputTo ? (
+                            <p className="text-xs text-muted-foreground py-1">No downstream node.</p>
+                          ) : (
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-2 rounded-md bg-muted/30 py-2 px-3 text-left hover:bg-muted/50 cursor-pointer transition-colors"
+                              onClick={() => setSelectedGanttNode(outputTo)}
+                            >
+                              <GanttNodeIcon type={outputTo.icon} />
+                              <span className="text-sm font-medium truncate flex-1 min-w-0">{outputTo.label}</span>
+                              <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{(outputTo.endSec - outputTo.startSec).toFixed(1)}</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </TabsContent>
                 <TabsContent value="input" className="flex-1 p-4 mt-0 overflow-auto">
                   <p className="text-sm text-muted-foreground">Input for AI Agent.</p>
                 </TabsContent>
@@ -447,6 +559,9 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                   </Alert>
                 )}
                 <TabsList className="w-fit rounded-lg bg-muted p-1 h-9 flex-shrink-0">
+                  <TabsTrigger value="context" className="rounded-md px-4 text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
+                    Context
+                  </TabsTrigger>
                   <TabsTrigger value="input" className="rounded-md px-4 text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
                     Input
                   </TabsTrigger>
@@ -454,6 +569,54 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                     Output
                   </TabsTrigger>
                 </TabsList>
+                <TabsContent value="context" className="flex-1 p-4 mt-0 overflow-auto min-h-0 flex flex-col gap-4">
+                  {(() => {
+                    const { inputFrom, outputTo } = getNodeContext(selectedGanttNode)
+                    return (
+                      <div className="flex flex-col gap-4 pr-1">
+                        <div>
+                          <div className="text-sm font-medium flex items-center gap-2 py-1 text-muted-foreground">
+                            <ArrowLeft className="h-4 w-4" />
+                            Input derived from
+                          </div>
+                          {!inputFrom ? (
+                            <p className="text-xs text-muted-foreground py-1">No upstream node (this node starts first or has no prior node).</p>
+                          ) : (
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-2 rounded-md bg-muted/30 py-2 px-3 text-left hover:bg-muted/50 cursor-pointer transition-colors"
+                              onClick={() => setSelectedGanttNode(inputFrom)}
+                            >
+                              <GanttNodeIcon type={inputFrom.icon} />
+                              <span className="text-sm font-medium truncate flex-1 min-w-0">{inputFrom.label}</span>
+                              <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{(inputFrom.endSec - inputFrom.startSec).toFixed(1)}</span>
+                            </button>
+                          )}
+                        </div>
+                        <Separator className="my-0" />
+                        <div>
+                          <div className="text-sm font-medium flex items-center gap-2 py-1 text-muted-foreground">
+                            <ArrowRight className="h-4 w-4" />
+                            Output goes to
+                          </div>
+                          {!outputTo ? (
+                            <p className="text-xs text-muted-foreground py-1">No downstream node (this node is last or output is terminal).</p>
+                          ) : (
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-2 rounded-md bg-muted/30 py-2 px-3 text-left hover:bg-muted/50 cursor-pointer transition-colors"
+                              onClick={() => setSelectedGanttNode(outputTo)}
+                            >
+                              <GanttNodeIcon type={outputTo.icon} />
+                              <span className="text-sm font-medium truncate flex-1 min-w-0">{outputTo.label}</span>
+                              <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{(outputTo.endSec - outputTo.startSec).toFixed(1)}</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </TabsContent>
                 <TabsContent value="input" className="flex-1 mt-0 overflow-hidden min-h-0 flex flex-col">
                   <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm flex-1 min-h-0 overflow-auto flex flex-col">
                     <p className="text-foreground/90 whitespace-pre-wrap break-words">

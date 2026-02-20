@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react"
 import { Clock, X, ChevronUp, Maximize2 } from "lucide-react"
-import type { Node } from "@xyflow/react"
+import type { Node, Edge } from "@xyflow/react"
 import { getNodeIconBg, AppIcon } from "./workflow-node"
 import { NodeDetailModal } from "./node-detail-modal"
 import { WorkflowGantt, type GanttNode } from "./workflow-gantt"
@@ -10,6 +10,7 @@ import { TabContext } from "./dashboard-layout"
 
 interface RunProgressProps {
   nodes: Node[]
+  edges?: Edge[]
   isRunning?: boolean
   runStatus?: "success" | "error" | "running"
   shouldExpand?: boolean
@@ -27,7 +28,7 @@ interface NodeProgress {
   nodeData: { appName: string; actionName: string; type: string }
 }
 
-export function RunProgress({ nodes, isRunning = false, runStatus = "success", shouldExpand = false, onExpandChange }: RunProgressProps) {
+export function RunProgress({ nodes, edges = [], isRunning = false, runStatus = "success", shouldExpand = false, onExpandChange }: RunProgressProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [selectedNode, setSelectedNode] = useState<Node | null>(null)
   const [selectedGanttNodeId, setSelectedGanttNodeId] = useState<string | null>(null)
@@ -345,6 +346,8 @@ export function RunProgress({ nodes, isRunning = false, runStatus = "success", s
             setSelectedGanttNodeId(null)
             handleExpandChange(false)
           }, () => handleExpandChange(false))}
+          nodes={nodes}
+          edges={edges}
         />
       )}
     </>

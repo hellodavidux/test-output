@@ -720,7 +720,8 @@ function FlowCanvas({
         }}
       />
       <RunProgress 
-        nodes={nodes} 
+        nodes={nodes}
+        edges={edges}
         isRunning={isRunning}
         runStatus={isRunning ? "running" : runStatusResult}
         shouldExpand={shouldExpandRunProgress}

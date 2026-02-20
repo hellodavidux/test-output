@@ -18,23 +18,28 @@ export interface GanttNode {
   status?: "error" | "success"
 }
 
-const MOCK_NODES: GanttNode[] = [
+export const GANTT_NODES: GanttNode[] = [
   { id: "1", label: "User Input", startSec: 0, endSec: 1.2, depth: 0, hasChildren: false, icon: "play" },
-  { id: "2", label: "AI Agent", startSec: 1.2, endSec: 8, depth: 0, hasChildren: false, icon: "zap" },
   { id: "2a", label: "AI Agent", startSec: 6.5, endSec: 14, depth: 0, hasChildren: false, icon: "zap" },
+  { id: "2", label: "AI Agent", startSec: 1.2, endSec: 8, depth: 0, hasChildren: false, icon: "zap" },
   { id: "3", label: "AI Routing", startSec: 12, endSec: 13.5, depth: 0, hasChildren: false, icon: "route" },
   { id: "4", label: "AI Agent", startSec: 2, endSec: 17, depth: 0, hasChildren: false, icon: "zap" },
   { id: "5", label: "Send Email", startSec: 13.5, endSec: 15, depth: 0, hasChildren: false, icon: "mail", status: "error" },
   { id: "6", label: "If/Else", startSec: 15, endSec: 16, depth: 0, hasChildren: false, icon: "branch" },
   { id: "7", label: "Notion", startSec: 15.5, endSec: 17, depth: 0, hasChildren: false, icon: "file" },
-  { id: "8", label: "Output", startSec: 17, endSec: 18, depth: 0, hasChildren: false, icon: "send" },
   { id: "9", label: "Project node", startSec: 0, endSec: 6, depth: 0, hasChildren: true, icon: "folder" },
+  { id: "9-1", label: "input", startSec: 0.5, endSec: 1.5, depth: 1, hasChildren: false, icon: "play" },
+  { id: "9-2", label: "AI Agent", startSec: 1.5, endSec: 4, depth: 1, hasChildren: false, icon: "zap" },
+  { id: "9-3", label: "Send Email", startSec: 4, endSec: 5.5, depth: 1, hasChildren: false, icon: "mail" },
+  { id: "8", label: "Output", startSec: 17, endSec: 20, depth: 0, hasChildren: false, icon: "send" },
 ]
+
+const MOCK_NODES = GANTT_NODES
 
 export const FIRST_GANTT_NODE: GanttNode = MOCK_NODES[1] // AI Agent - default when opening run detail
 
 const ROW_HEIGHT = 36
-const LEFT_WIDTH = 240
+const LEFT_WIDTH = 280
 const SECONDS_MAX = 20
 const TIME_HEADER_HEIGHT = 32
 
@@ -43,7 +48,44 @@ const COMPACT_LEFT_WIDTH = 150
 const COMPACT_TIME_HEADER_HEIGHT = 18
 const COMPACT_PX_PER_SEC = 20
 
-function NodeIcon({ type }: { type?: string }) {
+function isActionType(n: GanttNode): boolean {
+  const label = n.label.toLowerCase()
+  return (
+    !label.includes("user input") &&
+    n.icon !== "play" &&
+    label !== "output" &&
+    n.icon !== "send" &&
+    label !== "ai agent" &&
+    n.icon !== "zap" &&
+    label !== "ai routing" &&
+    n.icon !== "route" &&
+    !label.includes("if") &&
+    !label.includes("else") &&
+    n.icon !== "branch" &&
+    !label.includes("loop") &&
+    !n.hasChildren &&
+    n.icon !== "folder" &&
+    !label.includes("delay")
+  )
+}
+
+/** Label like llm-0, action-0, routing, in-0, out-0 for the node row. Exported for sidebar header. */
+export function getNodeIdentifier(node: GanttNode, visibleNodes: GanttNode[]): string {
+  const label = node.label.toLowerCase()
+  const idx = visibleNodes.findIndex((n) => n.id === node.id)
+  const sameLabelCount = visibleNodes.slice(0, idx + 1).filter((n) => n.label === node.label).length - 1
+  const actionCount = visibleNodes.slice(0, idx + 1).filter(isActionType).length - 1
+  if (label.includes("user input") || node.icon === "play") return "in-0"
+  if (label === "output" || node.icon === "send") return `out-${sameLabelCount}`
+  if (label === "ai agent" || node.icon === "zap") return `llm-${sameLabelCount}`
+  if (label === "ai routing" || node.icon === "route") return "routing"
+  if (label.includes("if") || label.includes("else") || node.icon === "branch") return `ifelse-${sameLabelCount}`
+  if (label.includes("loop") || node.hasChildren || node.icon === "folder") return `loop_subflow-${sameLabelCount}`
+  if (label.includes("delay")) return `delay-${sameLabelCount}`
+  return `action-${Math.max(0, actionCount)}`
+}
+
+export function GanttNodeIcon({ type }: { type?: GanttNode["icon"] }) {
   switch (type) {
     case "play":
       return <Play className="h-3.5 w-3.5 text-muted-foreground" />
@@ -79,9 +121,22 @@ interface WorkflowGanttProps {
 }
 
 export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = false, isRunning = false, runStartTime = null }: WorkflowGanttProps) {
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set(["9"]))
   const [now, setNow] = useState(() => Date.now())
   const compactScrollRef = React.useRef<HTMLDivElement>(null)
+
+  // Compact Gantt: wheel scrolls horizontally (non-passive so preventDefault works)
+  React.useEffect(() => {
+    const el = compactScrollRef.current
+    if (!el || !compact) return
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY === 0) return
+      e.preventDefault()
+      el.scrollLeft += e.deltaY
+    }
+    el.addEventListener("wheel", onWheel, { passive: false })
+    return () => el.removeEventListener("wheel", onWheel)
+  }, [compact])
 
   // When compact + running, advance simulated time so nodes turn success/error sequentially
   React.useEffect(() => {
@@ -98,9 +153,11 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
     let hideDepth = -1
 
     for (const node of MOCK_NODES) {
-      if (node.depth <= hideDepth) {
-        if (node.depth === hideDepth) hideDepth = -1
+      if (hideDepth >= 0 && node.depth > hideDepth) {
         continue
+      }
+      if (hideDepth >= 0 && node.depth <= hideDepth) {
+        hideDepth = -1
       }
       if (collapsed.has(node.id) && node.hasChildren) {
         hideDepth = node.depth
@@ -108,7 +165,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
       visible.push(node)
       if (node.endSec > maxSec) maxSec = node.endSec
     }
-    return { visibleNodes: visible, maxSec: Math.max(maxSec + 2, SECONDS_MAX) }
+    return { visibleNodes: visible, maxSec: Math.min(Math.max(maxSec + 2, SECONDS_MAX), SECONDS_MAX) }
   }, [collapsed])
 
   const simulatedSec = useMemo(() => {
@@ -186,7 +243,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                         isSelected && "bg-muted"
                       )}
                     >
-                      <NodeIcon type={node.icon} />
+                      <GanttNodeIcon type={node.icon} />
                       <span className="truncate text-foreground flex-1 min-w-0">{node.label}</span>
                       <span
                         className={cn(
@@ -265,7 +322,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                           <TooltipTrigger asChild>
                             <div
                               className={cn(
-                                "absolute rounded-sm border flex-shrink-0 min-w-[2px] transition-[width] duration-150 flex items-center justify-start pl-1 pr-0.5 overflow-hidden cursor-default",
+                                "absolute rounded-sm border flex-shrink-0 min-w-[2px] transition-[width] duration-150 flex items-center justify-start pl-1 pr-0.5 overflow-hidden cursor-default ml-2",
                                 "top-1/2 -translate-y-1/2",
                                 displayStatus === "error" && "bg-destructive/20 border-destructive/40",
                                 displayStatus === "success" && (isSelected ? "bg-primary border-primary" : "bg-muted border-border"),
@@ -311,25 +368,24 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
 
   return (
     <TooltipProvider delayDuration={200}>
-    <Card className="rounded-lg bg-card border shadow-sm overflow-hidden flex flex-col flex-1 min-h-0">
+    <Card className="rounded-lg bg-card border shadow-sm overflow-hidden flex flex-col flex-1 min-h-0 p-0 pb-3 gap-0">
       <CardContent className="p-0 flex flex-1 flex-col min-h-0">
         <div className="flex flex-1 min-h-0 flex-col min-w-0">
           {/* Time axis row: aligns with node rows below */}
           <div className="flex flex-shrink-0" style={{ height: TIME_HEADER_HEIGHT }}>
             <div
               className="flex-shrink-0 bg-muted/30 flex items-center gap-2 border-r border-border/40"
-              style={{ width: LEFT_WIDTH, paddingLeft: 6 }}
+              style={{ width: LEFT_WIDTH, paddingLeft: 0 }}
             >
               <span className="w-4 flex-shrink-0" aria-hidden />
-              <span className="w-[14px] flex-shrink-0" aria-hidden />
             </div>
-            <div className="flex-1 min-w-0 flex items-end pr-3">
+            <div className="flex-1 min-w-0 flex items-end pr-8">
               {Array.from({ length: Math.ceil(maxSec) + 1 }, (_, i) => i).map((sec) => (
                 <div
                   key={sec}
                   className="text-[10px] text-muted-foreground tabular-nums flex-1 min-w-0 text-center pb-0.5"
                 >
-                  {sec % 5 === 0 ? `${sec}s` : ""}
+                  {sec % 2 === 0 ? `${sec}s` : ""}
                 </div>
               ))}
             </div>
@@ -345,7 +401,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                 return (
                   <div
                     key={node.id}
-                    className="group flex items-center flex-shrink-0 cursor-pointer hover:bg-muted/30 border-b border-border/30 last:border-b-0 pr-3"
+                    className="group flex items-center flex-shrink-0 cursor-pointer hover:bg-muted/30 border-b border-border/30 last:border-b-0 pr-8"
                     style={{ minHeight: ROW_HEIGHT }}
                     role="button"
                     tabIndex={0}
@@ -359,13 +415,13 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                   >
                     {/* Left: task label */}
                     <div
-                      className="flex items-center gap-1 h-9 px-3 text-sm flex-shrink-0 bg-muted/20 border-r border-border/40 overflow-hidden"
-                      style={{ width: LEFT_WIDTH, paddingLeft: 6 + node.depth * 16 }}
+                      className="flex items-center gap-0 h-9 text-sm flex-shrink-0 bg-muted/20 border-r border-border/40 overflow-hidden"
+                      style={{ width: LEFT_WIDTH, paddingLeft: node.depth * 16 }}
                     >
                       {node.hasChildren ? (
                         <button
                           type="button"
-                          className="p-0.5 rounded hover:bg-muted -m-0.5"
+                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-muted"
                           onClick={(e) => {
                             e.stopPropagation()
                             toggle(node.id)
@@ -379,13 +435,13 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                           )}
                         </button>
                       ) : (
-                        <span className="w-4" />
+                        <span className="w-6 shrink-0" aria-hidden />
                       )}
                       <span
                         role="button"
                         tabIndex={0}
                         className={cn(
-                          "flex items-center gap-2 rounded-md py-1 px-2 min-w-0 flex-1 hover:bg-muted/30",
+                          "flex items-center gap-1.5 rounded-md py-0.5 pl-0.5 pr-1.5 min-w-0 flex-1 hover:bg-muted/30",
                           isSelected && "bg-muted"
                         )}
                         onClick={(e) => {
@@ -400,7 +456,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                           }
                         }}
                       >
-                        <NodeIcon type={node.icon} />
+                        <GanttNodeIcon type={node.icon} />
                         <span className="truncate text-foreground flex-1 min-w-0">
                           {node.label}
                         </span>
@@ -421,7 +477,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                     </div>
                     {/* Right: Gantt bar - full width of remaining space */}
                     <div
-                      className="flex-1 min-w-0 relative h-9 flex items-center pl-8 pr-3"
+                      className="flex-1 min-w-0 relative h-9 flex items-center pl-8 pr-8"
                       onClick={(e) => {
                         e.stopPropagation()
                         onNodeSelect?.(isSelected ? null : node)
@@ -439,7 +495,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                         <TooltipTrigger asChild>
                           <div
                             className={cn(
-                              "absolute h-5 rounded-sm border flex-shrink-0 min-w-[2px] transition-colors flex items-center justify-start pl-1.5 pr-1 overflow-hidden cursor-default",
+                              "absolute h-5 rounded-sm border flex-shrink-0 min-w-[2px] transition-colors flex items-center justify-start pl-1.5 pr-1 overflow-hidden cursor-default ml-2",
                               node.status === "error"
                                 ? isSelected
                                   ? "bg-destructive/25 border-destructive/50 group-hover:bg-destructive/35"

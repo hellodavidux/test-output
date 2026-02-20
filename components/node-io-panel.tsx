@@ -66,7 +66,7 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, onPinChange, 
   const [isPinned, setIsPinned] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
-  const { getNode } = useReactFlow()
+  const { getNode, getNodes, getEdges } = useReactFlow()
   
   // Reset view mode to "text" when switching to completion tab (since formatted is not available)
   React.useEffect(() => {
@@ -914,6 +914,8 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, onPinChange, 
               onClose={() => setIsModalOpen(false)}
               initialTab={activeTab === "completion" ? "completion" : "output"}
               initialViewMode={viewMode}
+              nodes={getNodes()}
+              edges={getEdges()}
             />
           )
         }

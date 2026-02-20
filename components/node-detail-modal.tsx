@@ -2,26 +2,29 @@
 
 import React, { useState, useRef, useEffect } from "react"
 import { createPortal } from "react-dom"
-import { X, Copy, Download, Trash2, Search, ChevronDown, ChevronUp, Settings, FileText, Building2, Code2, AlertCircle, Bot } from "lucide-react"
+import { X, Copy, Download, Trash2, Search, ChevronDown, ChevronUp, Settings, FileText, Building2, Code2, AlertCircle, Bot, ArrowLeft, ArrowRight } from "lucide-react"
 import { AppIcon } from "./workflow-node"
 import { Button } from "@/components/ui/button"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import type { Node } from "@xyflow/react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import type { Node, Edge } from "@xyflow/react"
 
 interface NodeDetailModalProps {
   node: Node | null
   onClose: () => void
-  initialTab?: "input" | "output" | "completion" | "metadata" | "tools"
+  initialTab?: "input" | "output" | "completion" | "metadata" | "tools" | "context"
   initialViewMode?: "text" | "formatted" | "code"
   showRunProgress?: boolean
   runProgressComponent?: React.ReactNode
   onRunProgressClose?: () => void
+  nodes?: Node[]
+  edges?: Edge[]
 }
 
-export function NodeDetailModal({ node, onClose, initialTab = "output", initialViewMode = "formatted", showRunProgress = false, runProgressComponent, onRunProgressClose }: NodeDetailModalProps) {
+export function NodeDetailModal({ node, onClose, initialTab = "output", initialViewMode = "formatted", showRunProgress = false, runProgressComponent, onRunProgressClose, nodes = [], edges = [] }: NodeDetailModalProps) {
   // For input nodes, always use "input" tab, for LLM nodes default to "completion" if not specified, otherwise use the provided initialTab
   const getInitialTab = () => {
     if (!node) return initialTab || "output"
@@ -38,7 +41,7 @@ export function NodeDetailModal({ node, onClose, initialTab = "output", initialV
     return initialTab || "output"
   }
   
-  const [activeTab, setActiveTab] = useState<"input" | "output" | "completion" | "metadata" | "tools">(getInitialTab())
+  const [activeTab, setActiveTab] = useState<"input" | "output" | "completion" | "metadata" | "tools" | "context">(getInitialTab())
   const [viewMode, setViewMode] = useState<"text" | "formatted" | "code">(initialViewMode)
   
   // Update activeTab when initialTab changes (when modal opens with different tab)
@@ -74,6 +77,7 @@ export function NodeDetailModal({ node, onClose, initialTab = "output", initialV
   const outputTabRef = useRef<HTMLButtonElement>(null)
   const metadataTabRef = useRef<HTMLButtonElement>(null)
   const toolsTabRef = useRef<HTMLButtonElement>(null)
+  const contextTabRef = useRef<HTMLButtonElement>(null)
   const [indicatorStyle, setIndicatorStyle] = useState<{ left: number; width: number }>({ left: 0, width: 0 })
 
   // Ensure we only render portal on client side
@@ -121,12 +125,14 @@ export function NodeDetailModal({ node, onClose, initialTab = "output", initialV
     if (!mounted || !node) return
     
     const updateIndicator = () => {
-      let activeRef: typeof inputTabRef | typeof completionTabRef | typeof outputTabRef | typeof metadataTabRef | typeof toolsTabRef | null = null
+      let activeRef: typeof inputTabRef | typeof completionTabRef | typeof outputTabRef | typeof metadataTabRef | typeof toolsTabRef | typeof contextTabRef | null = null
       
       if (isInputNode) {
         activeRef = inputTabRef
+      } else if (activeTab === "context") {
+        activeRef = contextTabRef
       } else if (isAIAgent) {
-        // LLM nodes have: Input, Metadata, Tools, Completion
+        // LLM nodes have: Context, Input, Metadata, Tools, Completion
         if (activeTab === "input") {
           activeRef = inputTabRef
         } else if (activeTab === "metadata") {
@@ -137,7 +143,7 @@ export function NodeDetailModal({ node, onClose, initialTab = "output", initialV
           activeRef = completionTabRef
         }
       } else {
-        // Other nodes have: Input, Output
+        // Other nodes have: Context, Input, Output
         if (activeTab === "input") {
           activeRef = inputTabRef
         } else if (activeTab === "output") {
@@ -184,6 +190,21 @@ export function NodeDetailModal({ node, onClose, initialTab = "output", initialV
     document.addEventListener("keydown", handleEscape)
     return () => document.removeEventListener("keydown", handleEscape)
   }, [onClose])
+
+  // Context: upstream (input from) and downstream (output to) from edges
+  const nodeContext = React.useMemo(() => {
+    if (!node || !edges.length) return { inputFrom: [] as Node[], outputTo: [] as Node[] }
+    const nodeMap = new Map(nodes.map((n) => [n.id, n]))
+    const inputFrom = edges
+      .filter((e) => e.target === node.id)
+      .map((e) => nodeMap.get(e.source))
+      .filter((n): n is Node => n != null)
+    const outputTo = edges
+      .filter((e) => e.source === node.id)
+      .map((e) => nodeMap.get(e.target))
+      .filter((n): n is Node => n != null)
+    return { inputFrom, outputTo }
+  }, [node, nodes, edges])
 
   const currentData = activeTab === "input" 
     ? input 
@@ -1023,7 +1044,18 @@ export function NodeDetailModal({ node, onClose, initialTab = "output", initialV
             </button>
           ) : isAIAgent ? (
             <>
-              {/* LLM nodes: Input, Metadata, Tools, Completion */}
+              {/* LLM nodes: Context, Input, Metadata, Tools, Completion */}
+              <button
+                ref={contextTabRef}
+                onClick={() => setActiveTab("context")}
+                className={`relative text-sm font-normal transition-colors cursor-pointer leading-none pb-3 ${
+                  activeTab === "context"
+                    ? "text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Context
+              </button>
               <button
                 ref={inputTabRef}
                 onClick={() => setActiveTab("input")}
@@ -1071,7 +1103,18 @@ export function NodeDetailModal({ node, onClose, initialTab = "output", initialV
             </>
           ) : (
             <>
-              {/* Other nodes: Input, Output */}
+              {/* Other nodes: Context, Input, Output */}
+              <button
+                ref={contextTabRef}
+                onClick={() => setActiveTab("context")}
+                className={`relative text-sm font-normal transition-colors cursor-pointer leading-none pb-3 ${
+                  activeTab === "context"
+                    ? "text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Context
+              </button>
               <button
                 ref={inputTabRef}
                 onClick={() => setActiveTab("input")}
@@ -1106,7 +1149,8 @@ export function NodeDetailModal({ node, onClose, initialTab = "output", initialV
           />
         </div>
 
-        {/* Search Bar, View Mode and Actions Row */}
+        {/* Search Bar, View Mode and Actions Row (hidden for Context tab) */}
+        {activeTab !== "context" && (
         <div className="flex items-center justify-between gap-4 px-6 pb-2 bg-background flex-shrink-0 pt-6">
           {/* View Mode Tabs and Action Icons on the left */}
           <div className="flex items-center gap-2">
@@ -1204,11 +1248,67 @@ export function NodeDetailModal({ node, onClose, initialTab = "output", initialV
             />
           </div>
         </div>
+        )}
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto bg-background px-6 py-4">
           <div className="relative">
-            {isInputNode ? (
+            {activeTab === "context" ? (
+              <div className="flex flex-col gap-4">
+                <Card className="rounded-lg border border-border bg-card shadow-sm overflow-hidden">
+                  <CardHeader className="py-3 px-4 border-b border-border/50">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <ArrowLeft className="h-4 w-4 text-muted-foreground" />
+                      Input derived from
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-3 flex flex-col gap-2">
+                    {nodeContext.inputFrom.length === 0 ? (
+                      <p className="text-xs text-muted-foreground py-2">No upstream nodes. Connect inputs in the workflow to see sources here.</p>
+                    ) : (
+                      nodeContext.inputFrom.map((n) => {
+                        const d = n.data as any
+                        const label = d?.actionName || d?.appName || n.id
+                        return (
+                          <Card key={n.id} className="rounded-md border border-border/60 bg-muted/30 p-2.5 hover:bg-muted/50 transition-colors">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-sm font-medium truncate">{label}</span>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground mt-0.5">Output feeds into this node</p>
+                          </Card>
+                        )
+                      })
+                    )}
+                  </CardContent>
+                </Card>
+                <Card className="rounded-lg border border-border bg-card shadow-sm overflow-hidden">
+                  <CardHeader className="py-3 px-4 border-b border-border/50">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                      Output goes to
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-3 flex flex-col gap-2">
+                    {nodeContext.outputTo.length === 0 ? (
+                      <p className="text-xs text-muted-foreground py-2">No downstream nodes. Connect outputs in the workflow to see destinations here.</p>
+                    ) : (
+                      nodeContext.outputTo.map((n) => {
+                        const d = n.data as any
+                        const label = d?.actionName || d?.appName || n.id
+                        return (
+                          <Card key={n.id} className="rounded-md border border-border/60 bg-muted/30 p-2.5 hover:bg-muted/50 transition-colors">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-sm font-medium truncate">{label}</span>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground mt-0.5">Receives this node&apos;s output</p>
+                          </Card>
+                        )
+                      })
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            ) : isInputNode ? (
               // For input nodes, always show as JSON with specific format
               <div className="bg-gradient-to-br from-muted/60 to-muted/40 rounded-lg p-4 border border-border/50 overflow-x-hidden shadow-inner font-mono text-xs">
                 <pre className="whitespace-pre-wrap break-words leading-relaxed text-[11px]">
