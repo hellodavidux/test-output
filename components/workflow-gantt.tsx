@@ -63,7 +63,7 @@ const LEFT_WIDTH = 280
 const SECONDS_MAX = 20
 const TIME_HEADER_HEIGHT = 32
 
-const COMPACT_ROW_HEIGHT = 28
+const COMPACT_ROW_HEIGHT = 32
 const COMPACT_LEFT_WIDTH = 150
 const COMPACT_TIME_HEADER_HEIGHT = 18
 const COMPACT_PX_PER_SEC = 20
@@ -187,11 +187,20 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
       if (collapsed.has(node.id) && node.hasChildren) {
         hideDepth = node.depth
       }
+      // Skip nodes with no label so we don't render an empty row
+      const label = typeof node.label === "string" ? node.label : String(node.label ?? "")
+      if (!label.trim()) continue
       visible.push(node)
       if (node.endSec > maxSec) maxSec = node.endSec
     }
     return { visibleNodes: visible, maxSec: Math.min(Math.max(maxSec + 2, SECONDS_MAX), SECONDS_MAX) }
   }, [collapsed, sourceNodes])
+
+  // End time of the latest error node (by endSec). Nodes that start after this are incomplete.
+  const errorEndSec = useMemo(() => {
+    const errorNodes = visibleNodes.filter((n) => n.status === "error")
+    return errorNodes.length > 0 ? Math.max(...errorNodes.map((n) => n.endSec)) : -1
+  }, [visibleNodes])
 
   const simulatedSec = useMemo(() => {
     if (!compact || !isRunning || runStartTime == null) return null
@@ -239,26 +248,29 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
             >
               {/* Node label cells */}
               {visibleNodes.map((node) => {
+                if (!(typeof node.label === "string" ? node.label : String(node.label ?? "")).trim()) return null
+                const isIncomplete = errorEndSec >= 0 && node.startSec > errorEndSec
                 const isSelected = selectedNodeId === node.id
                 const isNodeRunning = simulatedSec != null && simulatedSec >= node.startSec && simulatedSec < node.endSec
                 const isNodeFinished = simulatedSec != null && simulatedSec >= node.endSec
-                const displayStatus = simulatedSec == null
+                const baseStatus = simulatedSec == null
                   ? (node.status ?? "success")
                   : isNodeFinished
                     ? (node.status ?? "success")
                     : "running"
+                const displayStatus = node.status === "error" ? "error" : isIncomplete ? "skipped" : baseStatus
                 return (
                   <div
                     key={node.id}
-                    className="group flex flex-shrink-0 items-center border-b border-border/20 last:border-b-0 bg-muted/20 px-2 cursor-pointer hover:bg-muted/30 overflow-hidden"
+                    className="group flex flex-shrink-0 items-center border-b border-border/20 last:border-b-0 bg-muted/20 px-2 py-1.5 cursor-pointer hover:bg-muted/30 overflow-hidden"
                     style={{ height: COMPACT_ROW_HEIGHT }}
                     role="button"
                     tabIndex={0}
-                    onClick={() => onNodeSelect?.(isSelected ? null : node)}
+                    onClick={() => onNodeSelect?.(node)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault()
-                        onNodeSelect?.(isSelected ? null : node)
+                        onNodeSelect?.(node)
                       }
                     }}
                   >
@@ -268,23 +280,27 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                         isSelected && "bg-muted"
                       )}
                     >
-                      <GanttNodeIcon type={node.icon} />
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-muted/60 border border-border/50">
+                        <GanttNodeIcon type={node.icon} />
+                      </span>
                       <span className="truncate text-foreground flex-1 min-w-0">{node.label}</span>
                       <span
                         className={cn(
                           "flex h-2.5 w-2.5 shrink-0 items-center justify-center rounded-full",
                           displayStatus === "error" && "bg-red-500",
                           displayStatus === "success" && "bg-green-500",
-                          displayStatus === "running" && "bg-purple-500"
+                          displayStatus === "running" && "bg-purple-500",
+                          displayStatus === "skipped" && "bg-muted-foreground/30"
                         )}
+                        aria-label={displayStatus === "skipped" ? "Incomplete" : displayStatus === "error" ? "Failed" : displayStatus === "success" ? "Success" : "Running"}
                       >
                         {displayStatus === "error" ? (
                           <X className="h-2 w-2 text-white stroke-[3]" />
                         ) : displayStatus === "running" ? (
                           <Loader2 className="h-2 w-2 text-white animate-spin stroke-[2.5]" />
-                        ) : (
+                        ) : displayStatus === "success" ? (
                           <Check className="h-2 w-2 text-white stroke-[3]" />
-                        )}
+                        ) : null}
                       </span>
                     </span>
                   </div>
@@ -300,6 +316,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
               <div className="flex flex-col flex-shrink-0" style={{ minWidth: barAreaWidth }}>
                 {/* Bar rows */}
                 {visibleNodes.map((node) => {
+                  if (!(typeof node.label === "string" ? node.label : String(node.label ?? "")).trim()) return null
                   const isSelected = selectedNodeId === node.id
                   const isNodeRunning = simulatedSec != null && simulatedSec >= node.startSec && simulatedSec < node.endSec
                   const isNodeFinished = simulatedSec != null && simulatedSec >= node.endSec
@@ -325,61 +342,58 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                   return (
                     <div
                       key={node.id}
-                      className="group flex flex-shrink-0 items-center cursor-pointer hover:bg-muted/20 border-b border-border/20 last:border-b-0 overflow-hidden"
+                      className="group relative flex flex-shrink-0 items-center cursor-pointer hover:bg-muted/20 border-b border-border/20 last:border-b-0 overflow-hidden pl-1 pr-1"
                       style={{ height: COMPACT_ROW_HEIGHT, minWidth: barAreaWidth }}
                       role="button"
                       tabIndex={0}
-                      onClick={() => onNodeSelect?.(isSelected ? null : node)}
+                      onClick={() => onNodeSelect?.(node)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault()
-                          onNodeSelect?.(isSelected ? null : node)
+                          onNodeSelect?.(node)
                         }
                       }}
                     >
-                      <div
-                        className="relative flex items-center pl-1 pr-1 flex-1 min-w-0 h-full"
-                        style={{ height: COMPACT_ROW_HEIGHT }}
-                        role="button"
-                        tabIndex={0}
-                      >
-                        <Tooltip delayDuration={200}>
-                          <TooltipTrigger asChild>
-                            <div
-                              className={cn(
-                                "absolute rounded-sm border flex-shrink-0 min-w-[2px] transition-[width] duration-150 flex items-center justify-start pl-1 pr-0.5 overflow-hidden cursor-default ml-2",
-                                "top-1/2 -translate-y-1/2",
-                                displayStatus === "error" && "bg-destructive/20 border-destructive/40",
-                                displayStatus === "success" && (isSelected ? "bg-primary border-primary" : "bg-muted border-border"),
-                                displayStatus === "running" && "bg-purple-500/30 border-purple-500/50"
-                              )}
-                              style={{
-                                left: leftPx,
-                                width: barWidthPxClamped,
-                                height: 14,
-                              }}
-                            >
-                              {displayStatus === "running" && barWidthPxClamped >= 20 && (
-                                <span className="text-[9px] font-medium text-purple-700 dark:text-purple-300 whitespace-nowrap">
-                                  …
-                                </span>
-                              )}
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" sideOffset={4} className="text-xs bg-white dark:bg-card border border-border shadow-md" hideArrow>
-                            <span className="font-medium">{node.label}</span>
-                            {simulatedSec == null && (
-                              <span className="text-muted-foreground"> · Done · {(node.endSec - node.startSec).toFixed(1)}s</span>
+                      <Tooltip delayDuration={200}>
+                        <TooltipTrigger asChild>
+                          <div
+                            className={cn(
+                              "absolute rounded-sm border flex-shrink-0 min-w-[2px] transition-[width] duration-150 flex items-center justify-start pl-1 pr-0.5 overflow-hidden cursor-default ml-2",
+                              "top-1/2 -translate-y-1/2",
+                              displayStatus === "error" && "bg-destructive/20 border-destructive/40",
+                              displayStatus === "success" && (isSelected ? "bg-primary border-primary" : "bg-muted border-border"),
+                              displayStatus === "running" && "bg-purple-500/30 border-purple-500/50",
+                              displayStatus === "skipped" && "bg-muted-foreground/20 border-muted-foreground/30"
                             )}
-                            {simulatedSec != null && isNodeRunning && (
-                              <span className="text-muted-foreground"> · Running…</span>
+                            style={{
+                              left: leftPx,
+                              width: barWidthPxClamped,
+                              height: 14,
+                            }}
+                          >
+                            {displayStatus === "running" && barWidthPxClamped >= 20 && (
+                              <span className="text-[9px] font-medium text-purple-700 dark:text-purple-300 whitespace-nowrap">
+                                …
+                              </span>
                             )}
-                            {simulatedSec != null && isNodeFinished && (
-                              <span className="text-muted-foreground"> · Done · {(node.endSec - node.startSec).toFixed(1)}s</span>
-                            )}
-                          </TooltipContent>
-                        </Tooltip>
-                      </div>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" sideOffset={4} className="text-xs bg-white dark:bg-card border border-border shadow-md" hideArrow>
+                          <span className="font-medium">{node.label}</span>
+                          {displayStatus === "skipped" && (
+                            <span className="text-muted-foreground"> · Incomplete (run failed earlier)</span>
+                          )}
+                          {simulatedSec == null && displayStatus !== "skipped" && (
+                            <span className="text-muted-foreground"> · Done · {(node.endSec - node.startSec).toFixed(1)}s</span>
+                          )}
+                          {simulatedSec != null && isNodeRunning && (
+                            <span className="text-muted-foreground"> · Running…</span>
+                          )}
+                          {simulatedSec != null && isNodeFinished && displayStatus !== "skipped" && (
+                            <span className="text-muted-foreground"> · Done · {(node.endSec - node.startSec).toFixed(1)}s</span>
+                          )}
+                        </TooltipContent>
+                      </Tooltip>
                     </div>
                   )
                 })}
@@ -393,7 +407,10 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
 
   return (
     <TooltipProvider delayDuration={200}>
-    <Card className="rounded-lg bg-card border shadow-sm overflow-hidden flex flex-col flex-1 min-h-0 p-0 pb-3 gap-0">
+    <Card
+      className="rounded-lg bg-card border shadow-sm overflow-hidden flex flex-col flex-1 min-h-0 p-0 pb-3 gap-0"
+      onClick={() => onNodeSelect?.(null)}
+    >
       <CardContent className="p-0 flex flex-1 flex-col min-h-0">
         <div className="flex flex-1 min-h-0 flex-col min-w-0">
           {/* Time axis row: aligns with node rows below */}
@@ -427,6 +444,8 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
           <ScrollArea className="flex-1 min-h-0">
             <div className="flex flex-col min-w-0">
               {visibleNodes.map((node, index) => {
+                const isIncomplete = errorEndSec >= 0 && node.startSec > errorEndSec
+                const effectiveStatus = node.status === "error" ? "error" : isIncomplete ? "skipped" : (node.status ?? "success")
                 const isSelected = selectedNodeId === node.id
                 const isHighlighted = highlightNodeId === node.id
                 const leftPct = (node.startSec / maxSec) * 100
@@ -437,7 +456,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                     className={cn(
                       "group flex items-center flex-shrink-0 cursor-pointer hover:bg-muted/30 border-b border-border/30 pr-8",
                       index === 0 && "border-t border-border/30",
-                      isSelected && "bg-muted/10 shadow-[inset_2px_0_0_0_hsl(var(--primary))]",
+                      isSelected && "bg-muted/30 shadow-[inset_2px_0_0_0_hsl(var(--primary))]",
                       isHighlighted && "bg-primary/5 hover:bg-primary/5"
                     )}
                     style={{ minHeight: ROW_HEIGHT }}
@@ -481,32 +500,36 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                         className="flex items-center gap-1.5 rounded-md py-0.5 pl-0.5 pr-3 min-w-0 flex-1"
                         onClick={(e) => {
                           e.stopPropagation()
-                          onNodeSelect?.(isSelected ? null : node)
+                          onNodeSelect?.(node)
                         }}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault()
                             e.stopPropagation()
-                            onNodeSelect?.(isSelected ? null : node)
+                            onNodeSelect?.(node)
                           }
                         }}
                       >
-                        <GanttNodeIcon type={node.icon} />
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted/60 border border-border/50">
+                          <GanttNodeIcon type={node.icon} />
+                        </span>
                         <span className="truncate text-foreground flex-1 min-w-0">
                           {node.label}
                         </span>
                         <span
                           className={cn(
                             "flex h-2.5 w-2.5 shrink-0 items-center justify-center rounded-full",
-                            node.status === "error" ? "bg-red-500" : "bg-green-500"
+                            effectiveStatus === "error" && "bg-red-500",
+                            effectiveStatus === "success" && "bg-green-500",
+                            effectiveStatus === "skipped" && "bg-muted-foreground/30"
                           )}
-                          aria-label={node.status === "error" ? "Failed" : "Success"}
+                          aria-label={effectiveStatus === "error" ? "Failed" : effectiveStatus === "success" ? "Success" : "Skipped"}
                         >
-                          {node.status === "error" ? (
+                          {effectiveStatus === "error" ? (
                             <X className="h-1.5 w-1.5 text-white stroke-[3]" />
-                          ) : (
+                          ) : effectiveStatus === "success" ? (
                             <Check className="h-1.5 w-1.5 text-white stroke-[3]" />
-                          )}
+                          ) : null}
                         </span>
                       </span>
                     </div>
@@ -515,12 +538,12 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                       className="flex-1 min-w-0 relative h-9 flex items-center pl-8 pr-8"
                       onClick={(e) => {
                         e.stopPropagation()
-                        onNodeSelect?.(isSelected ? null : node)
+                        onNodeSelect?.(node)
                       }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault()
-                          onNodeSelect?.(isSelected ? null : node)
+                          onNodeSelect?.(node)
                         }
                       }}
                       role="button"
@@ -531,13 +554,15 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                           <div
                             className={cn(
                               "absolute h-5 rounded-sm border flex-shrink-0 min-w-[2px] transition-colors flex items-center justify-start pl-1.5 pr-1 overflow-hidden cursor-default ml-2",
-                              node.status === "error"
+                              effectiveStatus === "error"
                                 ? isSelected
                                   ? "bg-destructive/25 border-destructive/50 group-hover:bg-destructive/35"
                                   : "bg-destructive/20 border-destructive/40 group-hover:bg-destructive/30"
-                                : isSelected
-                                  ? "bg-primary border-primary group-hover:bg-primary/90"
-                                  : "bg-muted border-border group-hover:bg-muted-foreground/20"
+                                : effectiveStatus === "skipped"
+                                  ? "bg-muted-foreground/20 border-muted-foreground/30"
+                                  : isSelected
+                                    ? "bg-primary border-primary group-hover:bg-primary/90"
+                                    : "bg-muted border-border group-hover:bg-muted-foreground/20"
                             )}
                             style={{
                               left: `${leftPct}%`,
@@ -548,11 +573,13 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                               <span
                                 className={cn(
                                   "text-[10px] font-medium tabular-nums whitespace-nowrap",
-                                  node.status === "error"
+                                  effectiveStatus === "error"
                                     ? "text-destructive"
-                                    : isSelected
-                                      ? "text-primary-foreground/80"
-                                      : "text-muted-foreground"
+                                    : effectiveStatus === "skipped"
+                                      ? "text-muted-foreground/70"
+                                      : isSelected
+                                        ? "text-primary-foreground/80"
+                                        : "text-muted-foreground"
                                 )}
                               >
                                 {(node.endSec - node.startSec).toFixed(1)}s
@@ -567,7 +594,11 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                           hideArrow
                         >
                           <span className="font-medium">{node.label}</span>
-                          <span className="text-muted-foreground"> · {(node.endSec - node.startSec).toFixed(1)}s</span>
+                          {effectiveStatus === "skipped" ? (
+                            <span className="text-muted-foreground"> · Incomplete (run failed earlier)</span>
+                          ) : (
+                            <span className="text-muted-foreground"> · {(node.endSec - node.startSec).toFixed(1)}s</span>
+                          )}
                         </TooltipContent>
                       </Tooltip>
                     </div>

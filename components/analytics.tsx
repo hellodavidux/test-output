@@ -28,7 +28,8 @@ import {
   Locate,
   ArrowRight,
   ArrowLeft,
-  Copy
+  Copy,
+  Check
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -41,7 +42,7 @@ import { Separator } from "@/components/ui/separator"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { cn } from "@/lib/utils"
 import { format } from "date-fns"
-import { WorkflowGantt, type GanttNode, GANTT_NODES, getNodeIdentifier, GanttNodeIcon, varyGanttNodesByRunId } from "@/components/workflow-gantt"
+import { WorkflowGantt, type GanttNode, GANTT_NODES, GanttNodeIcon, varyGanttNodesByRunId } from "@/components/workflow-gantt"
 import { TabContext } from "@/components/dashboard-layout"
 interface RunData {
   runId: string
@@ -82,9 +83,9 @@ const mockRuns: RunData[] = [
     runId: "b2c3d4e5-f6a7-8901-bcde-f12345678901",
     conversationId: "N/A",
     created: "12/06/25 02:30 PM",
-    status: "error",
+    status: "success",
     input: "Generate a report",
-    output: "Error: Rate limit exceeded.",
+    output: "Report generated successfully.",
     latency: "0.89s",
     tokens: 12,
     user: "dhidalgo@stack-ai.com"
@@ -256,11 +257,19 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
     }
   ]
 
-  // Run-specific Gantt data so Previous/Next run show different bar timings
-  const runGanttNodes = useMemo(
-    () => varyGanttNodesByRunId(selectedRunId ?? "", GANTT_NODES),
-    [selectedRunId]
-  )
+  // Run-specific Gantt data so Previous/Next run show different bar timings.
+  // When the run is success, show all nodes as success (no error node in this run).
+  const runGanttNodes = useMemo(() => {
+    const nodes = varyGanttNodesByRunId(selectedRunId ?? "", GANTT_NODES)
+    const run = mockRuns.find((r) => r.runId === selectedRunId)
+    if (run?.status === "success") {
+      return nodes.map((n) => ({ ...n, status: "success" as const }))
+    }
+    return nodes
+  }, [selectedRunId])
+
+  // Runs ordered newest first (for table and for Previous = older, Next = more recent)
+  const runsNewestFirst = useMemo(() => [...mockRuns].reverse(), [])
 
   // Run detail subpage with main content + sidebar
   const selectedRun = mockRuns.find((r) => r.runId === selectedRunId)
@@ -283,7 +292,11 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
               Back to Analytics
             </Button>
           </div>
-          <div className="flex-1 overflow-auto px-10 pb-6">
+          <div
+            className="flex-1 overflow-auto px-10 pb-6"
+            onClick={() => setSelectedGanttNode(null)}
+            role="presentation"
+          >
             <div className="flex items-center justify-between gap-4 mb-1">
               <h1 className="text-xl font-semibold tracking-tight">Run Details</h1>
               <div className="flex items-center gap-2 shrink-0">
@@ -336,7 +349,7 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
         {/* Right: Run sidebar - can be closed when on General */}
         {sidebarOpen && (
         <aside className="w-96 border-l border-border bg-card flex-shrink-0 flex flex-col overflow-hidden">
-          <div className="flex items-center justify-between p-4 border-b border-border gap-2">
+          <div className="flex items-center justify-between px-4 py-2 border-b border-border gap-2">
             <div className="flex items-center gap-1 min-w-0">
               {selectedGanttNode && !sidebarShowGeneral ? (
                 <Button
@@ -353,6 +366,11 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                 </Button>
               ) : null}
               <div className="flex items-center gap-2 min-w-0">
+                {selectedGanttNode && !sidebarShowGeneral && (
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted/60 border border-border/50">
+                    <GanttNodeIcon type={selectedGanttNode.icon} />
+                  </span>
+                )}
                 <h2 className="text-base font-semibold truncate">
                   {!selectedGanttNode || sidebarShowGeneral
                     ? "General"
@@ -363,13 +381,17 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                 {selectedGanttNode && !sidebarShowGeneral && (
                   <>
                     <span
-                      className="shrink-0 rounded-md border border-border/60 bg-background py-0.5 px-1.5 text-[11px] font-medium text-muted-foreground"
-                      title={`Identifier: ${getNodeIdentifier(selectedGanttNode, GANTT_NODES)}`}
+                      className={cn(
+                        "flex h-2.5 w-2.5 shrink-0 items-center justify-center rounded-full",
+                        selectedGanttNode.status === "error" ? "bg-red-500" : "bg-green-500"
+                      )}
+                      aria-label={selectedGanttNode.status === "error" ? "Failed" : "Success"}
                     >
-                      {getNodeIdentifier(selectedGanttNode, GANTT_NODES)}
-                    </span>
-                    <span className="shrink-0 text-[11px] font-medium text-muted-foreground tabular-nums">
-                      {(selectedGanttNode.endSec - selectedGanttNode.startSec).toFixed(1)}s
+                      {selectedGanttNode.status === "error" ? (
+                        <X className="h-1.5 w-1.5 text-white stroke-[3]" />
+                      ) : (
+                        <Check className="h-1.5 w-1.5 text-white stroke-[3]" />
+                      )}
                     </span>
                   </>
                 )}
@@ -377,17 +399,17 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                   <span
                     className={cn(
                       "shrink-0 px-2.5 py-0.5 text-xs font-medium rounded-full",
-                      selectedRun.status === "success"
-                        ? "bg-green-100 text-green-700"
-                        : selectedRun.status === "error"
-                          ? "bg-red-100 text-red-700"
+                      selectedRun.status === "error" || runGanttNodes.some((n) => n.status === "error")
+                        ? "bg-red-100 text-red-700"
+                        : selectedRun.status === "success"
+                          ? "bg-green-100 text-green-700"
                           : "bg-amber-100 text-amber-700"
                     )}
                   >
-                    {selectedRun.status === "success"
-                      ? "Success"
-                      : selectedRun.status === "error"
-                        ? "Failure"
+                    {selectedRun.status === "error" || runGanttNodes.some((n) => n.status === "error")
+                      ? "Failure"
+                      : selectedRun.status === "success"
+                        ? "Success"
                         : "Running"}
                   </span>
                 )}
@@ -432,17 +454,17 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                       { icon: Bot, label: "AI Model", value: "OpenAI" },
                       { icon: User, label: "User ID", value: selectedRun.user },
                       { icon: Link2, label: "Used Tokens", value: String(selectedRun.tokens) },
-                      { icon: ArrowDownToLine, label: "Input", value: selectedRun.input || "—" },
-                      { icon: ArrowUpFromLine, label: "Output", value: selectedRun.output || "—" },
+                      { icon: ArrowDownToLine, label: "Workflow input", value: selectedRun.input || "—" },
+                      { icon: ArrowUpFromLine, label: "Workflow output", value: selectedRun.output || "—" },
                       { icon: AlertCircle, label: "Errors", value: selectedRun.status === "error" ? selectedRun.output || "Error" : "N/A" },
                     ].map(({ icon: Icon, label, value }) =>
-                      label === "Input" || label === "Output" ? (
+                      label === "Workflow input" || label === "Workflow output" ? (
                         <div key={label} className="py-3 border-b border-border/60 last:border-b-0">
                           <div className="flex items-center gap-2.5 mb-2">
                             <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
                             <span className="text-muted-foreground font-medium">{label}</span>
                           </div>
-                          <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm text-foreground/90 whitespace-pre-wrap break-words">
+                          <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm text-foreground/90 whitespace-pre-wrap break-words min-h-[300px]">
                             {value}
                           </div>
                         </div>
@@ -471,7 +493,7 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                   <TabsTrigger value="completion" className={triggerClass}>Completion</TabsTrigger>
                 </TabsList>
                 <TabsContent value="input" className="flex-1 mt-0 flex flex-col gap-4">
-                  <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm overflow-auto shrink-0 min-h-[230px]">
+                  <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm overflow-auto shrink-0 min-h-[300px]">
                     <p className="text-foreground/90 whitespace-pre-wrap break-words">
                       {getAiAgentTabContent(selectedGanttNode?.id ?? "").input}
                     </p>
@@ -550,7 +572,7 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                         </Button>
                       </div>
                     </div>
-                    <div className="relative rounded-lg border border-border bg-muted/30 p-3 min-h-[230px] text-sm overflow-auto shrink-0">
+                    <div className="relative rounded-lg border border-border bg-muted/30 p-3 min-h-[300px] text-sm overflow-auto shrink-0">
                       <p className="text-foreground/90 whitespace-pre-wrap break-words pr-8">
                         {getAiAgentTabContent(selectedGanttNode?.id ?? "").completion}
                       </p>
@@ -627,7 +649,7 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                   </Alert>
                 )}
                 <TabsContent value="input" className="flex-1 mt-0 overflow-auto min-h-0 flex flex-col gap-4">
-                  <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm overflow-auto flex flex-col shrink-0 min-h-[230px]">
+                  <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm overflow-auto flex flex-col shrink-0 min-h-[300px]">
                     <p className="text-foreground/90 whitespace-pre-wrap break-words">
                       {getNodeInputOutput(selectedGanttNode).input}
                     </p>
@@ -664,7 +686,7 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                 </TabsContent>
                 <TabsContent value="output" className="flex-1 mt-0 overflow-auto min-h-0 flex flex-col gap-4">
                   {selectedGanttNode?.status !== "error" && (
-                    <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm overflow-auto flex flex-col shrink-0 min-h-[230px]">
+                    <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm overflow-auto flex flex-col shrink-0 min-h-[300px]">
                       <p className="text-foreground/90 whitespace-pre-wrap break-words">
                         {getNodeInputOutput(selectedGanttNode).output}
                       </p>
@@ -974,7 +996,7 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mockRuns.map((run) => (
+                  {runsNewestFirst.map((run) => (
                     <TableRow
                       key={run.runId}
                       className="cursor-pointer hover:bg-muted/50"
