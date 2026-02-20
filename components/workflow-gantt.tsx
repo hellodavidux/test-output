@@ -28,7 +28,7 @@ export const GANTT_NODES: GanttNode[] = [
   { id: "6", label: "If/Else", startSec: 15, endSec: 16, depth: 0, hasChildren: false, icon: "branch" },
   { id: "7", label: "Notion", startSec: 15.5, endSec: 17, depth: 0, hasChildren: false, icon: "file" },
   { id: "9", label: "Project node", startSec: 0, endSec: 6, depth: 0, hasChildren: true, icon: "folder" },
-  { id: "9-1", label: "input", startSec: 0.5, endSec: 1.5, depth: 1, hasChildren: false, icon: "play" },
+  { id: "9-1", label: "input", startSec: 0, endSec: 1.5, depth: 1, hasChildren: false, icon: "play" },
   { id: "9-2", label: "AI Agent", startSec: 1.5, endSec: 4, depth: 1, hasChildren: false, icon: "zap" },
   { id: "9-3", label: "Send Email", startSec: 4, endSec: 5.5, depth: 1, hasChildren: false, icon: "mail" },
   { id: "8", label: "Output", startSec: 17, endSec: 20, depth: 0, hasChildren: false, icon: "send" },
@@ -140,9 +140,11 @@ interface WorkflowGanttProps {
   runStartTime?: number | null
   /** When provided, use these nodes instead of default (e.g. per-run varied data). */
   nodes?: GanttNode[]
+  /** When set, the Gantt row for this node id is highlighted (e.g. when hovering a context link in sidebar). */
+  highlightNodeId?: string | null
 }
 
-export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = false, isRunning = false, runStartTime = null, nodes: nodesProp }: WorkflowGanttProps) {
+export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = false, isRunning = false, runStartTime = null, nodes: nodesProp, highlightNodeId = null }: WorkflowGanttProps) {
   const sourceNodes = nodesProp ?? MOCK_NODES
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set(["9"]))
   const [now, setNow] = useState(() => Date.now())
@@ -419,12 +421,17 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
             <div className="flex flex-col min-w-0">
               {visibleNodes.map((node) => {
                 const isSelected = selectedNodeId === node.id
+                const isHighlighted = highlightNodeId === node.id
                 const leftPct = (node.startSec / maxSec) * 100
                 const widthPct = Math.max((node.endSec - node.startSec) / maxSec * 100, 1)
                 return (
                   <div
                     key={node.id}
-                    className="group flex items-center flex-shrink-0 cursor-pointer hover:bg-muted/30 border-b border-border/30 last:border-b-0 pr-8"
+                    className={cn(
+                      "group flex items-center flex-shrink-0 cursor-pointer hover:bg-muted/20 border-b border-border/30 pr-8",
+                      isSelected && "bg-muted/10 border-l-2 border-l-primary",
+                      isHighlighted && "bg-primary/5 hover:bg-primary/5"
+                    )}
                     style={{ minHeight: ROW_HEIGHT }}
                     role="button"
                     tabIndex={0}
@@ -463,10 +470,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                       <span
                         role="button"
                         tabIndex={0}
-                        className={cn(
-                          "flex items-center gap-1.5 rounded-md py-0.5 pl-0.5 pr-1.5 min-w-0 flex-1 hover:bg-muted/30",
-                          isSelected && "bg-muted"
-                        )}
+                        className="flex items-center gap-1.5 rounded-md py-0.5 pl-0.5 pr-3 min-w-0 flex-1"
                         onClick={(e) => {
                           e.stopPropagation()
                           onNodeSelect?.(isSelected ? null : node)

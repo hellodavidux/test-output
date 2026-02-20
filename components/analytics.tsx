@@ -28,7 +28,7 @@ import {
   Locate,
   ArrowRight,
   ArrowLeft,
-  LayoutDashboard
+  Copy
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -113,14 +113,18 @@ const mockRuns: RunData[] = [
   }
 ]
 
-// Single immediate predecessor/successor for Context tab (1 node input, 1 node output)
-function getNodeContext(node: GanttNode | null): { inputFrom: GanttNode | null; outputTo: GanttNode | null } {
-  if (!node) return { inputFrom: null, outputTo: null }
-  const candidatesIn = GANTT_NODES.filter((n) => n.id !== node.id && n.endSec <= node.startSec)
-  const candidatesOut = GANTT_NODES.filter((n) => n.id !== node.id && n.startSec >= node.endSec)
-  const inputFrom = candidatesIn.length === 0 ? null : candidatesIn.reduce((best, n) => (n.endSec > (best?.endSec ?? -1) ? n : best))
-  const outputTo = candidatesOut.length === 0 ? null : candidatesOut.reduce((best, n) => (best == null || n.startSec < best.startSec ? n : best))
-  return { inputFrom, outputTo }
+// Predecessors/successors for Context tab (multiple inputs and outputs per node)
+function getNodeContext(node: GanttNode | null, nodes: GanttNode[] = GANTT_NODES): { inputFrom: GanttNode[]; outputTo: GanttNode[] } {
+  if (!node) return { inputFrom: [], outputTo: [] }
+  const candidatesIn = nodes
+    .filter((n) => n.id !== node.id && n.endSec <= node.startSec)
+    .sort((a, b) => b.endSec - a.endSec)
+    .slice(0, 3)
+  const candidatesOut = nodes
+    .filter((n) => n.id !== node.id && n.startSec >= node.endSec)
+    .sort((a, b) => a.startSec - b.startSec)
+    .slice(0, 3)
+  return { inputFrom: candidatesIn, outputTo: candidatesOut }
 }
 
 // Per-node input/output for Run Details sidebar (different text per node)
@@ -147,23 +151,28 @@ function getAiAgentTabContent(nodeId: string): { input: string; tools: string; c
     "2": {
       input: "User message: \"What are you capable of?\"\nContext: First message in conversation.",
       tools: "Tools used: None (direct reply).",
-      completion: "The latest game score for Real Madrid is: **Real Madrid 1 - 2 Manchester City** (Full Time). You can find more details on LiveScore.\n\nI looked up the current result using the search tool. The match was part of the Champions League. Manchester City took the lead in the first half, and despite a second-half goal from Real Madrid, the visitors held on for the win.\n\nIf you need lineups, stats, or another match, say which one.",
+      completion: "Here’s what I can do for you:\n\n**Answer questions** — Current events, how-to’s, definitions, or just bouncing ideas.\n**Search the web** — I can look up scores, news, docs, or any fact you need.\n**Summarize** — Long articles, threads, or your own notes into short bullet points or a paragraph.\n**Help with tasks** — Drafting emails, outlining a plan, or walking through a process step by step.\n\nNo tools were used for this reply; it’s a direct answer. Want to try something specific?",
     },
     "2a": {
       input: "Previous completion + user: \"Summarize that in three bullet points.\"",
       tools: "Tools used: None.",
-      completion: "• **Real Madrid 1 - 2 Manchester City** (Champions League).\n• Manchester City led and held on for an away win.\n• More details (lineups, stats) available on request.",
+      completion: "• **Real Madrid 1 - 2 Manchester City** (Champions League).\n• Manchester City led and held on for an away win.\n• I can pull lineups, stats, or another match whenever you’d like.",
     },
     "4": {
       input: "Query: \"What was the latest Real Madrid score?\"\nTool choice: Search (LiveScore).",
       tools: "Tools used: Search – LiveScore API. Query: \"Real Madrid latest score\". Result: 1 - 2 vs Manchester City.",
-      completion: "The latest game score for Real Madrid is: **Real Madrid 1 - 2 Manchester City** (Full Time). You can find more details on LiveScore.\n\nI looked up the current result using the search tool. The match was part of the Champions League. Manchester City took the lead in the first half, and despite a second-half goal from Real Madrid, the visitors held on for the win.\n\nIf you need lineups, stats, or another match, say which one.",
+      completion: "The latest result I found is **Real Madrid 1 - 2 Manchester City** (full time, Champions League). City went ahead and held on despite a second-half reply from Madrid. If you want lineups, xG, or another fixture I can look that up too.",
+    },
+    "9-2": {
+      input: "Project subflow trigger with context.",
+      tools: "Tools used: None.",
+      completion: "Summary from this step: key points extracted and formatted for the next action. Ready for the Send Email step with the condensed version.",
     },
   }
   return byId[nodeId] ?? {
     input: "Input for AI Agent.",
-    tools: "Tools used for AI Agent.",
-    completion: "Completion for AI Agent.",
+    tools: "Tools invoked by AI Agent.",
+    completion: "Response generated. You can ask a follow-up or switch to another task.",
   }
 }
 
@@ -180,6 +189,7 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [selectedGanttNode, setSelectedGanttNode] = useState<GanttNode | null>(null)
+  const [hoveredContextNodeId, setHoveredContextNodeId] = useState<string | null>(null)
   const [sidebarShowGeneral, setSidebarShowGeneral] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [completionModalOpen, setCompletionModalOpen] = useState(false)
@@ -313,11 +323,12 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                 </Button>
               </div>
             </div>
-            <p className="text-sm text-muted-foreground mb-6">Inspect a single run: timing, inputs, outputs, and node results.</p>
+            <p className="text-sm text-muted-foreground mb-6">Inspect a single Run. Click on a node to see inputs and outputs.</p>
             <WorkflowGantt
               nodes={runGanttNodes}
               selectedNodeId={selectedGanttNode?.id ?? null}
               onNodeSelect={setSelectedGanttNode}
+              highlightNodeId={hoveredContextNodeId}
             />
           </div>
         </div>
@@ -332,18 +343,16 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 shrink-0 -ml-1"
-                  onClick={() => setSidebarShowGeneral(true)}
+                  onClick={() => {
+                    setSidebarShowGeneral(true)
+                    setSelectedGanttNode(null)
+                  }}
                   aria-label="Back to General"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
               ) : null}
               <div className="flex items-center gap-2 min-w-0">
-                {selectedGanttNode && !sidebarShowGeneral ? (
-                  <GanttNodeIcon type={selectedGanttNode.icon} />
-                ) : (
-                  <LayoutDashboard className="h-4 w-4 shrink-0 text-muted-foreground" />
-                )}
                 <h2 className="text-base font-semibold truncate">
                   {!selectedGanttNode || sidebarShowGeneral
                     ? "General"
@@ -462,48 +471,58 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                   <TabsTrigger value="tools" className={triggerClass}>Tools</TabsTrigger>
                   <TabsTrigger value="completion" className={triggerClass}>Completion</TabsTrigger>
                 </TabsList>
-                <TabsContent value="context" className="flex-1 p-4 mt-0 overflow-auto">
+                <TabsContent value="context" className="flex-1 mt-0 overflow-auto">
                   {(() => {
-                    const { inputFrom, outputTo } = getNodeContext(selectedGanttNode)
+                    const { inputFrom, outputTo } = getNodeContext(selectedGanttNode, runGanttNodes)
                     return (
                       <div className="flex flex-col gap-4">
                         <div>
                           <div className="text-sm font-medium flex items-center gap-2 py-1 text-muted-foreground">
                             <ArrowLeft className="h-4 w-4" />
-                            Input derived from
+                            Receives input from:
                           </div>
-                          {!inputFrom ? (
+                          {inputFrom.length === 0 ? (
                             <p className="text-xs text-muted-foreground py-1">No upstream node.</p>
                           ) : (
-                            <button
-                              type="button"
-                              className="flex w-full items-center gap-2 rounded-md bg-muted/30 py-2 px-3 text-left hover:bg-muted/50 cursor-pointer transition-colors"
-                              onClick={() => setSelectedGanttNode(inputFrom)}
-                            >
-                              <GanttNodeIcon type={inputFrom.icon} />
-                              <span className="text-sm font-medium truncate flex-1 min-w-0">{inputFrom.label}</span>
-                              <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{(inputFrom.endSec - inputFrom.startSec).toFixed(1)}</span>
-                            </button>
+                            inputFrom.map((n) => (
+                              <button
+                                key={n.id}
+                                type="button"
+                                className="flex w-full items-center gap-2 rounded-md bg-muted/20 py-2 px-3 text-left hover:bg-muted/30 hover:border-border/50 border border-transparent cursor-pointer transition-colors"
+                                onClick={() => setSelectedGanttNode(n)}
+                                onMouseEnter={() => setHoveredContextNodeId(n.id)}
+                                onMouseLeave={() => setHoveredContextNodeId(null)}
+                              >
+                                <GanttNodeIcon type={n.icon} />
+                                <span className="text-sm font-medium truncate flex-1 min-w-0">{n.label}</span>
+                                <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{(n.endSec - n.startSec).toFixed(1)}</span>
+                              </button>
+                            ))
                           )}
                         </div>
                         <Separator className="my-0" />
                         <div>
                           <div className="text-sm font-medium flex items-center gap-2 py-1 text-muted-foreground">
                             <ArrowRight className="h-4 w-4" />
-                            Output goes to
+                            Sends Output to:
                           </div>
-                          {!outputTo ? (
+                          {outputTo.length === 0 ? (
                             <p className="text-xs text-muted-foreground py-1">No downstream node.</p>
                           ) : (
-                            <button
-                              type="button"
-                              className="flex w-full items-center gap-2 rounded-md bg-muted/30 py-2 px-3 text-left hover:bg-muted/50 cursor-pointer transition-colors"
-                              onClick={() => setSelectedGanttNode(outputTo)}
-                            >
-                              <GanttNodeIcon type={outputTo.icon} />
-                              <span className="text-sm font-medium truncate flex-1 min-w-0">{outputTo.label}</span>
-                              <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{(outputTo.endSec - outputTo.startSec).toFixed(1)}</span>
-                            </button>
+                            outputTo.map((n) => (
+                              <button
+                                key={n.id}
+                                type="button"
+                                className="flex w-full items-center gap-2 rounded-md bg-muted/20 py-2 px-3 text-left hover:bg-muted/30 hover:border-border/50 border border-transparent cursor-pointer transition-colors"
+                                onClick={() => setSelectedGanttNode(n)}
+                                onMouseEnter={() => setHoveredContextNodeId(n.id)}
+                                onMouseLeave={() => setHoveredContextNodeId(null)}
+                              >
+                                <GanttNodeIcon type={n.icon} />
+                                <span className="text-sm font-medium truncate flex-1 min-w-0">{n.label}</span>
+                                <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{(n.endSec - n.startSec).toFixed(1)}</span>
+                              </button>
+                            ))
                           )}
                         </div>
                       </div>
@@ -514,7 +533,7 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                   <p className="text-sm text-muted-foreground">Input for AI Agent.</p>
                 </TabsContent>
                 <TabsContent value="tools" className="flex-1 p-4 mt-0 overflow-auto">
-                  <p className="text-sm text-muted-foreground">Tools used for AI Agent.</p>
+                  <p className="text-sm text-muted-foreground">Tools invoked by AI Agent.</p>
                 </TabsContent>
                 <TabsContent value="completion" className="flex-1 mt-0 overflow-hidden flex flex-col min-h-0">
                   <div className="flex flex-1 flex-col gap-2 min-h-0">
@@ -526,17 +545,40 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                         </TabsList>
                       </Tabs>
                       <div className="ml-auto flex items-center gap-1">
-                        <Button variant="ghost" size="icon" className="h-8 w-8" />
-                        <Button variant="ghost" size="icon" className="h-8 w-8" />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => navigator.clipboard.writeText(getAiAgentTabContent(selectedGanttNode?.id ?? "").completion)}
+                          title="Copy"
+                          aria-label="Copy"
+                        >
+                          <Copy className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => {
+                            const text = getAiAgentTabContent(selectedGanttNode?.id ?? "").completion
+                            const blob = new Blob([text], { type: "text/plain" })
+                            const url = URL.createObjectURL(blob)
+                            const a = document.createElement("a")
+                            a.href = url
+                            a.download = `completion-${selectedGanttNode?.id ?? "agent"}.txt`
+                            a.click()
+                            URL.revokeObjectURL(url)
+                          }}
+                          title="Download"
+                          aria-label="Download"
+                        >
+                          <Download className="h-4 w-4 text-muted-foreground" />
+                        </Button>
                       </div>
                     </div>
                     <div className="relative rounded-lg border border-border bg-muted/30 p-3 flex-1 min-h-0 text-sm overflow-auto">
                       <p className="text-foreground/90 whitespace-pre-wrap break-words pr-8">
-                        The latest game score for Real Madrid is: **Real Madrid 1 - 2 Manchester City** (Full Time). You can find more details on LiveScore.
-                        {"\n\n"}
-                        I looked up the current result using the search tool. The match was part of the Champions League. Manchester City took the lead in the first half, and despite a second-half goal from Real Madrid, the visitors held on for the win.
-                        {"\n\n"}
-                        If you need lineups, stats, or another match, say which one.
+                        {getAiAgentTabContent(selectedGanttNode?.id ?? "").completion}
                       </p>
                       <button
                         type="button"
@@ -584,48 +626,58 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                     </AlertDescription>
                   </Alert>
                 )}
-                <TabsContent value="context" className="flex-1 p-4 mt-0 overflow-auto min-h-0 flex flex-col gap-4">
+                <TabsContent value="context" className="flex-1 mt-0 overflow-auto min-h-0 flex flex-col gap-4">
                   {(() => {
-                    const { inputFrom, outputTo } = getNodeContext(selectedGanttNode)
+                    const { inputFrom, outputTo } = getNodeContext(selectedGanttNode, runGanttNodes)
                     return (
                       <div className="flex flex-col gap-4 pr-1">
                         <div>
                           <div className="text-sm font-medium flex items-center gap-2 py-1 text-muted-foreground">
                             <ArrowLeft className="h-4 w-4" />
-                            Input derived from
+                            Receives input from:
                           </div>
-                          {!inputFrom ? (
+                          {inputFrom.length === 0 ? (
                             <p className="text-xs text-muted-foreground py-1">No upstream node (this node starts first or has no prior node).</p>
                           ) : (
-                            <button
-                              type="button"
-                              className="flex w-full items-center gap-2 rounded-md bg-muted/30 py-2 px-3 text-left hover:bg-muted/50 cursor-pointer transition-colors"
-                              onClick={() => setSelectedGanttNode(inputFrom)}
-                            >
-                              <GanttNodeIcon type={inputFrom.icon} />
-                              <span className="text-sm font-medium truncate flex-1 min-w-0">{inputFrom.label}</span>
-                              <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{(inputFrom.endSec - inputFrom.startSec).toFixed(1)}</span>
-                            </button>
+                            inputFrom.map((n) => (
+                              <button
+                                key={n.id}
+                                type="button"
+                                className="flex w-full items-center gap-2 rounded-md bg-muted/20 py-2 px-3 text-left hover:bg-muted/30 hover:border-border/50 border border-transparent cursor-pointer transition-colors"
+                                onClick={() => setSelectedGanttNode(n)}
+                                onMouseEnter={() => setHoveredContextNodeId(n.id)}
+                                onMouseLeave={() => setHoveredContextNodeId(null)}
+                              >
+                                <GanttNodeIcon type={n.icon} />
+                                <span className="text-sm font-medium truncate flex-1 min-w-0">{n.label}</span>
+                                <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{(n.endSec - n.startSec).toFixed(1)}</span>
+                              </button>
+                            ))
                           )}
                         </div>
                         <Separator className="my-0" />
                         <div>
                           <div className="text-sm font-medium flex items-center gap-2 py-1 text-muted-foreground">
                             <ArrowRight className="h-4 w-4" />
-                            Output goes to
+                            Sends Output to:
                           </div>
-                          {!outputTo ? (
+                          {outputTo.length === 0 ? (
                             <p className="text-xs text-muted-foreground py-1">No downstream node (this node is last or output is terminal).</p>
                           ) : (
-                            <button
-                              type="button"
-                              className="flex w-full items-center gap-2 rounded-md bg-muted/30 py-2 px-3 text-left hover:bg-muted/50 cursor-pointer transition-colors"
-                              onClick={() => setSelectedGanttNode(outputTo)}
-                            >
-                              <GanttNodeIcon type={outputTo.icon} />
-                              <span className="text-sm font-medium truncate flex-1 min-w-0">{outputTo.label}</span>
-                              <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{(outputTo.endSec - outputTo.startSec).toFixed(1)}</span>
-                            </button>
+                            outputTo.map((n) => (
+                              <button
+                                key={n.id}
+                                type="button"
+                                className="flex w-full items-center gap-2 rounded-md bg-muted/20 py-2 px-3 text-left hover:bg-muted/30 hover:border-border/50 border border-transparent cursor-pointer transition-colors"
+                                onClick={() => setSelectedGanttNode(n)}
+                                onMouseEnter={() => setHoveredContextNodeId(n.id)}
+                                onMouseLeave={() => setHoveredContextNodeId(null)}
+                              >
+                                <GanttNodeIcon type={n.icon} />
+                                <span className="text-sm font-medium truncate flex-1 min-w-0">{n.label}</span>
+                                <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{(n.endSec - n.startSec).toFixed(1)}</span>
+                              </button>
+                            ))
                           )}
                         </div>
                       </div>
@@ -641,9 +693,13 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                 </TabsContent>
                 <TabsContent value="output" className="flex-1 mt-3 overflow-hidden min-h-0 flex flex-col">
                   <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm flex-1 min-h-0 overflow-auto flex flex-col">
-                    <p className="text-foreground/90 whitespace-pre-wrap break-words">
-                      {getNodeInputOutput(selectedGanttNode).output}
-                    </p>
+                    {selectedGanttNode?.status === "error" ? (
+                      <p className="text-muted-foreground">No output (this node failed).</p>
+                    ) : (
+                      <p className="text-foreground/90 whitespace-pre-wrap break-words">
+                        {getNodeInputOutput(selectedGanttNode).output}
+                      </p>
+                    )}
                   </div>
                 </TabsContent>
               </Tabs>
@@ -694,6 +750,37 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                           <TabsTrigger value="formatted" className="rounded-md px-3 text-xs text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm h-7">Formatted</TabsTrigger>
                         </TabsList>
                       </Tabs>
+                      <div className="ml-auto flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => navigator.clipboard.writeText(getAiAgentTabContent(selectedGanttNode?.id ?? "").completion)}
+                          title="Copy"
+                          aria-label="Copy"
+                        >
+                          <Copy className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => {
+                            const text = getAiAgentTabContent(selectedGanttNode?.id ?? "").completion
+                            const blob = new Blob([text], { type: "text/plain" })
+                            const url = URL.createObjectURL(blob)
+                            const a = document.createElement("a")
+                            a.href = url
+                            a.download = `completion-${selectedGanttNode?.id ?? "agent"}.txt`
+                            a.click()
+                            URL.revokeObjectURL(url)
+                          }}
+                          title="Download"
+                          aria-label="Download"
+                        >
+                          <Download className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                      </div>
                     </div>
                     <div className="rounded-lg border border-border bg-muted/30 p-4 flex-1 min-h-0 text-sm overflow-auto">
                       <p className="text-foreground/90 whitespace-pre-wrap break-words">
