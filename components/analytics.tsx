@@ -583,7 +583,7 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
             const triggerClass = "rounded-md px-4 text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
             if (!selectedGanttNode || sidebarShowGeneral) {
               return (
-                <div key="general-details" className="flex-1 flex flex-col min-h-0 p-4 overflow-auto">
+                <div key="general-details" className="flex-1 flex flex-col min-h-0 px-4 pb-4 pt-0 overflow-auto">
                   <div className="flex flex-col text-sm">
                     {[
                       { icon: Hash, label: "Run ID", value: selectedRun.runId },
@@ -645,12 +645,13 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
             }
             if (isAiAgent) {
               return (
-              <Tabs key="ai-agent" defaultValue="completion" className="flex-1 flex flex-col min-h-0 p-4 gap-4 overflow-auto">
+              <Tabs key="ai-agent" defaultValue="completion" className="flex-1 flex flex-col min-h-0 p-4 gap-2 overflow-auto">
                 <TabsList className="w-fit rounded-lg bg-muted p-1 h-9">
                   <TabsTrigger value="input" className={triggerClass}>input</TabsTrigger>
                   <TabsTrigger value="tools" className={triggerClass}>Tools</TabsTrigger>
                   <TabsTrigger value="completion" className={triggerClass}>Completion</TabsTrigger>
                 </TabsList>
+                <Separator className="my-1 bg-border/60" />
                 <TabsContent value="input" className="flex-1 mt-0 flex flex-col gap-4">
                   <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm overflow-auto shrink-0 min-h-[300px]">
                     <p className="text-foreground/90 whitespace-pre-wrap break-words">
@@ -784,7 +785,7 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
               )
             }
             return (
-              <Tabs key={selectedGanttNode?.id ?? "general"} defaultValue="output" className="flex-1 flex flex-col min-h-0 p-4 gap-3">
+              <Tabs key={selectedGanttNode?.id ?? "general"} defaultValue="output" className="flex-1 flex flex-col min-h-0 p-4 gap-2">
                 <TabsList className="w-fit rounded-lg bg-muted p-1 h-9 flex-shrink-0">
                   <TabsTrigger value="input" className="rounded-md px-4 text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
                     Input
@@ -793,6 +794,7 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                     Output
                   </TabsTrigger>
                 </TabsList>
+                <Separator className="my-1 bg-border/60" />
                 {selectedGanttNode?.status === "error" && (
                   <Alert variant="destructive" className="rounded-lg border-destructive/50 bg-destructive/5 [&>svg]:text-destructive">
                     <AlertCircle className="h-4 w-4" />

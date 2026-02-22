@@ -149,6 +149,9 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set(["9"]))
   const [now, setNow] = useState(() => Date.now())
   const compactScrollRef = React.useRef<HTMLDivElement>(null)
+  const ganttChartRef = React.useRef<HTMLDivElement>(null)
+  const [hoverSec, setHoverSec] = useState<number | null>(null)
+  const [chartBarWidth, setChartBarWidth] = useState(0)
 
   // Compact Gantt: wheel scrolls horizontally (non-passive so preventDefault works)
   React.useEffect(() => {
@@ -412,7 +415,49 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
       onClick={() => onNodeSelect?.(null)}
     >
       <CardContent className="p-0 flex flex-1 flex-col min-h-0">
-        <div className="flex flex-1 min-h-0 flex-col min-w-0">
+        <div
+          ref={ganttChartRef}
+          className="relative flex flex-1 min-h-0 flex-col min-w-0"
+          onMouseMove={(e) => {
+            const el = ganttChartRef.current
+            if (!el) return
+            const rect = el.getBoundingClientRect()
+            const barLeft = rect.left + LEFT_WIDTH
+            const barW = rect.width - LEFT_WIDTH
+            if (barW <= 0) return
+            if (e.clientX < barLeft) {
+              setHoverSec(null)
+              return
+            }
+            const sec = Math.max(0, Math.min(maxSec, ((e.clientX - barLeft) / barW) * maxSec))
+            setHoverSec(sec)
+            setChartBarWidth(barW)
+          }}
+          onMouseLeave={() => setHoverSec(null)}
+        >
+          {/* Hover vertical line */}
+          {hoverSec !== null && chartBarWidth > 0 && (
+            <>
+              <div
+                className="absolute top-0 bottom-0 w-px bg-muted-foreground/[0.07] pointer-events-none z-10"
+                style={{
+                  left: LEFT_WIDTH + (hoverSec / maxSec) * chartBarWidth,
+                }}
+                aria-hidden
+              />
+              {/* Seconds label in time axis row (aligned with line) */}
+              <span
+                className="absolute text-[10px] text-muted-foreground/80 tabular-nums whitespace-nowrap pointer-events-none z-10 px-1.5 py-0.5 rounded bg-muted/80 dark:bg-muted"
+                style={{
+                  top: 2,
+                  left: LEFT_WIDTH + (hoverSec / maxSec) * chartBarWidth,
+                  transform: "translateX(-50%)",
+                }}
+              >
+                {hoverSec.toFixed(1)}s
+              </span>
+            </>
+          )}
           {/* Time axis row: aligns with node rows below */}
           <div className="flex flex-shrink-0" style={{ height: TIME_HEADER_HEIGHT }}>
             <div
