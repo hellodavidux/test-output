@@ -44,6 +44,108 @@ import { cn } from "@/lib/utils"
 import { format } from "date-fns"
 import { WorkflowGantt, type GanttNode, GANTT_NODES, GanttNodeIcon, varyGanttNodesByRunId } from "@/components/workflow-gantt"
 import { TabContext } from "@/components/dashboard-layout"
+import { CollapsibleJsonView } from "@/components/collapsible-json"
+
+// Renders text as beautified JSON (parsed if valid JSON, otherwise wrapped in { "message": "..." }) with syntax highlighting
+function BeautifiedJson({ text, className }: { text: string; className?: string }) {
+  let jsonStr: string
+  try {
+    const parsed = JSON.parse(text.trim())
+    jsonStr = JSON.stringify(parsed, null, 2)
+  } catch {
+    jsonStr = JSON.stringify({ message: text }, null, 2)
+  }
+
+  // Tokenize for syntax highlighting: key, string, number, boolean, null, punctuation
+  const tokens: { type: "key" | "string" | "number" | "boolean" | "null" | "punctuation" | "whitespace"; value: string }[] = []
+  let i = 0
+  const s = jsonStr
+  while (i < s.length) {
+    if (/\s/.test(s[i])) {
+      let w = ""
+      while (i < s.length && /\s/.test(s[i])) {
+        w += s[i]
+        i++
+      }
+      tokens.push({ type: "whitespace", value: w })
+      continue
+    }
+    if (s[i] === "{" || s[i] === "}" || s[i] === "[" || s[i] === "]" || s[i] === ":" || s[i] === ",") {
+      tokens.push({ type: "punctuation", value: s[i] })
+      i++
+      continue
+    }
+    if (s[i] === '"') {
+      let w = '"'
+      i++
+      while (i < s.length && s[i] !== '"') {
+        if (s[i] === "\\") {
+          w += s[i]
+          if (i + 1 < s.length) w += s[i + 1]
+          i += 2
+          continue
+        }
+        w += s[i]
+        i++
+      }
+      if (i < s.length) w += '"'
+      i++
+      // Next non-whitespace is ':' -> this was a key
+      let j = i
+      while (j < s.length && /\s/.test(s[j])) j++
+      const isKey = s[j] === ":"
+      tokens.push({ type: isKey ? "key" : "string", value: w })
+      continue
+    }
+    // number, true, false, null
+    const numMatch = s.slice(i).match(/^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/)
+    if (numMatch) {
+      tokens.push({ type: "number", value: numMatch[0] })
+      i += numMatch[0].length
+      continue
+    }
+    if (s.slice(i, i + 4) === "true") {
+      tokens.push({ type: "boolean", value: "true" })
+      i += 4
+      continue
+    }
+    if (s.slice(i, i + 5) === "false") {
+      tokens.push({ type: "boolean", value: "false" })
+      i += 5
+      continue
+    }
+    if (s.slice(i, i + 4) === "null") {
+      tokens.push({ type: "null", value: "null" })
+      i += 4
+      continue
+    }
+    tokens.push({ type: "punctuation", value: s[i] })
+    i++
+  }
+
+  const typeClass = {
+    key: "text-amber-700 dark:text-amber-400",
+    string: "text-emerald-700 dark:text-emerald-400",
+    number: "text-blue-600 dark:text-blue-400",
+    boolean: "text-blue-600 dark:text-blue-400",
+    null: "text-muted-foreground",
+    punctuation: "text-foreground/80",
+    whitespace: "",
+  }
+
+  return (
+    <pre className={cn("text-sm font-mono overflow-x-hidden overflow-y-auto break-words whitespace-pre-wrap", className)}>
+      {tokens.map((t, idx) =>
+        t.type === "whitespace" ? (
+          <span key={idx}>{t.value}</span>
+        ) : (
+          <span key={idx} className={typeClass[t.type]}>{t.value}</span>
+        )
+      )}
+    </pre>
+  )
+}
+
 interface RunData {
   runId: string
   conversationId: string
@@ -146,33 +248,65 @@ function getNodeInputOutput(node: { id: string; label: string } | null): { input
   return byId[node.id] ?? { input: `Input for ${node.label}.`, output: `Output for ${node.label}.` }
 }
 
-// AI Agent–specific tab content (input, tools, completion) per instance
+// AI Agent–specific tab content (input, tools, completion) per instance. Tools is JSON string (tool calls only).
 function getAiAgentTabContent(nodeId: string): { input: string; tools: string; completion: string } {
+  const toolsPayloads: Record<string, string> = {
+    "2": JSON.stringify({
+      subflow_tools: [],
+      mcp_server_calls: [],
+    }),
+    "2a": JSON.stringify({
+      subflow_tools: [],
+      mcp_server_calls: [],
+    }),
+    "4": JSON.stringify({
+      subflow_tools: [
+        { name: "live_score_search", args: { query: "Real Madrid latest score", source: "LiveScore" } },
+      ],
+      mcp_server_calls: [
+        { server: "livescore", method: "getLatestResult", params: { team: "Real Madrid" } },
+      ],
+    }),
+    "9-2": JSON.stringify({
+      subflow_tools: [
+        { name: "extract_summary", args: { format: "condensed" } },
+        { name: "send_to_subflow", args: { target: "Send Email", payload_key: "summary" } },
+      ],
+      mcp_server_calls: [
+        { server: "notion", method: "getPageContext" },
+        { server: "workflow", method: "invokeSubflow", params: { id: "send-email-step" } },
+      ],
+    }),
+  }
   const byId: Record<string, { input: string; tools: string; completion: string }> = {
     "2": {
       input: "User message: \"What are you capable of?\"\nContext: First message in conversation.",
-      tools: "Tools used: None (direct reply).",
+      tools: toolsPayloads["2"],
       completion: "Here’s what I can do for you:\n\n**Answer questions** — Current events, how-to’s, definitions, or just bouncing ideas.\n**Search the web** — I can look up scores, news, docs, or any fact you need.\n**Summarize** — Long articles, threads, or your own notes into short bullet points or a paragraph.\n**Help with tasks** — Drafting emails, outlining a plan, or walking through a process step by step.\n\nNo tools were used for this reply; it’s a direct answer. Want to try something specific?",
     },
     "2a": {
       input: "Previous completion + user: \"Summarize that in three bullet points.\"",
-      tools: "Tools used: None.",
+      tools: toolsPayloads["2a"],
       completion: "• **Real Madrid 1 - 2 Manchester City** (Champions League).\n• Manchester City led and held on for an away win.\n• I can pull lineups, stats, or another match whenever you’d like.",
     },
     "4": {
       input: "Query: \"What was the latest Real Madrid score?\"\nTool choice: Search (LiveScore).",
-      tools: "Tools used: Search – LiveScore API. Query: \"Real Madrid latest score\". Result: 1 - 2 vs Manchester City.",
+      tools: toolsPayloads["4"],
       completion: "The latest result I found is **Real Madrid 1 - 2 Manchester City** (full time, Champions League). City went ahead and held on despite a second-half reply from Madrid. If you want lineups, xG, or another fixture I can look that up too.",
     },
     "9-2": {
       input: "Project subflow trigger with context.",
-      tools: "Tools used: None.",
+      tools: toolsPayloads["9-2"],
       completion: "Summary from this step: key points extracted and formatted for the next action. Ready for the Send Email step with the condensed version.",
     },
   }
+  const defaultTools = JSON.stringify({
+    subflow_tools: [],
+    mcp_server_calls: [],
+  })
   return byId[nodeId] ?? {
     input: "Input for AI Agent.",
-    tools: "Tools invoked by AI Agent.",
+    tools: defaultTools,
     completion: "Response generated. You can ask a follow-up or switch to another task.",
   }
 }
@@ -464,7 +598,7 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                             <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
                             <span className="text-muted-foreground font-medium">{label}</span>
                           </div>
-                          <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm text-foreground/90 whitespace-pre-wrap break-words min-h-[300px]">
+                          <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm text-foreground/90 whitespace-pre-wrap break-words min-h-[80px]">
                             {value}
                           </div>
                         </div>
@@ -481,6 +615,26 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                       )
                     )}
                   </div>
+                  {selectedRun?.status === "error" && (
+                    <Alert variant="destructive" className="mt-4 rounded-lg border-destructive/50 bg-destructive/5 [&>svg]:text-destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertTitle className="font-semibold text-destructive">This run failed</AlertTitle>
+                      <AlertDescription className="flex flex-col gap-3 text-destructive/90">
+                        <p className="text-sm">
+                          The workflow did not complete successfully. Check the output for details or get help resolving the issue.
+                        </p>
+                        {(selectedRun.output && selectedRun.output !== "—") && (
+                          <p className="text-sm whitespace-pre-wrap break-words mt-1 pt-2 border-t border-destructive/20">
+                            {selectedRun.output}
+                          </p>
+                        )}
+                        <Button size="sm" variant="outline" className="w-fit gap-2 border-destructive/40 bg-destructive/5 text-destructive hover:bg-destructive/10 hover:border-destructive/60">
+                          <Bot className="h-3.5 w-3.5" />
+                          Ask AI
+                        </Button>
+                      </AlertDescription>
+                    </Alert>
+                  )}
                 </div>
               )
             }
@@ -527,8 +681,10 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                     )
                   })()}
                 </TabsContent>
-                <TabsContent value="tools" className="flex-1 p-4 mt-0 overflow-auto">
-                  <p className="text-sm text-muted-foreground">Tools invoked by AI Agent.</p>
+                <TabsContent value="tools" className="flex-1 mt-0 overflow-auto min-h-0 flex flex-col gap-4">
+                  <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm overflow-auto flex flex-col shrink-0 min-h-[300px]">
+                    <BeautifiedJson text={getAiAgentTabContent(selectedGanttNode?.id ?? "").tools} className="text-foreground/90" />
+                  </div>
                 </TabsContent>
                 <TabsContent value="completion" className="mt-0 flex flex-col gap-4">
                   <div className="flex flex-col gap-2 shrink-0">
@@ -572,9 +728,10 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                       </div>
                     </div>
                     <div className="relative rounded-lg border border-border bg-muted/30 p-3 min-h-[300px] text-sm overflow-auto shrink-0">
-                      <p className="text-foreground/90 whitespace-pre-wrap break-words pr-8">
-                        {getAiAgentTabContent(selectedGanttNode?.id ?? "").completion}
-                      </p>
+                      <BeautifiedJson
+                        text={getAiAgentTabContent(selectedGanttNode?.id ?? "").completion}
+                        className="text-foreground/90 pr-8"
+                      />
                       <button
                         type="button"
                         className="absolute top-2 right-2 p-1.5 rounded-md bg-background/80 hover:bg-background border border-border/50 hover:border-border shadow-sm transition-colors z-10"
@@ -648,9 +805,7 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                 )}
                 <TabsContent value="input" className="flex-1 mt-0 overflow-auto min-h-0 flex flex-col gap-4">
                   <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm overflow-auto flex flex-col shrink-0 min-h-[300px]">
-                    <p className="text-foreground/90 whitespace-pre-wrap break-words">
-                      {getNodeInputOutput(selectedGanttNode).input}
-                    </p>
+                    <BeautifiedJson text={getNodeInputOutput(selectedGanttNode).input} className="text-foreground/90" />
                   </div>
                   {(() => {
                     const { inputFrom } = getNodeContext(selectedGanttNode, runGanttNodes)
@@ -684,9 +839,7 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                 <TabsContent value="output" className="flex-1 mt-0 overflow-auto min-h-0 flex flex-col gap-4">
                   {selectedGanttNode?.status !== "error" && (
                     <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm overflow-auto flex flex-col shrink-0 min-h-[300px]">
-                      <p className="text-foreground/90 whitespace-pre-wrap break-words">
-                        {getNodeInputOutput(selectedGanttNode).output}
-                      </p>
+                      <BeautifiedJson text={getNodeInputOutput(selectedGanttNode).output} className="text-foreground/90" />
                     </div>
                   )}
                   {(() => {
@@ -799,9 +952,11 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                       </div>
                     </div>
                     <div className="rounded-lg border border-border bg-muted/30 p-4 flex-1 min-h-0 text-sm overflow-auto">
-                      <p className="text-foreground/90 whitespace-pre-wrap break-words">
-                        {getAiAgentTabContent(selectedGanttNode?.id ?? "").completion}
-                      </p>
+                      <CollapsibleJsonView
+                        text={getAiAgentTabContent(selectedGanttNode?.id ?? "").completion}
+                        className="text-foreground/90"
+                        defaultExpandedDepth={2}
+                      />
                     </div>
                   </div>
                 </div>

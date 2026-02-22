@@ -7,6 +7,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useReactFlow } from "@xyflow/react"
 import { NodeDetailModal } from "./node-detail-modal"
+import { CollapsibleJsonView } from "@/components/collapsible-json"
 import type { Node } from "@xyflow/react"
 
 function getNodeIconBg(appName: string): string {
@@ -60,7 +61,7 @@ interface NodeIOPanelProps {
 }
 
 export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, onPinChange, input, output, completion, appName, actionName }: NodeIOPanelProps) {
-  const [viewMode, setViewMode] = useState<"text" | "formatted" | "code">("formatted")
+  const [viewMode, setViewMode] = useState<"text" | "formatted" | "code">("code")
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["tool-invocations"]))
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
   const [isPinned, setIsPinned] = useState(false)
@@ -843,12 +844,12 @@ export function NodeIOPanel({ nodeId, activeTab, onClose, onClear, onPinChange, 
                       {renderFormattedTree(currentData)}
                     </div>
                   ) : (
-                    // Code view - formatted JSON code
-                    <pre className="whitespace-pre-wrap break-words leading-relaxed text-[11px]">
-                      <code className="text-foreground/90">
-                        {formatJSON(currentData)}
-                      </code>
-                    </pre>
+                    // Code view - JSON with collapsible keys
+                    <CollapsibleJsonView
+                      text={typeof currentData === "object" && currentData !== null ? JSON.stringify(currentData) : JSON.stringify({ value: currentData })}
+                      className="text-foreground/90 leading-relaxed text-[11px]"
+                      defaultExpandedDepth={2}
+                    />
                   )
                 ) : (
                   <div className="text-center py-8 text-muted-foreground">

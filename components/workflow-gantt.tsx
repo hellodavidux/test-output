@@ -563,58 +563,52 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                       role="button"
                       tabIndex={0}
                     >
-                      <Tooltip delayDuration={200}>
-                        <TooltipTrigger asChild>
-                          <div
-                            className={cn(
-                              "absolute h-5 rounded-sm border flex-shrink-0 min-w-[2px] transition-colors flex items-center justify-start pl-1.5 pr-1 overflow-hidden cursor-default ml-2",
-                              effectiveStatus === "error"
-                                ? isSelected
-                                  ? "bg-destructive/25 border-destructive/50 group-hover:bg-destructive/35"
-                                  : "bg-destructive/20 border-destructive/40 group-hover:bg-destructive/30"
-                                : effectiveStatus === "skipped"
-                                  ? "bg-muted-foreground/20 border-muted-foreground/30"
+                      {effectiveStatus !== "skipped" ? (
+                        <Tooltip delayDuration={200}>
+                          <TooltipTrigger asChild>
+                            <div
+                              className={cn(
+                                "absolute h-5 rounded-sm border flex-shrink-0 min-w-[2px] transition-colors flex items-center justify-start pl-1.5 pr-1 overflow-hidden cursor-default ml-2",
+                                effectiveStatus === "error"
+                                  ? isSelected
+                                    ? "bg-destructive/25 border-destructive/50 group-hover:bg-destructive/35"
+                                    : "bg-destructive/20 border-destructive/40 group-hover:bg-destructive/30"
                                   : isSelected
                                     ? "bg-primary border-primary group-hover:bg-primary/90"
                                     : "bg-muted border-border group-hover:bg-muted-foreground/20"
-                            )}
-                            style={{
-                              left: `${leftPct}%`,
-                              width: `${widthPct}%`,
-                            }}
-                          >
-                            {widthPct >= 3 && (
-                              <span
-                                className={cn(
-                                  "text-[10px] font-medium tabular-nums whitespace-nowrap",
-                                  effectiveStatus === "error"
-                                    ? "text-destructive"
-                                    : effectiveStatus === "skipped"
-                                      ? "text-muted-foreground/70"
+                              )}
+                              style={{
+                                left: `${leftPct}%`,
+                                width: `${widthPct}%`,
+                              }}
+                            >
+                              {widthPct >= 3 && (
+                                <span
+                                  className={cn(
+                                    "text-[10px] font-medium tabular-nums whitespace-nowrap",
+                                    effectiveStatus === "error"
+                                      ? "text-destructive"
                                       : isSelected
                                         ? "text-primary-foreground/80"
                                         : "text-muted-foreground"
-                                )}
-                              >
-                                {(node.endSec - node.startSec).toFixed(1)}s
-                              </span>
-                            )}
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent
-                          side="top"
-                          sideOffset={6}
-                          className="bg-white dark:bg-card text-foreground border border-border shadow-md"
-                          hideArrow
-                        >
-                          <span className="font-medium">{node.label}</span>
-                          {effectiveStatus === "skipped" ? (
-                            <span className="text-muted-foreground"> · Incomplete (run failed earlier)</span>
-                          ) : (
+                                  )}
+                                >
+                                  {(node.endSec - node.startSec).toFixed(1)}s
+                                </span>
+                              )}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent
+                            side="top"
+                            sideOffset={6}
+                            className="bg-white dark:bg-card text-foreground border border-border shadow-md"
+                            hideArrow
+                          >
+                            <span className="font-medium">{node.label}</span>
                             <span className="text-muted-foreground"> · {(node.endSec - node.startSec).toFixed(1)}s</span>
-                          )}
-                        </TooltipContent>
-                      </Tooltip>
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : null}
                     </div>
                   </div>
                 )

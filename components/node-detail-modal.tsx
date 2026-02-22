@@ -10,6 +10,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { CollapsibleJsonView } from "@/components/collapsible-json"
 import type { Node, Edge } from "@xyflow/react"
 
 interface NodeDetailModalProps {
@@ -1464,72 +1465,14 @@ export function NodeDetailModal({ node, onClose, initialTab = "output", initialV
                       </AlertDescription>
                     </Alert>
                   ) : activeTab === "completion" ? (
-                    // Special handling for completion tab
-                    viewMode === "text" && typeof currentData === "string" ? (
-                      // Text view: Show markdown-rendered text with background
-                      <div className="bg-gradient-to-br from-muted/60 to-muted/40 rounded-lg p-4 border border-border/50 overflow-x-hidden shadow-inner font-sans">
-                        <div className="text-sm leading-relaxed text-foreground/90 space-y-3 px-2">
-                          <div className="prose prose-sm max-w-none">
-                            <p className="whitespace-pre-wrap">{formatMarkdownText(currentData)}</p>
-                          </div>
-                        </div>
-                      </div>
-                    ) : viewMode === "formatted" && typeof currentData === "string" ? (
-                      // Formatted view: Show as accordion-style with collapsible header
-                      <div className="space-y-0 border border-gray-200 rounded-lg overflow-hidden">
-                        <div className="border-b border-gray-200 last:border-b-0">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setExpandedItems(prev => {
-                                const newSet = new Set(prev)
-                                const itemPath = "completion-content"
-                                if (newSet.has(itemPath)) {
-                                  newSet.delete(itemPath)
-                                } else {
-                                  newSet.add(itemPath)
-                                }
-                                return newSet
-                              })
-                            }}
-                            className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors ${
-                              expandedItems.has("completion-content") ? "bg-gray-50" : "bg-white hover:bg-gray-50"
-                            }`}
-                          >
-                            <div className="flex items-center gap-3">
-                              <FileText className="w-4 h-4 text-gray-600" />
-                              <span className="text-sm font-medium text-foreground">Completion</span>
-                            </div>
-                            {expandedItems.has("completion-content") ? (
-                              <ChevronUp className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                            ) : (
-                              <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                            )}
-                          </button>
-                          {expandedItems.has("completion-content") && (
-                            <div className="bg-white px-4 py-3">
-                              <div className="text-sm leading-relaxed text-foreground/90">
-                                <div className="prose prose-sm max-w-none">
-                                  <p className="whitespace-pre-wrap">{formatMarkdownText(currentData)}</p>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      // Code view: Show JSON with completion field
-                      <div className="bg-gradient-to-br from-muted/60 to-muted/40 rounded-lg p-4 border border-border/50 overflow-x-hidden shadow-inner font-mono text-xs">
-                        <pre className="whitespace-pre-wrap break-words leading-relaxed text-[11px]">
-                          <code className="text-foreground/90">
-                            {typeof currentData === "string" 
-                              ? formatJSON({ completion: currentData })
-                              : formatJSON(currentData)
-                            }
-                          </code>
-                        </pre>
-                      </div>
-                    )
+                    // Completion tab: JSON with collapsible keys
+                    <div className="bg-gradient-to-br from-muted/60 to-muted/40 rounded-lg p-4 border border-border/50 overflow-x-hidden overflow-y-auto shadow-inner font-mono text-xs min-h-0">
+                      <CollapsibleJsonView
+                        text={typeof currentData === "string" ? JSON.stringify({ completion: currentData }) : JSON.stringify(currentData)}
+                        className="text-foreground/90 leading-relaxed text-[11px]"
+                        defaultExpandedDepth={2}
+                      />
+                    </div>
                   ) : viewMode === "text" ? (
                     // Text view - plain text, no JSON structure, single paragraph
                     <p className="text-sm text-foreground break-words">
@@ -1540,11 +1483,13 @@ export function NodeDetailModal({ node, onClose, initialTab = "output", initialV
                       {renderFormattedAccordion(currentData)}
                     </div>
                   ) : (
-                    <pre className="whitespace-pre-wrap break-words leading-relaxed text-[11px]">
-                      <code className="text-foreground/90">
-                        {formatJSON(currentData)}
-                      </code>
-                    </pre>
+                    <div className="bg-gradient-to-br from-muted/60 to-muted/40 rounded-lg p-4 border border-border/50 overflow-x-hidden overflow-y-auto shadow-inner font-mono text-xs">
+                      <CollapsibleJsonView
+                        text={typeof currentData === "object" && currentData !== null ? JSON.stringify(currentData) : JSON.stringify({ value: currentData })}
+                        className="text-foreground/90 leading-relaxed text-[11px]"
+                        defaultExpandedDepth={2}
+                      />
+                    </div>
                   )
                 ) : (
                   <div className="text-center py-8 text-muted-foreground">
