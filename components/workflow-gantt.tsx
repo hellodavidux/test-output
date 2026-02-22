@@ -286,7 +286,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                       <span className="truncate text-foreground flex-1 min-w-0">{node.label}</span>
                       <span
                         className={cn(
-                          "flex h-2.5 w-2.5 shrink-0 items-center justify-center rounded-full",
+                          "flex h-3 w-3 shrink-0 items-center justify-center rounded-full",
                           displayStatus === "error" && "bg-red-500",
                           displayStatus === "success" && "bg-green-500",
                           displayStatus === "running" && "bg-purple-500",
@@ -532,7 +532,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                         </span>
                         <span
                           className={cn(
-                            "flex h-2.5 w-2.5 shrink-0 items-center justify-center rounded-full",
+                            "flex h-3 w-3 shrink-0 items-center justify-center rounded-full",
                             effectiveStatus === "error" && "bg-red-500",
                             effectiveStatus === "success" && "bg-green-500",
                             effectiveStatus === "skipped" && "bg-muted-foreground/30"
@@ -540,9 +540,9 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                           aria-label={effectiveStatus === "error" ? "Failed" : effectiveStatus === "success" ? "Success" : "Skipped"}
                         >
                           {effectiveStatus === "error" ? (
-                            <X className="h-1.5 w-1.5 text-white stroke-[3]" />
+                            <X className="h-2 w-2 text-white stroke-[3]" />
                           ) : effectiveStatus === "success" ? (
-                            <Check className="h-1.5 w-1.5 text-white stroke-[3]" />
+                            <Check className="h-2 w-2 text-white stroke-[3]" />
                           ) : null}
                         </span>
                       </span>

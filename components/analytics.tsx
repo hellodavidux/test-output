@@ -328,6 +328,8 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
   const [sidebarShowGeneral, setSidebarShowGeneral] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [completionModalOpen, setCompletionModalOpen] = useState(false)
+  const [outputModalOpen, setOutputModalOpen] = useState(false)
+  const [outputViewMode, setOutputViewMode] = useState<"text" | "formatted">("formatted")
 
   // When opened from Run Progress "Expand", land on run detail view
   useEffect(() => {
@@ -356,13 +358,16 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
 
   // Close completion modal on Escape
   useEffect(() => {
-    if (!completionModalOpen) return
+    if (!completionModalOpen && !outputModalOpen) return
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setCompletionModalOpen(false)
+      if (e.key === "Escape") {
+        setCompletionModalOpen(false)
+        setOutputModalOpen(false)
+      }
     }
     document.addEventListener("keydown", handleEscape)
     return () => document.removeEventListener("keydown", handleEscape)
-  }, [completionModalOpen])
+  }, [completionModalOpen, outputModalOpen])
 
   const metrics = [
     {
@@ -516,15 +521,15 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                   <>
                     <span
                       className={cn(
-                        "flex h-2.5 w-2.5 shrink-0 items-center justify-center rounded-full",
+                        "flex h-3 w-3 shrink-0 items-center justify-center rounded-full",
                         selectedGanttNode.status === "error" ? "bg-red-500" : "bg-green-500"
                       )}
                       aria-label={selectedGanttNode.status === "error" ? "Failed" : "Success"}
                     >
                       {selectedGanttNode.status === "error" ? (
-                        <X className="h-1.5 w-1.5 text-white stroke-[3]" />
+                        <X className="h-2 w-2 text-white stroke-[3]" />
                       ) : (
-                        <Check className="h-1.5 w-1.5 text-white stroke-[3]" />
+                        <Check className="h-2 w-2 text-white stroke-[3]" />
                       )}
                     </span>
                   </>
@@ -727,7 +732,7 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                         </Button>
                       </div>
                     </div>
-                    <div className="relative rounded-lg border border-border bg-muted/30 p-3 min-h-[300px] text-sm overflow-auto shrink-0">
+                    <div className="relative rounded-lg border border-border bg-muted/30 p-3 min-h-[300px] max-h-[300px] text-sm overflow-auto shrink-0">
                       <BeautifiedJson
                         text={getAiAgentTabContent(selectedGanttNode?.id ?? "").completion}
                         className="text-foreground/90 pr-8"
@@ -838,9 +843,68 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                 </TabsContent>
                 <TabsContent value="output" className="flex-1 mt-0 overflow-auto min-h-0 flex flex-col gap-4">
                   {selectedGanttNode?.status !== "error" && (
-                    <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm overflow-auto flex flex-col shrink-0 min-h-[300px]">
-                      <BeautifiedJson text={getNodeInputOutput(selectedGanttNode).output} className="text-foreground/90" />
-                    </div>
+                    <>
+                      <div className="flex flex-col gap-2 shrink-0">
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <Tabs value={outputViewMode} onValueChange={(v) => setOutputViewMode(v as "text" | "formatted")} className="w-fit">
+                            <TabsList className="rounded-lg bg-muted p-1 h-8">
+                              <TabsTrigger value="text" className="rounded-md px-3 text-xs text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm h-7">Text</TabsTrigger>
+                              <TabsTrigger value="formatted" className="rounded-md px-3 text-xs text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm h-7">Formatted</TabsTrigger>
+                            </TabsList>
+                          </Tabs>
+                          <div className="ml-auto flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => navigator.clipboard.writeText(getNodeInputOutput(selectedGanttNode).output)}
+                              title="Copy"
+                              aria-label="Copy"
+                            >
+                              <Copy className="h-4 w-4 text-muted-foreground" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => {
+                                const text = getNodeInputOutput(selectedGanttNode).output
+                                const blob = new Blob([text], { type: "text/plain" })
+                                const url = URL.createObjectURL(blob)
+                                const a = document.createElement("a")
+                                a.href = url
+                                a.download = `output-${selectedGanttNode?.id ?? "node"}.txt`
+                                a.click()
+                                URL.revokeObjectURL(url)
+                              }}
+                              title="Download"
+                              aria-label="Download"
+                            >
+                              <Download className="h-4 w-4 text-muted-foreground" />
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="relative rounded-lg border border-border bg-muted/30 p-3 text-sm overflow-auto flex flex-col shrink-0 min-h-[300px] max-h-[300px]">
+                        {outputViewMode === "text" ? (
+                          <p className="text-foreground/90 whitespace-pre-wrap break-words pr-8">{getNodeInputOutput(selectedGanttNode).output}</p>
+                        ) : (
+                          <BeautifiedJson text={getNodeInputOutput(selectedGanttNode).output} className="text-foreground/90 pr-8" />
+                        )}
+                        <button
+                          type="button"
+                          className="absolute top-2 right-2 p-1.5 rounded-md bg-background/80 hover:bg-background border border-border/50 hover:border-border shadow-sm transition-colors z-10"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setOutputModalOpen(true)
+                          }}
+                          title="Expand in modal"
+                          aria-label="Expand in modal"
+                        >
+                          <Maximize2 className="w-3.5 h-3.5 text-muted-foreground" />
+                        </button>
+                        </div>
+                      </div>
+                    </>
                   )}
                   {(() => {
                     const { outputTo } = getNodeContext(selectedGanttNode, runGanttNodes)
@@ -957,6 +1021,66 @@ export function Analytics({ onSwitchToWorkflow }: AnalyticsProps) {
                         className="text-foreground/90"
                         defaultExpandedDepth={2}
                       />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>,
+            document.body
+          )}
+        {/* Output expand modal */}
+        {outputModalOpen &&
+          selectedGanttNode &&
+          createPortal(
+            <>
+              <div
+                data-output-modal="backdrop"
+                className="fixed inset-0 bg-black/20 z-[100]"
+                onClick={() => setOutputModalOpen(false)}
+                aria-hidden
+              />
+              <div
+                data-output-modal="content"
+                className="fixed right-0 top-0 bottom-0 z-[101] flex flex-col bg-card shadow-2xl rounded-l-lg overflow-hidden"
+                style={{
+                  marginTop: "24px",
+                  marginBottom: "24px",
+                  marginRight: "24px",
+                  height: "calc(100vh - 48px)",
+                  width: "60%",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex flex-1 flex-col overflow-hidden min-h-0">
+                  <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
+                    <h2 className="text-xl font-semibold">Output – {selectedGanttNode.label}</h2>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      onClick={() => setOutputModalOpen(false)}
+                      aria-label="Close"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="flex-1 flex flex-col min-h-0 p-6 overflow-hidden">
+                    <div className="flex items-center gap-2 flex-shrink-0 mb-4">
+                      <div className="ml-auto flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => navigator.clipboard.writeText(getNodeInputOutput(selectedGanttNode).output)}
+                          title="Copy"
+                          aria-label="Copy"
+                        >
+                          <Copy className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-border bg-muted/30 p-4 flex-1 min-h-0 text-sm overflow-auto">
+                      <BeautifiedJson text={getNodeInputOutput(selectedGanttNode).output} className="text-foreground/90" />
                     </div>
                   </div>
                 </div>
