@@ -17,6 +17,7 @@ import {
   EyeOff,
   FileOutput,
   FilePenLine,
+  FlaskConical,
   Frown,
   History,
   Info,
@@ -2275,7 +2276,7 @@ function ExperimentTab({
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
             <div className="flex flex-col gap-5">
               <div className="flex flex-col gap-1.5 border-b border-border/60 pb-4 text-left">
-                <DrawerTitle>New variant column</DrawerTitle>
+                <DrawerTitle>Workflow variant</DrawerTitle>
                 <DrawerDescription className="text-left">
                   Add a column that replays your cases with different workflow settings so you can compare outputs to the
                   baseline after a run.
@@ -2312,7 +2313,7 @@ function ExperimentTab({
                 <div className="space-y-2">
                   <div className="h-px bg-border/60" />
                   <div className="flex items-center gap-1.5">
-                    <p className="text-xs font-medium text-muted-foreground">Settings to compare</p>
+                    <p className="text-xs font-medium text-muted-foreground">make changes</p>
                     <TooltipProvider delayDuration={200}>
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -2851,12 +2852,14 @@ function EvaluatorsTab({
   onEditEvaluator,
   onDeleteEvaluator,
   onCreateSignalFromEvaluator,
+  onTestInExperiment,
 }: {
   evaluators: EvaluatorConfig[]
   onOpenCreateEvaluator: () => void
   onEditEvaluator: (ev: EvaluatorConfig) => void
   onDeleteEvaluator: (index: number) => void
   onCreateSignalFromEvaluator: (ev: EvaluatorConfig) => void
+  onTestInExperiment: (rowIndex: number) => void
 }) {
   return (
     <div className="flex flex-col h-full p-6 gap-4">
@@ -2993,39 +2996,36 @@ function EvaluatorsTab({
                       Edit
                     </DropdownMenuItem>
                     <DropdownMenuItem
+                      className="gap-2"
+                      onClick={() => onTestInExperiment(rowIndex)}
+                    >
+                      <FlaskConical className="h-4 w-4 shrink-0 opacity-70" />
+                      Test in Experiment
+                    </DropdownMenuItem>
+                    <TooltipProvider delayDuration={200}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <DropdownMenuItem
+                            className="gap-2"
+                            onClick={() => onCreateSignalFromEvaluator(ev)}
+                          >
+                            <Zap className="h-4 w-4 shrink-0 opacity-70" />
+                            Create a signal
+                          </DropdownMenuItem>
+                        </TooltipTrigger>
+                        <TooltipContent side="left" className="max-w-[260px] text-xs leading-relaxed">
+                          Subscribe this evaluator’s results (scores or pass/fail) to the Signals tab so you can chart
+                          trends, compare runs, and get alerts when quality drops.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
                       className="gap-2 text-destructive focus:text-destructive"
                       onClick={() => onDeleteEvaluator(rowIndex)}
                     >
                       <Trash2 className="h-4 w-4 shrink-0 opacity-70" />
                       Delete
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="gap-2"
-                      onClick={() => onCreateSignalFromEvaluator(ev)}
-                    >
-                      <Zap className="h-4 w-4 shrink-0 opacity-70" />
-                      <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
-                        <span>Create a signal</span>
-                        <TooltipProvider delayDuration={200}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                className="inline-flex shrink-0 rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                                aria-label="What is a signal?"
-                                onClick={(e) => e.stopPropagation()}
-                                onPointerDown={(e) => e.stopPropagation()}
-                              >
-                                <Info className="h-3.5 w-3.5" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="left" className="max-w-[260px] text-xs leading-relaxed">
-                              Subscribe this evaluator’s results (scores or pass/fail) to the Signals tab so you can chart
-                              trends, compare runs, and get alerts when quality drops.
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </span>
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -3977,6 +3977,13 @@ export function Evaluator({
     setActiveTab("Signals")
   }, [])
 
+  const testInExperimentAt = useCallback((rowIndex: number) => {
+    const defId = evalDefs[rowIndex]?.id
+    if (!defId) return
+    setSelectedEvalIds((prev) => (prev.includes(defId) ? prev : [...prev, defId]))
+    setActiveTab("Experiment")
+  }, [evalDefs])
+
   return (
     <div className="flex flex-col h-full bg-[#f7f7f8]">
       <CreateEvaluatorDialog
@@ -4062,6 +4069,7 @@ export function Evaluator({
             onEditEvaluator={editEvaluator}
             onDeleteEvaluator={deleteEvaluatorAt}
             onCreateSignalFromEvaluator={createSignalFromEvaluator}
+            onTestInExperiment={testInExperimentAt}
           />
         )}
         {activeTab === "Dataset" && <DatasetTab />}

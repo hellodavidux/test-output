@@ -523,6 +523,122 @@ function getOverviewSignalForRun(runId: string) {
   return OVERVIEW_SIGNALS.find((s) => s.runId === runId) ?? null
 }
 
+type RunDetailSignal = {
+  nodeId: string
+  type: string
+  severity: "high" | "medium"
+  reason: string
+  recommendation: string
+}
+
+/** Deterministic “failed step” for error runs (matches `varyGanttNodesByRunId` seed style). */
+function hashRunId(s: string): number {
+  return Math.abs(s.split("").reduce((a, c) => (a << 5) - a + c.charCodeAt(0), 0) | 0)
+}
+
+const ERROR_FAIL_NODE_CANDIDATES = ["3", "4", "2", "5", "9-2"] as const
+
+function errorFailNodeIdForRun(runId: string): string {
+  return ERROR_FAIL_NODE_CANDIDATES[hashRunId(runId) % ERROR_FAIL_NODE_CANDIDATES.length]!
+}
+
+function resolveRunDetailSignal(
+  runId: string | null,
+  run: RunData | null | undefined,
+  isForkDraft: boolean,
+): RunDetailSignal | null {
+  if (!runId || isForkDraft || !run) return null
+  const overviewSig = getOverviewSignalForRun(runId)
+  if (overviewSig) {
+    return {
+      nodeId: overviewSig.nodeId,
+      type: overviewSig.type,
+      severity: overviewSig.severity,
+      reason: overviewSig.reason,
+      recommendation: overviewSig.recommendation,
+    }
+  }
+  if (run.status === "error") {
+    return {
+      nodeId: errorFailNodeIdForRun(run.runId),
+      type: "Workflow error",
+      severity: "high",
+      reason: run.output?.trim() || "The workflow did not complete successfully.",
+      recommendation:
+        "Inspect the highlighted step’s inputs and downstream dependencies (timeouts, auth, rate limits). Retry when services are healthy, or add retries and idempotency for lookups that failed.",
+    }
+  }
+  return null
+}
+
+function SignalInsightCard({
+  signal,
+  onFixWithAi,
+  containerClassName,
+}: {
+  signal: Pick<RunDetailSignal, "type" | "severity" | "reason" | "recommendation">
+  onFixWithAi?: () => void
+  /** e.g. aside strip uses horizontal inset; General tab is full width inside `px-4`. */
+  containerClassName?: string
+}) {
+  const isHigh = signal.severity === "high"
+  return (
+    <Alert
+      className={cn(
+        "shrink-0 rounded-xl py-3.5 shadow-none",
+        isHigh
+          ? "border-destructive/40 bg-destructive/5 text-destructive [&>svg]:text-destructive *:data-[slot=alert-description]:text-destructive/85"
+          : "border-amber-500/35 bg-amber-50 text-amber-950 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-50 [&>svg]:text-amber-600 dark:[&>svg]:text-amber-400 *:data-[slot=alert-description]:text-amber-900/80 dark:*:data-[slot=alert-description]:text-amber-100/85",
+        containerClassName ?? "mx-4 mt-3 mb-0"
+      )}
+    >
+      <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />
+      <AlertTitle className="line-clamp-none flex flex-wrap items-center gap-2 text-sm font-semibold leading-tight text-current">
+        {signal.type}
+        <span
+          className={cn(
+            "inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+            isHigh
+              ? "bg-destructive/15 text-destructive dark:text-destructive"
+              : "bg-amber-500/15 text-amber-800 dark:text-amber-200"
+          )}
+        >
+          {signal.severity}
+        </span>
+      </AlertTitle>
+      <AlertDescription className="flex flex-col gap-2 text-xs leading-relaxed">
+        <p>{signal.reason}</p>
+        <p className="text-[11px] leading-relaxed">
+          <span className="font-medium text-current">Suggestion</span>
+          <span className="opacity-80"> — </span>
+          {signal.recommendation}
+        </p>
+        <div className="flex justify-end pt-0.5">
+          <Button
+            size="sm"
+            variant={isHigh ? "destructive" : "secondary"}
+            className={cn(
+              "h-8 w-fit gap-1.5 px-3 text-xs font-medium shadow-none",
+              !isHigh &&
+                "border-amber-200/80 bg-amber-100/80 text-amber-950 hover:bg-amber-100 dark:border-amber-700/50 dark:bg-amber-900/50 dark:text-amber-50 dark:hover:bg-amber-900/70"
+            )}
+            onClick={() => {
+              if (onFixWithAi) onFixWithAi()
+              else
+                toast.message("Fix with AI", {
+                  description: "This prototype would open the AI assistant with this signal and run context.",
+                })
+            }}
+          >
+            <Bot className="h-3.5 w-3.5 opacity-80" />
+            Fix with AI
+          </Button>
+        </div>
+      </AlertDescription>
+    </Alert>
+  )
+}
+
 /** Same 0–100 internal scale as evaluator `ScoreChip` / `EvalGradingRow` (display = score / 10). */
 function formatRunEvalScoreTenPoint(score: number) {
   return (score / 10).toFixed(1)
@@ -742,7 +858,6 @@ export function Analytics({
   const [hoveredContextNodeId, setHoveredContextNodeId] = useState<string | null>(null)
   const [sidebarShowGeneral, setSidebarShowGeneral] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [activeSignal, setActiveSignal] = useState<{ nodeId: string; type: string; severity: "high" | "medium"; reason: string; recommendation: string } | null>(null)
   const [completionModalOpen, setCompletionModalOpen] = useState(false)
   const [outputModalOpen, setOutputModalOpen] = useState(false)
   const [outputViewMode, setOutputViewMode] = useState<"text" | "formatted">("formatted")
@@ -819,7 +934,6 @@ export function Analytics({
     setForkRunStartTime(null)
     setSelectedRunId(FORK_DRAFT_RUN_ID)
     setSelectedGanttNode(null)
-    setActiveSignal(null)
     openForkSheetFresh()
     onPendingForkConsumed?.()
   }, [pendingForkFromRun, onPendingForkConsumed, clearForkRunTimer, openForkSheetFresh])
@@ -832,17 +946,11 @@ export function Analytics({
     }
   }, [tabContext?.openAnalyticsRunDetail, runs])
 
-  // When landing on run detail, show General in sidebar and no node selected
+  // When landing on run detail, show General in sidebar and no node selected (signal + recommendation live there)
   useEffect(() => {
     if (selectedRunId) {
-      if (activeSignal) {
-        const signalNode = GANTT_NODES.find(n => n.id === activeSignal.nodeId) ?? null
-        setSelectedGanttNode(signalNode)
-        setSidebarShowGeneral(false)
-      } else {
-        setSelectedGanttNode(null)
-        setSidebarShowGeneral(true)
-      }
+      setSelectedGanttNode(null)
+      setSidebarShowGeneral(true)
       setSidebarOpen(true)
     }
   }, [selectedRunId])
@@ -966,6 +1074,12 @@ export function Analytics({
     if (run?.status === "success") {
       return nodes.map((n) => ({ ...n, status: "success" as const }))
     }
+    if (run?.status === "error") {
+      const failId = errorFailNodeIdForRun(run.runId)
+      return nodes.map((n) =>
+        n.id === failId ? { ...n, status: "error" as const } : { ...n, status: "success" as const }
+      )
+    }
     return nodes
   }, [selectedRunId, runs])
 
@@ -1076,12 +1190,18 @@ export function Analytics({
     : runs.find((r) => r.runId === selectedRunId)
   const runEvaluation =
     selectedRunId && !isForkDraftView ? RUN_EVALUATION_BY_ID[selectedRunId] : undefined
+  const resolvedRunSignal = useMemo(
+    () => resolveRunDetailSignal(selectedRunId, selectedRun ?? null, isForkDraftView),
+    [selectedRunId, selectedRun, isForkDraftView]
+  )
+  const ganttSignalNodeId =
+    resolvedRunSignal?.nodeId && resolvedRunSignal.nodeId.length > 0 ? resolvedRunSignal.nodeId : null
   if (selectedRunId && selectedRun) {
     return (
       <div className="flex h-full bg-background overflow-hidden">
         {/* Left: main content */}
         <div className="flex flex-1 flex-col min-w-0 overflow-hidden bg-muted">
-          <div className="flex items-center justify-between gap-4 flex-shrink-0 px-10 py-4">
+          <div className="flex items-center gap-4 flex-shrink-0 px-10 py-4">
             <Button
               variant="ghost"
               size="sm"
@@ -1092,7 +1212,6 @@ export function Analytics({
                 setForkRunStartTime(null)
                 setSelectedRunId(null)
                 setSelectedGanttNode(null)
-                setActiveSignal(null)
                 setForkSourceRun(null)
                 setForkDrawerOpen(false)
               }}
@@ -1100,50 +1219,6 @@ export function Analytics({
               <ChevronLeft className="h-4 w-4" />
               Back to Analytics
             </Button>
-            <div className="flex items-center gap-2 shrink-0">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-1.5 text-muted-foreground hover:text-foreground"
-                disabled={
-                  isForkDraftView ||
-                  !selectedRun ||
-                  runs.findIndex((r) => r.runId === selectedRunId) <= 0
-                }
-                onClick={() => {
-                  const idx = runs.findIndex((r) => r.runId === selectedRunId)
-                  if (idx > 0) {
-                    setSelectedRunId(runs[idx - 1].runId)
-                    setSelectedGanttNode(null)
-                  }
-                }}
-                aria-label="Previous run"
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Previous run
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-1.5 text-muted-foreground hover:text-foreground"
-                disabled={
-                  isForkDraftView ||
-                  !selectedRun ||
-                  runs.findIndex((r) => r.runId === selectedRunId) >= runs.length - 1
-                }
-                onClick={() => {
-                  const idx = runs.findIndex((r) => r.runId === selectedRunId)
-                  if (idx >= 0 && idx < runs.length - 1) {
-                    setSelectedRunId(runs[idx + 1].runId)
-                    setSelectedGanttNode(null)
-                  }
-                }}
-                aria-label="Next run"
-              >
-                Next run
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
           </div>
           <div
             className="flex-1 overflow-auto px-10 pb-6"
@@ -1258,41 +1333,87 @@ export function Analytics({
                     : "This fork has not been executed yet — the timeline stays empty until you run the fork. Use the sheet on the right to choose what changes from the original workflow."
                 : "Inspect a single Run. Click on a node to see inputs and outputs."}
             </p>
-            {isForkDraftView && forkRunPhase === "draft" ? (
-              <div
-                className="flex min-h-[280px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/80 bg-muted/20 px-6 py-12 text-center"
-                data-workflow-gantt
-              >
-                <GitFork className="h-10 w-10 text-muted-foreground/45" aria-hidden />
-                <p className="text-sm font-medium text-foreground">No steps yet</p>
-                <p className="max-w-md text-xs text-muted-foreground">
-                  Configure the fork in the sheet, then use Run fork. Steps and timings will appear here after the replay.
-                </p>
-              </div>
-            ) : isForkDraftView && forkRunPhase === "running" && forkRunStartTime != null ? (
-              <div className="min-h-[320px] min-w-0">
+            <div className="flex w-full flex-col gap-0">
+              {isForkDraftView && forkRunPhase === "draft" ? (
+                <div
+                  className="flex min-h-[280px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/80 bg-muted/20 px-6 py-12 text-center"
+                  data-workflow-gantt
+                >
+                  <GitFork className="h-10 w-10 text-muted-foreground/45" aria-hidden />
+                  <p className="text-sm font-medium text-foreground">No steps yet</p>
+                  <p className="max-w-md text-xs text-muted-foreground">
+                    Configure the fork in the sheet, then use Run fork. Steps and timings will appear here after the replay.
+                  </p>
+                </div>
+              ) : isForkDraftView && forkRunPhase === "running" && forkRunStartTime != null ? (
+                <div className="min-h-[320px] min-w-0">
+                  <WorkflowGantt
+                    compact
+                    isRunning
+                    runStartTime={forkRunStartTime}
+                    nodes={forkReplayGanttNodes}
+                    selectedNodeId={selectedGanttNode?.id ?? null}
+                    onNodeSelect={setSelectedGanttNode}
+                    highlightNodeId={hoveredContextNodeId}
+                    signalNodeId={null}
+                    onCompareClick={handleCompareClick}
+                  />
+                </div>
+              ) : (
                 <WorkflowGantt
-                  compact
-                  isRunning
-                  runStartTime={forkRunStartTime}
-                  nodes={forkReplayGanttNodes}
+                  nodes={activeRunDetailGanttNodes}
                   selectedNodeId={selectedGanttNode?.id ?? null}
                   onNodeSelect={setSelectedGanttNode}
                   highlightNodeId={hoveredContextNodeId}
-                  signalNodeId={null}
+                  signalNodeId={ganttSignalNodeId}
                   onCompareClick={handleCompareClick}
                 />
+              )}
+              <div className="flex shrink-0 justify-end gap-2 pt-3">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5 text-muted-foreground hover:text-foreground"
+                  disabled={
+                    isForkDraftView ||
+                    !selectedRun ||
+                    runs.findIndex((r) => r.runId === selectedRunId) <= 0
+                  }
+                  onClick={() => {
+                    const idx = runs.findIndex((r) => r.runId === selectedRunId)
+                    if (idx > 0) {
+                      setSelectedRunId(runs[idx - 1].runId)
+                      setSelectedGanttNode(null)
+                    }
+                  }}
+                  aria-label="Previous run"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Previous run
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5 text-muted-foreground hover:text-foreground"
+                  disabled={
+                    isForkDraftView ||
+                    !selectedRun ||
+                    runs.findIndex((r) => r.runId === selectedRunId) >= runs.length - 1
+                  }
+                  onClick={() => {
+                    const idx = runs.findIndex((r) => r.runId === selectedRunId)
+                    if (idx >= 0 && idx < runs.length - 1) {
+                      setSelectedRunId(runs[idx + 1].runId)
+                      setSelectedGanttNode(null)
+                    }
+                  }}
+                  aria-label="Next run"
+                >
+                  Next run
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
               </div>
-            ) : (
-              <WorkflowGantt
-                nodes={activeRunDetailGanttNodes}
-                selectedNodeId={selectedGanttNode?.id ?? null}
-                onNodeSelect={setSelectedGanttNode}
-                highlightNodeId={hoveredContextNodeId}
-                signalNodeId={activeSignal?.nodeId ?? null}
-                onCompareClick={handleCompareClick}
-              />
-            )}
+            </div>
           </div>
         </div>
 
@@ -1407,65 +1528,24 @@ export function Analytics({
               </TooltipProvider>
             </div>
           </div>
-          {activeSignal && selectedGanttNode?.id === activeSignal.nodeId && !sidebarShowGeneral && (
-            <div
-              role="alert"
-              className="mx-4 mt-3 mb-0 shrink-0 overflow-hidden rounded-xl border border-border bg-card shadow-sm ring-1 ring-black/[0.04] dark:ring-white/[0.06]"
-            >
-              <div className="flex gap-0">
-                <div
-                  className="w-1 shrink-0 bg-gradient-to-b from-amber-400 via-amber-500 to-amber-600"
-                  aria-hidden
-                />
-                <div className="flex min-w-0 flex-1 flex-col gap-3 bg-amber-50/90 p-3.5 dark:bg-amber-950/35">
-                  <div className="space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-semibold leading-tight text-foreground">{activeSignal.type}</p>
-                      <span
-                        className={cn(
-                          "inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-                          activeSignal.severity === "high"
-                            ? "bg-red-500/10 text-red-600 dark:text-red-400"
-                            : "bg-amber-500/10 text-amber-700 dark:text-amber-400"
-                        )}
-                      >
-                        {activeSignal.severity}
-                      </span>
-                    </div>
-                    <p className="text-xs leading-relaxed text-muted-foreground">{activeSignal.reason}</p>
-                  </div>
-                  <div className="flex items-start justify-between gap-3 rounded-lg border border-border/80 bg-muted/40 px-3 py-2.5 dark:bg-muted/25">
-                    <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-muted-foreground">
-                      <span className="font-medium text-foreground">Suggestion</span>
-                      <span className="text-muted-foreground/80"> — </span>
-                      {activeSignal.recommendation}
-                    </p>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="h-8 w-fit shrink-0 gap-1.5 px-3 text-xs font-medium shadow-none"
-                      onClick={() => {
-                        if (onFixWithAi) onFixWithAi()
-                        else
-                          toast.message("Fix with AI", {
-                            description: "This prototype would open the AI assistant with this signal and run context.",
-                          })
-                      }}
-                    >
-                      <Bot className="h-3.5 w-3.5 opacity-80" />
-                      Fix with AI
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          {resolvedRunSignal &&
+            selectedGanttNode?.id === resolvedRunSignal.nodeId &&
+            !sidebarShowGeneral && (
+              <SignalInsightCard signal={resolvedRunSignal} onFixWithAi={onFixWithAi} />
+            )}
           {(() => {
             const isAiAgent = selectedGanttNode?.label === "AI Agent"
             const triggerClass = "rounded-md px-4 text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
             if (!selectedGanttNode || sidebarShowGeneral) {
               return (
                 <div key="general-details" className="flex-1 flex flex-col min-h-0 px-4 pb-4 pt-0 overflow-auto">
+                  {resolvedRunSignal ? (
+                    <SignalInsightCard
+                      signal={resolvedRunSignal}
+                      onFixWithAi={onFixWithAi}
+                      containerClassName="mb-4 mt-3 w-full"
+                    />
+                  ) : null}
                   {isForkDraftView && forkSourceRun ? (
                     <div className="mb-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-xs">
                       <p className="font-medium text-foreground">Source run</p>
@@ -2496,13 +2576,6 @@ export function Analytics({
             highSeverityCount={overviewSignalsHighCount}
             onReviewRun={(item) => {
               if (!item.runId) return
-              setActiveSignal({
-                nodeId: item.nodeId,
-                type: item.name,
-                severity: item.severity,
-                reason: item.description,
-                recommendation: item.recommendation,
-              })
               setSelectedRunId(item.runId)
             }}
           />
@@ -3048,7 +3121,6 @@ export function Analytics({
                                 className="h-7 gap-1.5 px-2.5 text-xs"
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  setActiveSignal(null)
                                   setSelectedRunId(c.anchorRunId)
                                 }}
                               >
@@ -3104,7 +3176,6 @@ export function Analytics({
                                         variant="secondary"
                                         className="h-7 gap-1 px-2 text-xs"
                                         onClick={() => {
-                                          setActiveSignal(null)
                                           setSelectedRunId(ex.runId)
                                         }}
                                       >
