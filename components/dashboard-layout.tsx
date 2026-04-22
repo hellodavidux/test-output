@@ -1,16 +1,15 @@
 "use client"
 
 import React from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import {
-  Search,
   Link as LinkIcon,
   Bell,
   HelpCircle,
   TrendingUp,
   User,
-  Upload,
-  Save,
   Play,
+  Wand2,
 } from "lucide-react"
 
 // Custom icon components for sidebar
@@ -64,14 +63,29 @@ const GitBranchIcon = ({ className }: { className?: string }) => (
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+import { buildExperimentSeedFromPrefill, type ExperimentRunSeed } from "@/lib/experiment-run-seed"
+import { INITIAL_ANALYTICS_RUNS, type RunData } from "@/lib/analytics-runs"
 import type { SelectedAction } from "@/lib/types"
 import { Analytics } from "@/components/analytics"
+import { Evaluator } from "@/components/evaluator"
+import { AskAiPanel } from "@/components/ask-ai-panel"
 
 export const TabContext = React.createContext<{
   setActiveTab: (tab: string) => void
   setResetAnalyticsKey?: React.Dispatch<React.SetStateAction<number>>
   openAnalyticsRunDetail: boolean
   setOpenAnalyticsRunDetail: (v: boolean) => void
+  /** Opens Evaluator → Experiment with one test case row seeded from this workflow run. */
+  openExperimentWithRun: (payload: {
+    runId: string
+    /** Fills the Input column (e.g. workflow trigger message). */
+    caseInput?: string
+    caseExpected?: string
+  }) => void
+  /** Opens Analytics → empty fork run detail with the fork configuration drawer. */
+  openAnalyticsForkDraft: (payload: { runId: string; caseInput?: string }) => void
+  /** Appends a row to the Analytics overview runs table (Experiment / completed Fork). */
+  appendAnalyticsRun: (run: RunData) => void
 } | null>(null)
 
 interface DashboardLayoutProps {
@@ -80,27 +94,89 @@ interface DashboardLayoutProps {
   onRun?: () => void
 }
 
+const TAB_SLUGS: Record<string, string> = {
+  Workflow: "workflow",
+  Export: "export",
+  Analytics: "analytics",
+  Evaluator: "evaluator",
+}
+const SLUG_TO_TAB: Record<string, string> = Object.fromEntries(
+  Object.entries(TAB_SLUGS).map(([k, v]) => [v, k])
+)
+
 export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLayoutProps) {
-  const [activeTab, setActiveTab] = React.useState("Workflow")
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const tabFromUrl = SLUG_TO_TAB[searchParams.get("tab") ?? ""] ?? "Workflow"
+  const [activeTab, setActiveTabState] = React.useState(tabFromUrl)
   const [resetAnalyticsKey, setResetAnalyticsKey] = React.useState(0)
   const [openAnalyticsRunDetail, setOpenAnalyticsRunDetail] = React.useState(false)
+  /** Persists in layout so Experiment keeps the seeded row after Evaluator remounts (Evaluate / Compare from Run progress). */
+  const [experimentSeedFromRun, setExperimentSeedFromRun] = React.useState<ExperimentRunSeed | null>(null)
+  /** Handed to Analytics once to open fork draft + drawer (Run progress / table Fork). */
+  const [pendingForkFromRun, setPendingForkFromRun] = React.useState<{
+    runId: string
+    caseInput?: string
+  } | null>(null)
+  const [askAiOpen, setAskAiOpen] = React.useState(false)
+  const [analyticsRuns, setAnalyticsRuns] = React.useState<RunData[]>(() => [...INITIAL_ANALYTICS_RUNS])
 
-  return (
-    <TabContext.Provider value={{ setActiveTab, setResetAnalyticsKey, openAnalyticsRunDetail, setOpenAnalyticsRunDetail }}>
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-background">
+  const appendAnalyticsRun = React.useCallback((run: RunData) => {
+    setAnalyticsRuns((prev) => [...prev, run])
+  }, [])
+
+  React.useEffect(() => {
+    if (activeTab !== "Analytics" && activeTab !== "Evaluator") {
+      setAskAiOpen(false)
+    }
+  }, [activeTab])
+
+  // Keep state in sync when URL changes (e.g. back/forward)
+  React.useEffect(() => {
+    setActiveTabState(tabFromUrl)
+  }, [tabFromUrl])
+
+  const setActiveTab = React.useCallback((tab: string) => {
+    setActiveTabState(tab)
+    const slug = TAB_SLUGS[tab] ?? "workflow"
+    router.push(`?tab=${slug}`, { scroll: false })
+  }, [router])
+
+  const openExperimentWithRun = React.useCallback(
+    (payload: { runId: string; caseInput?: string; caseExpected?: string }) => {
+      setExperimentSeedFromRun(buildExperimentSeedFromPrefill(payload))
+      setActiveTab("Evaluator")
+    },
+    [setActiveTab],
+  )
+
+  const openAnalyticsForkDraft = React.useCallback(
+    (payload: { runId: string; caseInput?: string }) => {
+      setPendingForkFromRun({ runId: payload.runId, caseInput: payload.caseInput })
+      setActiveTab("Analytics")
+    },
+    [setActiveTab],
+  )
+
+  const clearPendingForkFromRun = React.useCallback(() => {
+    setPendingForkFromRun(null)
+  }, [])
+
+  const mainSection = (
+    <>
       {/* Top Bar */}
-      <div className="flex h-14 items-center justify-between border-b border-border bg-background px-4">
+      <div className="grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-border bg-background px-4">
         {/* Left: Logo and Project Name */}
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 w-full items-center justify-start gap-3">
           <div className="flex h-8 w-8 items-center justify-center rounded bg-muted text-foreground font-bold text-sm border border-border">
             A
           </div>
-          <span className="text-sm font-medium text-foreground">Antlio Testing / Sidebar</span>
+          <span className="text-sm font-normal text-foreground">Antlio Testing / Sidebar</span>
         </div>
 
-        {/* Center: Navigation Tabs */}
-        <div className="flex items-center gap-1">
-          {["Workflow", "Export", "Analytics", "Manager"].map((tab) => (
+        {/* Center: Navigation Tabs — grid keeps this centered regardless of right-slot width */}
+        <div className="flex items-center gap-0.5 rounded-lg bg-muted p-1">
+          {["Workflow", "Export", "Analytics", "Evaluator"].map((tab) => (
             <button
               key={tab}
               onClick={() => {
@@ -110,10 +186,10 @@ export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLa
                 setActiveTab(tab)
               }}
               className={cn(
-                "px-4 py-2 text-sm font-medium transition-colors rounded-md",
+                "px-4 py-1.5 text-sm font-medium transition-all rounded-md",
                 activeTab === tab
-                  ? "bg-muted text-foreground"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                  ? "bg-white text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
               )}
             >
               {tab}
@@ -121,26 +197,38 @@ export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLa
           ))}
         </div>
 
-        {/* Right: Actions */}
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon-sm" className="h-8 w-8">
-            <Upload className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon-sm" className="h-8 w-8">
-            <Save className="h-4 w-4" />
-          </Button>
-          <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={onRun}>
-            <Play className="h-3.5 w-3.5" />
-            Run
-          </Button>
-          <Button variant="default" size="sm" className="h-8 bg-foreground text-background hover:bg-foreground/90">
-            Publish
-          </Button>
+        {/* Right: Run/Publish or Ask AI */}
+        <div className="flex min-w-0 w-full items-center justify-end gap-2">
+          {activeTab === "Analytics" || activeTab === "Evaluator" ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className={cn(
+                "h-8 gap-1.5 border-border bg-background shadow-sm",
+                askAiOpen && "border-foreground/25 bg-muted text-foreground hover:bg-muted/80"
+              )}
+              onClick={() => setAskAiOpen((v) => !v)}
+            >
+              <Wand2 className="h-3.5 w-3.5" />
+              Ask AI
+            </Button>
+          ) : (
+            <>
+              <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={onRun}>
+                <Play className="h-3.5 w-3.5" />
+                Run
+              </Button>
+              <Button variant="default" size="sm" className="h-8 bg-foreground text-background hover:bg-foreground/90">
+                Publish
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
       {/* Main Content Area */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Left Sidebar */}
         <TooltipProvider delayDuration={100}>
           <div className="hidden flex w-12 flex-col items-center border-r border-border bg-background py-5">
@@ -268,10 +356,60 @@ export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLa
 
         {/* Canvas Area */}
         <div className="flex-1 overflow-hidden relative">
-          {activeTab === "Analytics" ? <Analytics key={resetAnalyticsKey} onSwitchToWorkflow={() => setActiveTab("Workflow")} /> : children}
+          {activeTab === "Analytics" ? (
+            <Analytics
+              key={resetAnalyticsKey}
+              onSwitchToWorkflow={() => setActiveTab("Workflow")}
+              onFixWithAi={() => setAskAiOpen(true)}
+              pendingForkFromRun={pendingForkFromRun}
+              onPendingForkConsumed={clearPendingForkFromRun}
+              runs={analyticsRuns}
+              onAppendRun={appendAnalyticsRun}
+            />
+          ) : activeTab === "Evaluator" ? (
+            <Evaluator
+              experimentSeedFromRun={experimentSeedFromRun}
+              onNavigateToWorkflow={() => setActiveTab("Workflow")}
+            />
+          ) : activeTab === "Export" ? (
+            <div className="h-full w-full bg-background" aria-label="Export" />
+          ) : (
+            children
+          )}
         </div>
       </div>
-    </div>
+    </>
+  )
+
+  return (
+    <TabContext.Provider
+      value={{
+        setActiveTab,
+        setResetAnalyticsKey,
+        openAnalyticsRunDetail,
+        setOpenAnalyticsRunDetail,
+        openExperimentWithRun,
+        openAnalyticsForkDraft,
+        appendAnalyticsRun,
+      }}
+    >
+      <div
+        className={cn(
+          "flex h-screen w-screen flex-col overflow-hidden",
+          askAiOpen ? "bg-[#f4f4f5] p-4" : "bg-background"
+        )}
+      >
+        {askAiOpen ? (
+          <div className="flex min-h-0 flex-1 gap-0">
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background shadow-sm">
+              {mainSection}
+            </div>
+            <AskAiPanel onClose={() => setAskAiOpen(false)} />
+          </div>
+        ) : (
+          mainSection
+        )}
+      </div>
     </TabContext.Provider>
   )
 }

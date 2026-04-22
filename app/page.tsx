@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useRef, useCallback } from "react"
+import React, { useState, useEffect, useRef, useCallback, Suspense } from "react"
 import { ReactFlow, Background, ReactFlowProvider, useNodesState, useEdgesState, useReactFlow } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
 import { DashboardLayout } from "@/components/dashboard-layout"
@@ -46,9 +46,12 @@ function FlowCanvas({
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null)
   const [shouldExpandRunProgress, setShouldExpandRunProgress] = useState(false)
+  const [activeRunId, setActiveRunId] = useState(() =>
+    typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `run-${Date.now()}`,
+  )
   const [runStatusResult, setRunStatusResult] = useState<"success" | "error">("success")
   const [runErrorDismissed, setRunErrorDismissed] = useState(false)
-  const [runErrorMessage] = useState("Error in Node Send Email (email-node): Send Email did not complete successfully. Check configuration, credentials, or inputs and try again.")
+  const [runErrorMessage] = useState("Error in Node Send Reply (send-reply-node): Email delivery failed. Check SMTP configuration, recipient address, or rate limits and try again.")
   const { screenToFlowPosition } = useReactFlow()
 
   const handleActionSelect = (action: SelectedAction, sourceNodeId?: string, side?: "left" | "right") => {
@@ -238,17 +241,20 @@ function FlowCanvas({
     // Show running state immediately
     setIsRunning(true)
     setRunErrorDismissed(false)
+    setActiveRunId(
+      typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `run-${Date.now()}`,
+    )
     
     // After a short delay, stop loading
     setTimeout(() => {
       setIsLoading(false)
     }, 500) // Loading animation for 500ms
     
-    // After run completes, show error (matches Gantt where Send Email fails)
+    // After run completes, show success
     setTimeout(() => {
       setIsRunning(false)
       setIsRunMode(true)
-      setRunStatusResult("error")
+      setRunStatusResult("success")
       // Show notification dot on output buttons
       const defaultTabs = new Map(nodes.map(n => [n.id, "output" as const]))
       setActiveIOTabs(defaultTabs)
@@ -448,60 +454,92 @@ function FlowCanvas({
             },
             // Only provide output data when in run mode and not cleared
             input: isRunMode && !isCleared ? {
-              message: "Hello, world!",
-              channel: "#general",
-              user: "john.doe",
+              source: "email",
+              from: "sarah.chen@example.com",
+              subject: "Charged twice — still no response",
+              message: "I was charged twice for my Pro subscription this month. This is the third time I've reached out with no response.",
+              ticket_id: "TKT-20481",
               timestamp: new Date().toISOString(),
             } : null,
             output: isRunMode && !isCleared ? (() => {
-              const isAIAgent = nodeData.appName === "AI Agent" && nodeData.actionName === "LLM"
-              
-              if (isAIAgent) {
-                // For AI Agent nodes, use the full tool_invocations structure
+              const action = nodeData.actionName
+              const isIntentClassifier = action === "Intent Classifier"
+              const isKbLookup = action === "Knowledge Base Lookup"
+              const isDraftResponse = action === "Draft Response"
+              const isLegacyAgent = nodeData.appName === "AI Agent" && action === "LLM"
+              const customerMsg =
+                "I was charged twice for my Pro subscription this month. This is the third time I've reached out with no response."
+
+              const classifyTool = {
+                action_id: "classify_intent",
+                params: { message: customerMsg },
+                output: {
+                  type: "json",
+                  message: {
+                    intent: "billing_dispute",
+                    priority: "high",
+                    sentiment: "frustrated",
+                    confidence: 0.97,
+                  },
+                  meta: null,
+                  save_as: "",
+                },
+              }
+              const searchTool = {
+                action_id: "search_kb",
+                params: { query: "duplicate charge billing dispute refund policy" },
+                output: {
+                  type: "json",
+                  message: {
+                    results: [
+                      {
+                        title: "Billing FAQ — Duplicate Charges",
+                        snippet:
+                          "If you see a duplicate charge, our team can issue a full refund within 3–5 business days. Contact support with your invoice number.",
+                      },
+                      {
+                        title: "Refund Policy",
+                        snippet:
+                          "All billing disputes are reviewed within 24 hours. Refunds are processed to the original payment method and confirmed via email.",
+                      },
+                    ],
+                  },
+                  meta: null,
+                  save_as: "",
+                },
+              }
+              const ticketTool = {
+                action_id: "check_ticket_history",
+                params: { user_email: "sarah.chen@example.com", limit: 5 },
+                output: {
+                  type: "json",
+                  message: { tickets: [{ id: "TKT-20481", status: "open", replies: 3 }] },
+                  meta: null,
+                  save_as: "",
+                },
+              }
+              const draftCompletion =
+                "Hi Sarah,\n\nThank you for reaching out, and I sincerely apologize for the frustration — being charged twice and not hearing back is not the experience we want for you.\n\nI've flagged this as a **high-priority billing dispute**. A full refund for the duplicate charge will be processed to your original payment method within **3–5 business days**, and you'll receive a confirmation email once it's issued.\n\nIf you don't see the refund after 5 business days, please reply here and we'll escalate directly to our billing team.\n\nApologies again for the inconvenience.\n\nBest,\nSupport Team"
+
+              if (isIntentClassifier || isKbLookup || isDraftResponse || isLegacyAgent) {
+                const tool_invocations = isIntentClassifier
+                  ? [classifyTool]
+                  : isKbLookup
+                    ? [searchTool]
+                    : [classifyTool, searchTool, ticketTool]
                 return {
                   status: "success",
                   message: "Request completed successfully",
                   timestamp: new Date().toISOString(),
                   data: {
-                    tool_invocations: [
-                      {
-                        action_id: "news_search",
-                        params: {
-                          query: "Real Madrid latest game score site:livescore.com"
-                        },
-                        output: {
-                          type: "json",
-                          message: {
-                            result: "\nNews:\n Title: Real Madrid vs Manchester City Live Scores\nLink: https://www.livescore.com/en/football/europe/champions-league/real-madrid-vs-manchester-city/1639881/\nSource: LiveScore\nContent: Real Madrid vs Manchester City Live Scores | LiveScoreScoresNewsFavouritesFootballHockeyBasketballTennisCricketTeamsManchester UnitedEnglandLiverpoolEnglandArsenalEnglandManchester CityEnglandReal MadridSpainCompetitionsPremier LeagueEnglandLaLigaSpainSerie AItalyBundesligaGermanyLigue 1FranceRegionEnglandChampions LeagueSpainItalyGermanyYour browser is out of date or some of its\nfeatures are disabled, it may not display this website or some of its parts correctly.To make sure that all features of this website work, please update your browser to the latest version and\ncheck that Javascript and Cookies are enabled.Alternatively you can navigate to a legacy version of the website, which is compatible with older browsers: https://www.livescores.comChampions LeagueLeague StageReal Madrid1 - 2Full TimeManchester CityInfoSummaryStatsLine-upsOddsLiveScore 6TableLiveScore 6H2HEventsCommentary11' P. Foden28'RodrygoJ. Bellingham 1 - 035'1 - 1 N. O'ReillyJ. Gvardiol43'A. Rüdiger 43'1 - 2PENE. HaalandHT1 - 276' N. O'Reilly82' P. Guardiola(Coach)87'Rodrygo 88'Á. Fernández Carreras 90' B. SilvaFT1 - 2AboutReal Madrid vs Manchester City Live Scores and Match InformationThe latest football scores, line-ups and more for Real Madrid vs Manchester City.Your live football score for Real Madrid vs Manchester City in the League Stage from LiveScore.com, covering football, cricket, tennis, basketball and hockey live scores.\nFootballPremier League ScoresPremier League StandingsLa Liga ScoresBundesliga ScoresChampionship ScoresSerie A ScoresOther SportsCricket ScoresTennis ScoresBasketball ScoresIce Hockey ScoresTrendingToday's Football ScoresFootball on TVChampions League ScoresFA Cup ScoresIPL ScoresNBA ScoresBettingBetting Sites UKBetting Sites INBetting Sites USNFL Betting SitesBetting Sites ZABetting Sites CACasinoCasino Sites UKFree Spins UKBingo Sites UKFree Spins ZAFree Spins USCasino Sites CAFAQContactPrivacy NoticeAdvertise© 1998-2025 LiveScore LimitedCareersNews PublishersCookie PolicyTerms of UseModern Slavery StatementCorporate\n---\nTitle: Europe Champions League Live Scores | Football\nLink: https://www.livescore.com/en/football/europe/champions-league/\nSource: LiveScore\nContent: Europe Champions League Live Scores | FootballScoresNewsFavouritesFootballHockeyBasketballTennisCricketTeamsManchester UnitedEnglandLiverpoolEnglandArsenalEnglandManchester CityEnglandReal MadridSpainCompetitionsPremier LeagueEnglandLaLigaSpainSerie AItalyBundesligaGermanyLigue 1FranceRegionEnglandChampions LeagueSpainItalyGermanyYour browser is out of date or some of its\nfeatures are disabled, it may not display this website or some of its parts correctly.To make sure that all features of this website work, please update your browser to the latest version and\ncheck that Javascript and Cookies are enabled.Alternatively you can navigate to a legacy version of the website, which is compatible with older browsers: https://www.livescores.comFootballUEFAChampions LeagueChampions LeagueUEFAOverviewFixturesResultsStandingsStatsFixtures11 DECKairat AlmatyClub BruggeBodoe/GlimtManchester City11 DECFC CopenhagenNapoliInterArsenal11 DECOlympiacosBayer Leverkusen11 DECReal MadridAS Monaco11 DECSporting CPParis Saint-GermainTottenham HotspurBorussia Dortmund11 DECVillarrealAjaxResults11 DECFTAthletic ClubParis Saint-Germain0011 DECFTBayer LeverkusenNewcastle United2211 DECFTBenficaNapoli2011 DECFTBorussia DortmundBodoe/Glimt2211 DECFTClub BruggeArsenal0311 DECFTJuventusPafos FC2011 DECFTReal MadridManchester City1211 DECFTQarabag FKAjax2411 DECFTVillarrealFC Copenhagen23Standings#TeamPlayedPGoals DifferenceGDPointsPts1Qualification to 1/8 finalsArsenal616182Qualification to 1/8 finalsBayern Munich611153Qualification to 1/8 finalsParis Saint-Germain611134Qualification to 1/8 finalsManchester City66135Qualification to 1/8 finalsAtalanta6213See AllRotate to view expanded tableTop Scorers1Kylian MbappéReal Madrid92Erling HaalandManchester City62Victor OsimhenGalatasaray64Anthony GordonNewcastle United54Harry KaneBayern Munich5See AllAboutThe latest Champions League Live Scores, plus Results, Fixtures & TablesAll the live scores, fixtures and tables for Europe Champions League from LiveScore.com.LiveScore provides you with all the latest football scores from today's Champions League matches.\nReal time live football scores and fixtures from Europe Champions League. Keep up to date with the latest\nscore,\nresults,\nstandings and Champions League schedule.\nChampions League FootballPremier League ScoresPremier League StandingsLa Liga ScoresBundesliga ScoresChampionship ScoresSerie A ScoresOther SportsCricket ScoresTennis ScoresBasketball ScoresIce Hockey ScoresTrendingToday's Football ScoresFootball on TVChampions League ScoresFA Cup ScoresIPL ScoresNBA ScoresBettingBetting Sites UKBetting Sites INBetting Sites USNFL Betting SitesBetting Sites ZABetting Sites CACasinoCasino Sites UKFree Spins UKBingo Sites UKFree Spins ZAFree Spins USCasino Sites CAFAQContactPrivacy NoticeAdvertise© 1998-2025 LiveScore LimitedCareersNews PublishersCookie PolicyTerms of UseModern Slavery StatementCorporate\n---\nTitle: Football Live Scores & Fixtures | 9 December 2025\nLink: https://www.livescore.com/en/football/2025-12-09/\nSource: LiveScore\nContent: Football Live Scores & Fixtures | 9 December 2025 | LiveScoreScoresNewsFavouritesFootballHockeyBasketballTennisCricketTeamsManchester UnitedEnglandLiverpoolEnglandArsenalEnglandManchester CityEnglandReal MadridSpainCompetitionsPremier LeagueEnglandLaLigaSpainSerie AItalyBundesligaGermanyLigue 1FranceRegionEnglandChampions LeagueSpainItalyGermanyYour browser is out of date or some of its\nfeatures are disabled, it may not display this website or some of its parts correctly.To make sure that all features of this website work, please update your browser to the latest version and\ncheck that Javascript and Cookies are enabled.Alternatively you can navigate to a legacy version of the website, which is compatible with older browsers: https://www.livescores.comLIVETuesday, 09 Dec9AboutLive Scores and fixtures for football on 9 December 2025Looking for the livescore today? See live scores and fixtures for football on 9 December 2025.LiveScore brings you the latest football fixtures, results and live score information for 9 December 2025. Revisit scores and statistics and look ahead for upcoming fixtures for your favourite sport team. Plus, find out the livescore today, 9 December 2025.FootballPremier League ScoresPremier League StandingsLa Liga ScoresBundesliga ScoresChampionship ScoresSerie A ScoresOther SportsCricket ScoresTennis ScoresBasketball ScoresIce Hockey ScoresTrendingToday's Football ScoresFootball on TVChampions League ScoresFA Cup ScoresIPL ScoresNBA ScoresBettingBetting Sites UKBetting Sites INBetting Sites USNFL Betting SitesBetting Sites ZABetting Sites CACasinoCasino Sites UKFree Spins UKBingo Sites UKFree Spins ZAFree Spins USCasino Sites CAFAQContactPrivacy NoticeAdvertise© 1998-2025 LiveScore LimitedCareersNews PublishersCookie PolicyTerms of UseModern Slavery StatementCorporate\n---\nTitle: Benfica Fixture List & Next Game\nLink: https://www.livescore.com/en/football/team/benfica/304/fixtures/\nSource: LiveScore\nContent: Benfica Fixture List & Next Game | LiveScoreScoresNewsFavouritesFootballHockeyBasketballTennisCricketTeamsManchester UnitedEnglandLiverpoolEnglandArsenalEnglandManchester CityEnglandReal MadridSpainCompetitionsPremier LeagueEnglandLaLigaSpainSerie AItalyBundesligaGermanyLigue 1FranceRegionEnglandChampions LeagueSpainItalyGermanyYour browser is out of date or some of its\nfeatures are disabled, it may not display this website or some of its parts correctly.To make sure that all features of this website work, please update your browser to the latest version and\ncheck that Javascript and Cookies are enabled.Alternatively you can navigate to a legacy version of the website, which is compatible with older browsers: https://www.livescores.comAboutBenfica fixturesBenfica next match.The latest Benfica fixture list and all the information on the next game from LiveScore.com.FootballPremier League ScoresPremier League StandingsLa Liga ScoresBundesliga ScoresChampionship ScoresSerie A ScoresOther SportsCricket ScoresTennis ScoresBasketball ScoresIce Hockey ScoresTrendingToday's Football ScoresFootball on TVChampions League ScoresFA Cup ScoresIPL ScoresNBA ScoresBettingBetting Sites UKBetting Sites INBetting Sites USNFL Betting SitesBetting Sites ZABetting Sites CACasinoCasino Sites UKFree Spins UKBingo Sites UKFree Spins ZAFree Spins USCasino Sites CAFAQContactPrivacy NoticeAdvertise© 1998-2025 LiveScore LimitedCareersNews PublishersCookie PolicyTerms of UseModern Slavery StatementCorporate\n---\nTitle: Real Madrid U19 Results List & Next Game\nLink: https://www.livescore.com/en/football/team/real-madrid-u19/7089/results/\nSource: LiveScore\nContent: Real Madrid U19 Results List & Next Game | LiveScoreScoresNewsFavouritesFootballHockeyBasketballTennisCricketTeamsManchester UnitedEnglandLiverpoolEnglandArsenalEnglandManchester CityEnglandReal MadridSpainCompetitionsPremier LeagueEnglandLaLigaSpainSerie AItalyBundesligaGermanyLigue 1FranceRegionEnglandChampions LeagueSpainItalyGermanyYour browser is out of date or some of its\nfeatures are disabled, it may not display this website or some of its parts correctly.To make sure that all features of this website work, please update your browser to the latest version and\ncheck that Javascript and Cookies are enabled.Alternatively you can navigate to a legacy version of the website, which is compatible with older browsers: https://www.livescores.comAboutReal Madrid U19 resultsReal Madrid U19 next match.The latest Real Madrid U19 results list and all the information on the next game from LiveScore.com.FootballPremier League ScoresPremier League StandingsLa Liga ScoresBundesliga ScoresChampionship ScoresSerie A ScoresOther SportsCricket ScoresTennis ScoresBasketball ScoresIce Hockey ScoresTrendingToday's Football ScoresFootball on TVChampions League ScoresFA Cup ScoresIPL ScoresNBA ScoresBettingBetting Sites UKBetting Sites INBetting Sites USNFL Betting SitesBetting Sites ZABetting Sites CACasinoCasino Sites UKFree Spins UKBingo Sites UKFree Spins ZAFree Spins USCasino Sites CAFAQContactPrivacy NoticeAdvertise© 1998-2025 LiveScore LimitedCareersNews PublishersCookie PolicyTerms of UseModern Slavery StatementCorporate\n---\n"
-                          },
-                          meta: null,
-                          save_as: ""
-                        }
-                      },
-                      {
-                        action_id: "slack_message",
-                        params: {
-                          message: "Real Madrid's latest game score is being searched."
-                        },
-                        output: {
-                          type: "json",
-                          message: {
-                            channel_id: "C0A0CP1EPL4",
-                            results: "Message (text) sent successfully to channel C0A0CP1EPL4 (timestamp: 1765411892.341339)",
-                            message_ts: "1765411892.341339"
-                          },
-                          meta: null,
-                          save_as: ""
-                        }
-                      }
-                    ],
-                    formatted_prompt: "system:\nYou are an AI assistant.\n1) Be brief.\n2) Be polite.\n3) Be helpful.\n\nThe current date and time is Thursday, December 11, 2025 (00:11:24).\n\n\n\nprompt:\nuse <tool-mention data-tool-name=\"news_search\" data-provider-id=\"stackai\"></tool-mention> to find the real madrid  latest game score on Livescore.com\n\nwhile doing that, send a message with the team real madrid  to my slack channel <tool-mention data-tool-name=\"slack_message\" data-provider-id=\"slack\"></tool-mention>\n",
-                    provider: {
-                      name: "OpenAI",
-                      model: "gpt-4o-mini"
-                    },
+                    tool_invocations,
+                    formatted_prompt:
+                      "system:\nYou are a helpful customer support agent.\n\nprompt:\nCustomer message (ticket TKT-20481):\n\"" +
+                      customerMsg +
+                      "\"\n",
+                    provider: { name: "OpenAI", model: "gpt-4.1" },
                     params: {
-                      temperature: 0,
+                      temperature: 0.2,
                       top_p: 1,
                       n: 1,
                       stream: true,
@@ -515,11 +553,11 @@ function FlowCanvas({
                       use_reasoning: false,
                       reasoning_effort: null,
                       safe_context_token_window: false,
-                      seed: 42
+                      seed: 42,
                     },
-                    completion: "The latest game score for Real Madrid is:\n\n**Real Madrid 1 - 2 Manchester City** (Full Time)\n\nYou can find more details on [LiveScore.com](https://www.livescore.com/en/football/europe/champions-league/real-madrid-vs-manchester-city/1639881/).\n\nAdditionally, I have sent a message to your Slack channel informing about the score search. If you need anything else, feel free to ask!",
-                    citations: []
-                  }
+                    completion: isDraftResponse || isLegacyAgent ? draftCompletion : "",
+                    citations: [],
+                  },
                 }
               } else {
                 // For other nodes, use the original structure
@@ -555,13 +593,17 @@ function FlowCanvas({
               }
             })() : null,
             completion: isRunMode && !isCleared ? (() => {
-              const isAIAgent = nodeData.appName === "AI Agent" && nodeData.actionName === "LLM"
-              // For LLM nodes, use the Real Madrid completion text
-              if (isAIAgent) {
-                return "The latest game score for Real Madrid is:\n\n**Real Madrid 1 - 2 Manchester City** (Full Time)\n\nYou can find more details on [LiveScore.com](https://www.livescore.com/en/football/europe/champions-league/real-madrid-vs-manchester-city/1639881/).\n\nAdditionally, I have sent a message to your Slack channel informing about the score search. If you need anything else, feel free to ask!"
+              const action = nodeData.actionName
+              if (action === "Intent Classifier") {
+                return '{"intent":"billing_dispute","priority":"high","sentiment":"frustrated","confidence":0.97}\n\nClassification complete. Routing to Knowledge Base Lookup.'
               }
-              // For other nodes, use the email text
-              return "The email address [jdoe@stack-ai.com](mailto:jdoe@stack-ai.com) appears to be associated with Jane Doe, who is listed as an AI Engineer at Stack AI according to public organizational charts and professional profiles[^55269.0.0][^55279.0.0]. This address is likely a professional or corporate email used for work-related communications within Stack AI. Web search results confirm Jane Doe's role and provide a detailed background, including her previous positions and academic credentials, which further supports the legitimacy of the email as belonging to a real individual at Stack AI[^55269.0.0].\n\nAdditionally, a search of email records reveals that [jdoe@stack-ai.com](mailto:jdoe@stack-ai.com) has been involved in recent email activity, including receiving onboarding information for a Slack workspace and sending or receiving other messages. The content of these emails is consistent with typical business communications, such as workspace setup instructions and notifications[^55279.0.0]. This further corroborates that the email is actively used for professional purposes.\n\nIn summary, [jdoe@stack-ai.com](mailto:jdoe@stack-ai.com) originates from Stack AI and is used by Jane Doe, an AI Engineer at the company. The email is active and involved in standard business correspondence, as evidenced by both web and email search results[^55269.0.0][^55279.0.0].\n\nI am also sending you an email to confirm that I am actively looking into this matter."
+              if (action === "Knowledge Base Lookup") {
+                return "Retrieved 2 documents: Billing FAQ — Duplicate Charges, Refund Policy. Confidence: 0.93."
+              }
+              if (action === "Draft Response" || (nodeData.appName === "AI Agent" && action === "LLM")) {
+                return "Hi Sarah,\n\nThank you for reaching out, and I sincerely apologize for the frustration — being charged twice and not hearing back is not the experience we want for you.\n\nI've flagged this as a **high-priority billing dispute**. A full refund for the duplicate charge will be processed to your original payment method within **3–5 business days**, and you'll receive a confirmation email once it's issued.\n\nIf you don't see the refund after 5 business days, please reply here and we'll escalate directly to our billing team.\n\nApologies again for the inconvenience.\n\nBest,\nSupport Team"
+              }
+              return "Ticket **TKT-20481** has been updated and linked to sarah.chen@example.com. Reply sent successfully via email. CRM record updated with resolution status: **pending_refund**. Escalation flag: billing team notified. KB articles referenced: Billing FAQ — Duplicate Charges, Refund Policy."
             })() : null,
           },
         }
@@ -572,87 +614,177 @@ function FlowCanvas({
 
   useEffect(() => {
     if (!isInitialized) {
-      // Center the workflow nodes on the canvas
-      // Position them at the center of the viewport (accounting for sidebar width ~44px)
-      const viewportWidth = window.innerWidth - 44 // Subtract sidebar width
-      const viewportHeight = window.innerHeight - 56 // Subtract top bar height
-      const centerX = viewportWidth / 2 - 190 // Approximate center accounting for node width (380px)
-      const centerY = viewportHeight / 2 - 100 // Approximate center accounting for node height
-      const nodeSpacing = 450 // Space between nodes
-      
-      // Input node (left)
-      const inputNodeData: WorkflowNodeData = {
-        appName: "Input",
-        actionName: "User Input",
-        description: "Collect user input",
-        type: "input",
+      const dx = 260
+      const x0 = 60
+      const yTop = 40
+      const yEmail = 220
+      const yLane = 130
+
+      const mk = (partial: WorkflowNodeData): WorkflowNodeData => ({
         version: "v1.0.0",
         onDeleteNode: handleDeleteNode,
         onToggleIOPanel: handleToggleIOPanel,
-      }
-      
-      const inputNode: Node = {
-        id: "input-node",
+        ...partial,
+      })
+
+      const chatbotNode: Node = {
+        id: "chatbot-node",
         type: "workflowNode",
-        position: { x: Math.max(0, centerX - nodeSpacing), y: Math.max(0, centerY) },
-        data: inputNodeData,
+        position: { x: x0, y: yTop },
+        data: mk({
+          appName: "Trigger",
+          actionName: "Chatbot Input",
+          description: "Customer sends a message via the embedded chatbot widget",
+          type: "input",
+        }),
       }
-      
-      // AI Agent node (middle)
-      const aiAgentNodeData: WorkflowNodeData = {
-        appName: "AI Agent",
-        actionName: "LLM",
-        description: "Process text using a large language model",
-        type: "action",
-        version: "v1.0.0",
-        onDeleteNode: handleDeleteNode,
-        onToggleIOPanel: handleToggleIOPanel,
-      }
-      
-      const aiAgentNode: Node = {
-        id: "ai-agent-node",
+
+      const emailTriggerNode: Node = {
+        id: "email-trigger-node",
         type: "workflowNode",
-        position: { x: Math.max(0, centerX), y: Math.max(0, centerY) },
-        data: aiAgentNodeData,
+        position: { x: x0, y: yEmail },
+        data: mk({
+          appName: "Trigger",
+          actionName: "Receive Email",
+          description: "Inbound support email received in the connected inbox",
+          type: "input",
+        }),
       }
-      
-      // Send Email node (right)
-      const sendEmailNodeData: WorkflowNodeData = {
-        appName: "Send Email",
-        actionName: "Send Email",
-        description: "Send an email message",
-        type: "action",
-        version: "v1.0.0",
-        onDeleteNode: handleDeleteNode,
-        onToggleIOPanel: handleToggleIOPanel,
+
+      const emailPrepNode: Node = {
+        id: "email-prep-node",
+        type: "workflowNode",
+        position: { x: x0 + dx, y: yEmail },
+        data: mk({
+          appName: "Email",
+          actionName: "Email Preprocessing",
+          description: "Parse headers, extract intent, and attach the message to a ticket",
+          type: "action",
+        }),
       }
-      
+
+      const intentNode: Node = {
+        id: "intent-classifier-node",
+        type: "workflowNode",
+        position: { x: x0 + dx * 2, y: yLane },
+        data: mk({
+          appName: "AI Agent",
+          actionName: "Intent Classifier",
+          description: "Classifies intent, priority, and sentiment from the normalized message",
+          type: "action",
+        }),
+      }
+
+      const kbNode: Node = {
+        id: "kb-lookup-node",
+        type: "workflowNode",
+        position: { x: x0 + dx * 3, y: yLane },
+        data: mk({
+          appName: "Knowledge Base",
+          actionName: "Knowledge Base Lookup",
+          description: "Retrieves top-k articles relevant to the ticket",
+          type: "action",
+        }),
+      }
+
+      const draftNode: Node = {
+        id: "draft-response-node",
+        type: "workflowNode",
+        position: { x: x0 + dx * 4, y: yLane },
+        data: mk({
+          appName: "AI Agent",
+          actionName: "Draft Response",
+          description: "Drafts an empathetic reply using KB context and ticket history",
+          type: "action",
+        }),
+      }
+
+      const ifelseNode: Node = {
+        id: "ifelse-node",
+        type: "workflowNode",
+        position: { x: x0 + dx * 5, y: yLane },
+        data: mk({
+          appName: "Logic",
+          actionName: "If / Else",
+          description: "Branches on policy rules (refund initiated, escalation thresholds)",
+          type: "action",
+        }),
+      }
+
+      const crmNode: Node = {
+        id: "crm-node",
+        type: "workflowNode",
+        position: { x: x0 + dx * 6, y: yLane },
+        data: mk({
+          appName: "Integrations",
+          actionName: "Update CRM Record",
+          description: "Updates ticket and customer record in the CRM",
+          type: "action",
+        }),
+      }
+
+      const escalationNode: Node = {
+        id: "escalation-router-node",
+        type: "workflowNode",
+        position: { x: x0 + dx * 7, y: yLane },
+        data: mk({
+          appName: "Routing",
+          actionName: "Escalation Router",
+          description: "Decides whether to escalate to a human team or continue automation",
+          type: "action",
+        }),
+      }
+
       const sendEmailNode: Node = {
         id: "send-email-node",
         type: "workflowNode",
-        position: { x: Math.max(0, centerX + nodeSpacing), y: Math.max(0, centerY) },
-        data: sendEmailNodeData,
+        position: { x: x0 + dx * 8, y: yLane },
+        data: mk({
+          appName: "Send Reply",
+          actionName: "Send Reply",
+          description: "Sends the drafted response back to the customer via email or chatbot",
+          type: "action",
+        }),
       }
-      
-      // Create edges connecting the nodes
+
+      const outputNode: Node = {
+        id: "output-node",
+        type: "workflowNode",
+        position: { x: x0 + dx * 9, y: yLane },
+        data: mk({
+          appName: "Output",
+          actionName: "Output",
+          description: "Run completion payload, metrics, and token usage",
+          type: "output",
+        }),
+      }
+
       const initialEdges = [
-        {
-          id: "edge-input-to-ai",
-          source: "input-node",
-          target: "ai-agent-node",
-          sourceHandle: "right",
-          targetHandle: "left",
-        },
-        {
-          id: "edge-ai-to-email",
-          source: "ai-agent-node",
-          target: "send-email-node",
-          sourceHandle: "right",
-          targetHandle: "left",
-        },
+        { id: "e-chat-intent", source: "chatbot-node", target: "intent-classifier-node", sourceHandle: "right", targetHandle: "left" },
+        { id: "e-email-prep", source: "email-trigger-node", target: "email-prep-node", sourceHandle: "right", targetHandle: "left" },
+        { id: "e-prep-intent", source: "email-prep-node", target: "intent-classifier-node", sourceHandle: "right", targetHandle: "left" },
+        { id: "e-intent-kb", source: "intent-classifier-node", target: "kb-lookup-node", sourceHandle: "right", targetHandle: "left" },
+        { id: "e-kb-draft", source: "kb-lookup-node", target: "draft-response-node", sourceHandle: "right", targetHandle: "left" },
+        { id: "e-draft-if", source: "draft-response-node", target: "ifelse-node", sourceHandle: "right", targetHandle: "left" },
+        { id: "e-if-crm", source: "ifelse-node", target: "crm-node", sourceHandle: "right", targetHandle: "left" },
+        { id: "e-crm-esc", source: "crm-node", target: "escalation-router-node", sourceHandle: "right", targetHandle: "left" },
+        { id: "e-esc-send", source: "escalation-router-node", target: "send-email-node", sourceHandle: "right", targetHandle: "left" },
+        { id: "e-send-out", source: "send-email-node", target: "output-node", sourceHandle: "right", targetHandle: "left" },
       ]
-      
-      setNodes([inputNode, aiAgentNode, sendEmailNode])
+
+      setNodes([
+        chatbotNode,
+        emailTriggerNode,
+        emailPrepNode,
+        intentNode,
+        kbNode,
+        draftNode,
+        ifelseNode,
+        crmNode,
+        escalationNode,
+        sendEmailNode,
+        outputNode,
+      ])
       setEdges(initialEdges)
       setIsInitialized(true)
     }
@@ -676,7 +808,8 @@ function FlowCanvas({
               onNodeClick={handleNodeClick}
               onPaneClick={handlePaneClick}
           nodeTypes={nodeTypes}
-              defaultViewport={{ x: 0, y: 0, zoom: 0.85 }}
+          fitView
+          fitViewOptions={{ padding: 0.3 }}
           className="bg-[#F2F2F2]"
           style={{ backgroundColor: '#F2F2F2' }}
         >
@@ -726,6 +859,7 @@ function FlowCanvas({
         runStatus={isRunning ? "running" : runStatusResult}
         shouldExpand={shouldExpandRunProgress}
         onExpandChange={(expanded) => setShouldExpandRunProgress(expanded)}
+        runId={activeRunId}
       />
       {/* Run error banner - fixed below top bar (h-14 = 56px) */}
       {runStatusResult === "error" && !runErrorDismissed && (
@@ -762,7 +896,7 @@ function FlowCanvas({
   )
 }
 
-export default function Page() {
+function PageInner() {
   const actionSelectRef = React.useRef<((action: SelectedAction) => void) | null>(null)
   const runRef = React.useRef<(() => void) | null>(null)
 
@@ -780,9 +914,17 @@ export default function Page() {
 
   return (
     <DashboardLayout onActionSelect={handleActionSelect} onRun={handleRun}>
-    <ReactFlowProvider>
+      <ReactFlowProvider>
         <FlowCanvas onActionSelectRef={actionSelectRef} onRunRef={runRef} />
-    </ReactFlowProvider>
+      </ReactFlowProvider>
     </DashboardLayout>
+  )
+}
+
+export default function Page() {
+  return (
+    <Suspense>
+      <PageInner />
+    </Suspense>
   )
 }

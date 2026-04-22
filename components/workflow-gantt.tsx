@@ -1,11 +1,40 @@
 "use client"
 
 import React, { useState, useMemo } from "react"
-import { ChevronDown, ChevronRight, Play, Zap, FileText, Mail, CheckSquare, Send, Folder, Route, GitBranch, Check, X, Loader2 } from "lucide-react"
+import {
+  ChevronDown,
+  ChevronRight,
+  Play,
+  Bot,
+  FileText,
+  Mail,
+  CheckSquare,
+  Send,
+  Folder,
+  Route,
+  GitBranch,
+  Check,
+  X,
+  Loader2,
+  GitCompare,
+  Wrench,
+  Sparkles,
+  MessageSquare,
+} from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+
+/** Sub-steps inside an AI Agent node (tools, thinking, completion) — times are offsets from the parent row’s startSec. */
+export interface LlmSpan {
+  id: string
+  label: string
+  startOffset: number
+  endOffset: number
+  kind: "thinking" | "tool" | "completion"
+}
 
 export interface GanttNode {
   id: string
@@ -16,22 +45,67 @@ export interface GanttNode {
   hasChildren: boolean
   icon?: "play" | "zap" | "file" | "mail" | "check" | "send" | "folder" | "route" | "branch"
   status?: "error" | "success"
+  llmSpans?: LlmSpan[]
 }
 
+const AGENT_SPANS_STANDARD: LlmSpan[] = [
+  { id: "think", label: "Reasoning", startOffset: 0.15, endOffset: 1.1, kind: "thinking" },
+  { id: "tool1", label: "classify_intent", startOffset: 1.2, endOffset: 2.8, kind: "tool" },
+  { id: "tool2", label: "search_kb", startOffset: 2.85, endOffset: 4.2, kind: "tool" },
+  { id: "complete", label: "Completion", startOffset: 4.3, endOffset: 6.6, kind: "completion" },
+]
+
 export const GANTT_NODES: GanttNode[] = [
-  { id: "1", label: "User Input", startSec: 0, endSec: 1.2, depth: 0, hasChildren: false, icon: "play" },
-  { id: "2a", label: "AI Agent", startSec: 6.5, endSec: 14, depth: 0, hasChildren: false, icon: "zap" },
-  { id: "2", label: "AI Agent", startSec: 1.2, endSec: 8, depth: 0, hasChildren: false, icon: "zap" },
-  { id: "3", label: "AI Routing", startSec: 12, endSec: 13.5, depth: 0, hasChildren: false, icon: "route" },
-  { id: "4", label: "AI Agent", startSec: 2, endSec: 17, depth: 0, hasChildren: false, icon: "zap" },
-  { id: "5", label: "Send Email", startSec: 13.5, endSec: 15, depth: 0, hasChildren: false, icon: "mail", status: "error" },
-  { id: "6", label: "If/Else", startSec: 15, endSec: 16, depth: 0, hasChildren: false, icon: "branch" },
-  { id: "7", label: "Notion", startSec: 15.5, endSec: 17, depth: 0, hasChildren: false, icon: "file" },
-  { id: "9", label: "Project node", startSec: 0, endSec: 6, depth: 0, hasChildren: true, icon: "folder" },
-  { id: "9-1", label: "input", startSec: 0, endSec: 1.5, depth: 1, hasChildren: false, icon: "play" },
-  { id: "9-2", label: "AI Agent", startSec: 1.5, endSec: 4, depth: 1, hasChildren: false, icon: "zap" },
-  { id: "9-3", label: "Send Email", startSec: 4, endSec: 5.5, depth: 1, hasChildren: false, icon: "mail" },
-  { id: "8", label: "Output", startSec: 17, endSec: 20, depth: 0, hasChildren: false, icon: "send" },
+  { id: "1-email", label: "Receive Email", startSec: 0, endSec: 0.55, depth: 0, hasChildren: false, icon: "play" },
+  { id: "1-chat", label: "Chatbot Input", startSec: 0, endSec: 0.55, depth: 0, hasChildren: false, icon: "play" },
+  { id: "9", label: "Email Preprocessing", startSec: 0.1, endSec: 4.6, depth: 0, hasChildren: true, icon: "folder" },
+  { id: "9-1", label: "Parse Headers", startSec: 0.1, endSec: 1.05, depth: 1, hasChildren: false, icon: "play" },
+  {
+    id: "9-2",
+    label: "Extract Intent",
+    startSec: 1.05,
+    endSec: 3.35,
+    depth: 1,
+    hasChildren: false,
+    icon: "zap",
+    llmSpans: [
+      { id: "think", label: "Reasoning", startOffset: 0.05, endOffset: 0.45, kind: "thinking" },
+      { id: "tool1", label: "classify_intent", startOffset: 0.5, endOffset: 1.65, kind: "tool" },
+      { id: "complete", label: "Completion", startOffset: 1.7, endOffset: 2.25, kind: "completion" },
+    ],
+  },
+  { id: "9-3", label: "Attach to Ticket", startSec: 3.35, endSec: 4.55, depth: 1, hasChildren: false, icon: "check" },
+  {
+    id: "2",
+    label: "Intent Classifier",
+    startSec: 4.6,
+    endSec: 9.4,
+    depth: 0,
+    hasChildren: false,
+    icon: "zap",
+    llmSpans: AGENT_SPANS_STANDARD,
+  },
+  { id: "3", label: "Knowledge Base Lookup", startSec: 9.4, endSec: 11.4, depth: 0, hasChildren: false, icon: "file" },
+  {
+    id: "4",
+    label: "Draft Response",
+    startSec: 11.4,
+    endSec: 16.2,
+    depth: 0,
+    hasChildren: false,
+    icon: "zap",
+    llmSpans: [
+      { id: "think", label: "Reasoning", startOffset: 0.25, endOffset: 1.65, kind: "thinking" },
+      { id: "tool1", label: "search_kb", startOffset: 1.75, endOffset: 3.55, kind: "tool" },
+      { id: "tool2", label: "check_ticket_history", startOffset: 3.65, endOffset: 4.65, kind: "tool" },
+      { id: "complete", label: "Completion", startOffset: 4.75, endOffset: 4.8, kind: "completion" },
+    ],
+  },
+  { id: "7", label: "If / Else", startSec: 14.8, endSec: 15.45, depth: 0, hasChildren: false, icon: "branch" },
+  { id: "8", label: "Update CRM Record", startSec: 15.45, endSec: 16.05, depth: 0, hasChildren: false, icon: "file" },
+  { id: "5", label: "Escalation Router", startSec: 16.2, endSec: 17.0, depth: 0, hasChildren: false, icon: "route" },
+  { id: "6", label: "Send Reply", startSec: 17.0, endSec: 18.4, depth: 0, hasChildren: false, icon: "mail", status: "success" },
+  { id: "10", label: "Output", startSec: 18.4, endSec: 19.85, depth: 0, hasChildren: false, icon: "send" },
 ]
 
 const MOCK_NODES = GANTT_NODES
@@ -52,13 +126,24 @@ export function varyGanttNodesByRunId(runId: string, nodes: GanttNode[]): GanttN
     const newStartSec = Math.max(0, node.startSec + startDelta)
     const duration = node.endSec - node.startSec
     const newEndSec = Math.max(newStartSec + 0.3, Math.min(20, newStartSec + Math.max(0.3, duration + durDelta)))
-    return { ...node, startSec: newStartSec, endSec: newEndSec }
+    const newDur = newEndSec - newStartSec
+    let llmSpans = node.llmSpans
+    if (llmSpans?.length && duration > 0.01 && newDur > 0) {
+      const scale = newDur / duration
+      llmSpans = llmSpans.map((s) => ({
+        ...s,
+        startOffset: s.startOffset * scale,
+        endOffset: s.endOffset * scale,
+      }))
+    }
+    return { ...node, startSec: newStartSec, endSec: newEndSec, llmSpans }
   })
 }
 
-export const FIRST_GANTT_NODE: GanttNode = MOCK_NODES[1] // AI Agent - default when opening run detail
+export const FIRST_GANTT_NODE: GanttNode = MOCK_NODES.find((n) => n.id === "2") ?? MOCK_NODES[0]
 
 const ROW_HEIGHT = 36
+const LLM_SPAN_ROW_HEIGHT = 30
 const LEFT_WIDTH = 280
 const SECONDS_MAX = 20
 const TIME_HEADER_HEIGHT = 32
@@ -95,9 +180,11 @@ export function getNodeIdentifier(node: GanttNode, visibleNodes: GanttNode[]): s
   const idx = visibleNodes.findIndex((n) => n.id === node.id)
   const sameLabelCount = visibleNodes.slice(0, idx + 1).filter((n) => n.label === node.label).length - 1
   const actionCount = visibleNodes.slice(0, idx + 1).filter(isActionType).length - 1
-  if (label.includes("user input") || node.icon === "play") return "in-0"
+  const playIndex = visibleNodes.slice(0, idx + 1).filter((n) => n.icon === "play").length - 1
+  const zapIndex = visibleNodes.slice(0, idx + 1).filter((n) => n.icon === "zap").length - 1
+  if (label.includes("user input") || node.icon === "play") return `in-${Math.max(0, playIndex)}`
   if (label === "output" || node.icon === "send") return `out-${sameLabelCount}`
-  if (label === "ai agent" || node.icon === "zap") return `llm-${sameLabelCount}`
+  if (label === "ai agent" || node.icon === "zap") return `llm-${Math.max(0, zapIndex)}`
   if (label === "ai routing" || node.icon === "route") return "routing"
   if (label.includes("if") || label.includes("else") || node.icon === "branch") return `ifelse-${sameLabelCount}`
   if (label.includes("loop") || node.hasChildren || node.icon === "folder") return `loop_subflow-${sameLabelCount}`
@@ -105,12 +192,63 @@ export function getNodeIdentifier(node: GanttNode, visibleNodes: GanttNode[]): s
   return `action-${Math.max(0, actionCount)}`
 }
 
+export function hasLlmSpanDetail(node: GanttNode): boolean {
+  return Boolean(node.llmSpans?.length)
+}
+
+function spanAbsoluteRange(parent: GanttNode, span: LlmSpan): { startSec: number; endSec: number } {
+  const lo = parent.startSec
+  const hi = parent.endSec
+  const s = parent.startSec + span.startOffset
+  const e = parent.startSec + span.endOffset
+  return {
+    startSec: Math.max(lo, Math.min(s, hi)),
+    endSec: Math.max(lo, Math.min(e, hi)),
+  }
+}
+
+function LlmSpanKindIcon({ kind }: { kind: LlmSpan["kind"] }) {
+  switch (kind) {
+    case "thinking":
+      return <Sparkles className="h-3 w-3 text-violet-500/90" />
+    case "tool":
+      return <Wrench className="h-3 w-3 text-amber-600/90" />
+    case "completion":
+      return <MessageSquare className="h-3 w-3 text-sky-600/90" />
+    default:
+      return <Sparkles className="h-3 w-3 text-muted-foreground" />
+  }
+}
+
+function llmSpanBarClass(kind: LlmSpan["kind"], selected: boolean): string {
+  switch (kind) {
+    case "thinking":
+      return selected
+        ? "bg-violet-500/35 border-violet-500/60"
+        : "bg-violet-500/15 border-violet-500/35 group-hover:bg-violet-500/25"
+    case "tool":
+      return selected
+        ? "bg-amber-500/35 border-amber-500/60"
+        : "bg-amber-500/15 border-amber-500/35 group-hover:bg-amber-500/25"
+    case "completion":
+      return selected
+        ? "bg-sky-500/35 border-sky-500/60"
+        : "bg-sky-500/15 border-sky-500/35 group-hover:bg-sky-500/25"
+    default:
+      return "bg-muted border-border"
+  }
+}
+
+type GanttDisplayRow =
+  | { rowType: "node"; node: GanttNode }
+  | { rowType: "llm-span"; parent: GanttNode; span: LlmSpan }
+
 export function GanttNodeIcon({ type }: { type?: GanttNode["icon"] }) {
   switch (type) {
     case "play":
       return <Play className="h-3.5 w-3.5 text-muted-foreground" />
     case "zap":
-      return <Zap className="h-3.5 w-3.5 text-muted-foreground" />
+      return <Bot className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
     case "file":
       return <FileText className="h-3.5 w-3.5 text-muted-foreground" />
     case "mail":
@@ -142,11 +280,16 @@ interface WorkflowGanttProps {
   nodes?: GanttNode[]
   /** When set, the Gantt row for this node id is highlighted (e.g. when hovering a context link in sidebar). */
   highlightNodeId?: string | null
+  /** Called when the compare action is triggered on an AI Agent row. */
+  onCompareClick?: (node: GanttNode) => void
+  /** When set, this node id is marked with a signal warning indicator. */
+  signalNodeId?: string | null
 }
 
-export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = false, isRunning = false, runStartTime = null, nodes: nodesProp, highlightNodeId = null }: WorkflowGanttProps) {
+export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = false, isRunning = false, runStartTime = null, nodes: nodesProp, highlightNodeId = null, onCompareClick, signalNodeId = null }: WorkflowGanttProps) {
   const sourceNodes = nodesProp ?? MOCK_NODES
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set(["9"]))
+  const [expandedLlmAgentIds, setExpandedLlmAgentIds] = useState<Set<string>>(new Set())
   const [now, setNow] = useState(() => Date.now())
   const compactScrollRef = React.useRef<HTMLDivElement>(null)
   const ganttChartRef = React.useRef<HTMLDivElement>(null)
@@ -205,6 +348,20 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
     return errorNodes.length > 0 ? Math.max(...errorNodes.map((n) => n.endSec)) : -1
   }, [visibleNodes])
 
+  const ganttDisplayRows = useMemo((): GanttDisplayRow[] => {
+    const out: GanttDisplayRow[] = []
+    for (const node of visibleNodes) {
+      out.push({ rowType: "node", node })
+      const isIncomplete = errorEndSec >= 0 && node.startSec > errorEndSec
+      if (hasLlmSpanDetail(node) && expandedLlmAgentIds.has(node.id) && !isIncomplete) {
+        for (const span of node.llmSpans!) {
+          out.push({ rowType: "llm-span", parent: node, span })
+        }
+      }
+    }
+    return out
+  }, [visibleNodes, expandedLlmAgentIds, errorEndSec])
+
   const simulatedSec = useMemo(() => {
     if (!compact || !isRunning || runStartTime == null) return null
     const elapsed = (now - runStartTime) / 1000
@@ -242,7 +399,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
     const scrollbarHide = "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
     return (
       <TooltipProvider delayDuration={200}>
-        <div className="flex flex-col min-h-0 overflow-y-auto rounded border border-border/40 bg-card">
+        <div className="flex flex-col min-h-0 overflow-y-auto rounded border border-border/40 bg-card" data-workflow-gantt>
           <div className="flex flex-row flex-shrink-0">
             {/* Left column: sticky labels (no horizontal scroll) */}
             <div
@@ -250,7 +407,41 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
               style={{ width: COMPACT_LEFT_WIDTH }}
             >
               {/* Node label cells */}
-              {visibleNodes.map((node) => {
+              {ganttDisplayRows.map((row) => {
+                if (row.rowType === "llm-span") {
+                  const { parent, span } = row
+                  const isSelected = selectedNodeId === parent.id
+                  return (
+                    <div
+                      key={`${parent.id}-c-${span.id}`}
+                      data-gantt-row
+                      className="group flex flex-shrink-0 items-center border-b border-border/20 last:border-b-0 bg-muted/10 px-2 py-1 cursor-pointer hover:bg-muted/25 overflow-hidden"
+                      style={{ height: COMPACT_ROW_HEIGHT - 2 }}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => onNodeSelect?.(parent)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault()
+                          onNodeSelect?.(parent)
+                        }
+                      }}
+                    >
+                      <span
+                        className={cn(
+                          "flex items-center gap-1.5 rounded py-0.5 pl-3 pr-1 min-w-0 flex-1 text-xs truncate",
+                          isSelected && "bg-muted/50"
+                        )}
+                      >
+                        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-muted/50 border border-border/40">
+                          <LlmSpanKindIcon kind={span.kind} />
+                        </span>
+                        <span className="truncate text-muted-foreground flex-1 min-w-0 font-mono">{span.label}</span>
+                      </span>
+                    </div>
+                  )
+                }
+                const node = row.node
                 if (!(typeof node.label === "string" ? node.label : String(node.label ?? "")).trim()) return null
                 const isIncomplete = errorEndSec >= 0 && node.startSec > errorEndSec
                 const isSelected = selectedNodeId === node.id
@@ -265,14 +456,33 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                 return (
                   <div
                     key={node.id}
+                    data-gantt-row
                     className="group flex flex-shrink-0 items-center border-b border-border/20 last:border-b-0 bg-muted/20 px-2 py-1.5 cursor-pointer hover:bg-muted/30 overflow-hidden"
                     style={{ height: COMPACT_ROW_HEIGHT }}
                     role="button"
                     tabIndex={0}
-                    onClick={() => onNodeSelect?.(node)}
+                    onClick={() => {
+                      if (hasLlmSpanDetail(node)) {
+                        setExpandedLlmAgentIds((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(node.id)) next.delete(node.id)
+                          else next.add(node.id)
+                          return next
+                        })
+                      }
+                      onNodeSelect?.(node)
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault()
+                        if (hasLlmSpanDetail(node)) {
+                          setExpandedLlmAgentIds((prev) => {
+                            const next = new Set(prev)
+                            if (next.has(node.id)) next.delete(node.id)
+                            else next.add(node.id)
+                            return next
+                          })
+                        }
                         onNodeSelect?.(node)
                       }
                     }}
@@ -280,13 +490,76 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                     <span
                       className={cn(
                         "flex items-center gap-1.5 rounded py-0.5 px-1 min-w-0 flex-1 hover:bg-muted/30 text-xs truncate",
-                        isSelected && "bg-muted"
+                        isSelected && "bg-muted",
+                        (hasLlmSpanDetail(node) || node.hasChildren) && "group/icon"
                       )}
                     >
-                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-muted/60 border border-border/50">
-                        <GanttNodeIcon type={node.icon} />
-                      </span>
+                      {hasLlmSpanDetail(node) ? (
+                        <span className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-muted/60 border border-border/50">
+                          {expandedLlmAgentIds.has(node.id) ? (
+                            <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                          ) : (
+                            <>
+                              <span className="flex group-hover/icon:hidden">
+                                <GanttNodeIcon type={node.icon} />
+                              </span>
+                              <span className="pointer-events-none hidden group-hover/icon:flex absolute inset-0 items-center justify-center">
+                                <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                              </span>
+                            </>
+                          )}
+                        </span>
+                      ) : node.hasChildren ? (
+                        <button
+                          type="button"
+                          className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-muted/60 border border-border/50 hover:bg-muted"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            toggle(node.id)
+                          }}
+                          aria-label={collapsed.has(node.id) ? "Expand" : "Collapse"}
+                        >
+                          {collapsed.has(node.id) ? (
+                            <>
+                              <span className="flex group-hover/icon:hidden">
+                                <GanttNodeIcon type={node.icon} />
+                              </span>
+                              <span className="pointer-events-none hidden group-hover/icon:flex absolute inset-0 items-center justify-center">
+                                <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                              </span>
+                            </>
+                          ) : (
+                            <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                          )}
+                        </button>
+                      ) : (
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-muted/60 border border-border/50">
+                          <GanttNodeIcon type={node.icon} />
+                        </span>
+                      )}
                       <span className="truncate text-foreground flex-1 min-w-0">{node.label}</span>
+                      {node.label === "AI Agent" && (
+                        <Tooltip delayDuration={200}>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
+                              aria-label="Compare"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                onCompareClick?.(node)
+                              }}
+                            >
+                              <GitCompare className="h-3.5 w-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" sideOffset={4} className="text-xs bg-white dark:bg-card border border-border shadow-md" hideArrow>
+                            Compare
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
                       <span
                         className={cn(
                           "flex h-3 w-3 shrink-0 items-center justify-center rounded-full",
@@ -318,16 +591,68 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
             >
               <div className="flex flex-col flex-shrink-0" style={{ minWidth: barAreaWidth }}>
                 {/* Bar rows */}
-                {visibleNodes.map((node) => {
+                {ganttDisplayRows.map((row) => {
+                  if (row.rowType === "llm-span") {
+                    const { parent, span } = row
+                    const isIncomplete = errorEndSec >= 0 && parent.startSec > errorEndSec
+                    const displayStatus = parent.status === "error" ? "error" : isIncomplete ? "skipped" : (parent.status ?? "success")
+                    const isSelected = selectedNodeId === parent.id
+                    const { startSec: t0, endSec: t1 } = spanAbsoluteRange(parent, span)
+                    const leftPx = (t0 / maxSec) * (barAreaWidth ?? 0)
+                    const barWidthPx = Math.max((t1 - t0) * COMPACT_PX_PER_SEC, displayStatus === "skipped" ? 0 : 6)
+                    return (
+                      <div
+                        key={`${parent.id}-cb-${span.id}`}
+                        className="group relative flex flex-shrink-0 items-center cursor-pointer hover:bg-muted/15 border-b border-border/20 last:border-b-0 overflow-hidden pl-1 pr-1"
+                        style={{ height: COMPACT_ROW_HEIGHT - 2, minWidth: barAreaWidth }}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => onNodeSelect?.(parent)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault()
+                            onNodeSelect?.(parent)
+                          }
+                        }}
+                      >
+                        {displayStatus !== "skipped" ? (
+                          <Tooltip delayDuration={200}>
+                            <TooltipTrigger asChild>
+                              <div
+                                className={cn(
+                                  "absolute rounded-sm border flex-shrink-0 min-w-[2px] flex items-center justify-start pl-0.5 pr-0.5 overflow-hidden cursor-default ml-2",
+                                  "top-1/2 -translate-y-1/2",
+                                  llmSpanBarClass(span.kind, isSelected)
+                                )}
+                                style={{
+                                  left: leftPx,
+                                  width: barWidthPx,
+                                  height: 11,
+                                }}
+                              />
+                            </TooltipTrigger>
+                            <TooltipContent side="top" sideOffset={4} className="text-xs bg-white dark:bg-card border border-border shadow-md" hideArrow>
+                              <span className="font-medium">{span.label}</span>
+                              <span className="text-muted-foreground"> · {(t1 - t0).toFixed(2)}s</span>
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : null}
+                      </div>
+                    )
+                  }
+                  const node = row.node
                   if (!(typeof node.label === "string" ? node.label : String(node.label ?? "")).trim()) return null
+                  const isIncomplete = errorEndSec >= 0 && node.startSec > errorEndSec
                   const isSelected = selectedNodeId === node.id
                   const isNodeRunning = simulatedSec != null && simulatedSec >= node.startSec && simulatedSec < node.endSec
                   const isNodeFinished = simulatedSec != null && simulatedSec >= node.endSec
-                  const displayStatus = simulatedSec == null
+                  const baseStatus = simulatedSec == null
                     ? (node.status ?? "success")
                     : isNodeFinished
                       ? (node.status ?? "success")
                       : "running"
+                  const displayStatus =
+                    node.status === "error" ? "error" : isIncomplete ? "skipped" : baseStatus
                   // When running: bar grows from start until done; we don't show known duration upfront
                   const leftPx = (node.startSec / maxSec) * (barAreaWidth ?? 0)
                   let barWidthPx: number
@@ -411,8 +736,12 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
   return (
     <TooltipProvider delayDuration={200}>
     <Card
+      data-workflow-gantt
       className="rounded-lg bg-card border shadow-sm overflow-hidden flex flex-col flex-1 min-h-0 p-0 pb-3 gap-0"
-      onClick={() => onNodeSelect?.(null)}
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest("[data-gantt-row]")) return
+        onNodeSelect?.(null)
+      }}
     >
       <CardContent className="p-0 flex flex-1 flex-col min-h-0">
         <div
@@ -488,69 +817,186 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
           {/* Body: one row per node so list and bar stay aligned */}
           <ScrollArea className="flex-1 min-h-0">
             <div className="flex flex-col min-w-0">
-              {visibleNodes.map((node, index) => {
+              {ganttDisplayRows.map((row, rowIdx) => {
+                if (row.rowType === "llm-span") {
+                  const { parent, span } = row
+                  const isIncomplete = errorEndSec >= 0 && parent.startSec > errorEndSec
+                  const effectiveStatus = parent.status === "error" ? "error" : isIncomplete ? "skipped" : (parent.status ?? "success")
+                  const isSelected = selectedNodeId === parent.id
+                  const isHighlighted = highlightNodeId === parent.id
+                  const { startSec: t0, endSec: t1 } = spanAbsoluteRange(parent, span)
+                  const leftPctSpan = (t0 / maxSec) * 100
+                  const widthPctSpan = Math.max(((t1 - t0) / maxSec) * 100, 0.35)
+                  const durSpan = Math.max(0, t1 - t0)
+                  return (
+                    <div
+                      key={`${parent.id}-llm-${span.id}`}
+                      data-gantt-row
+                      className={cn(
+                        "group flex items-center flex-shrink-0 cursor-pointer hover:bg-muted/20 border-b border-border/30 pr-8 bg-muted/5",
+                        isSelected && "bg-muted/20 shadow-[inset_2px_0_0_0_hsl(var(--primary))]",
+                        isHighlighted && "bg-primary/5 hover:bg-primary/5"
+                      )}
+                      style={{ minHeight: LLM_SPAN_ROW_HEIGHT }}
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onNodeSelect?.(parent)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          onNodeSelect?.(parent)
+                        }
+                      }}
+                    >
+                      <div
+                        className="flex items-center gap-0 h-8 text-sm flex-shrink-0 bg-muted/10 border-r border-border/40 overflow-hidden"
+                        style={{ width: LEFT_WIDTH, paddingLeft: parent.depth * 16 + 20 }}
+                      >
+                        <span className="w-6 shrink-0" aria-hidden />
+                        <span className="flex items-center gap-1.5 rounded-md py-0.5 pl-0.5 pr-3 min-w-0 flex-1">
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-muted/50 border border-border/40">
+                            <LlmSpanKindIcon kind={span.kind} />
+                          </span>
+                          <span className="truncate text-xs text-muted-foreground flex-1 min-w-0 font-mono">{span.label}</span>
+                        </span>
+                      </div>
+                      <div
+                        className="flex-1 min-w-0 relative h-8 flex items-center pl-8 pr-8"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onNodeSelect?.(parent)
+                        }}
+                        role="presentation"
+                      >
+                        {effectiveStatus !== "skipped" ? (
+                          <Tooltip delayDuration={200}>
+                            <TooltipTrigger asChild>
+                              <div
+                                className={cn(
+                                  "absolute h-4 rounded-sm border flex-shrink-0 min-w-[2px] transition-colors flex items-center justify-start pl-1 pr-0.5 overflow-hidden cursor-default ml-2",
+                                  llmSpanBarClass(span.kind, isSelected)
+                                )}
+                                style={{
+                                  left: `${leftPctSpan}%`,
+                                  width: `${widthPctSpan}%`,
+                                }}
+                              >
+                                {widthPctSpan >= 2 && (
+                                  <span className="text-[9px] font-medium tabular-nums whitespace-nowrap text-muted-foreground">
+                                    {durSpan.toFixed(2)}s
+                                  </span>
+                                )}
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" sideOffset={6} className="bg-white dark:bg-card text-foreground border border-border shadow-md" hideArrow>
+                              <span className="font-medium">{span.label}</span>
+                              <span className="text-muted-foreground"> · {span.kind} · {durSpan.toFixed(2)}s</span>
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : null}
+                      </div>
+                    </div>
+                  )
+                }
+                const node = row.node
                 const isIncomplete = errorEndSec >= 0 && node.startSec > errorEndSec
                 const effectiveStatus = node.status === "error" ? "error" : isIncomplete ? "skipped" : (node.status ?? "success")
                 const isSelected = selectedNodeId === node.id
                 const isHighlighted = highlightNodeId === node.id
+                const isSignaled = signalNodeId === node.id
                 const leftPct = (node.startSec / maxSec) * 100
                 const widthPct = Math.max((node.endSec - node.startSec) / maxSec * 100, 1)
                 return (
                   <div
                     key={node.id}
+                    data-gantt-row
                     className={cn(
                       "group flex items-center flex-shrink-0 cursor-pointer hover:bg-muted/30 border-b border-border/30 pr-8",
-                      index === 0 && "border-t border-border/30",
+                      rowIdx === 0 && "border-t border-border/30",
                       isSelected && "bg-muted/30 shadow-[inset_2px_0_0_0_hsl(var(--primary))]",
-                      isHighlighted && "bg-primary/5 hover:bg-primary/5"
+                      isHighlighted && "bg-primary/5 hover:bg-primary/5",
+                      isSignaled && "bg-amber-50/60 shadow-[inset_2px_0_0_0_theme(colors.amber.400)] hover:bg-amber-50/80"
                     )}
                     style={{ minHeight: ROW_HEIGHT }}
                     role="button"
                     tabIndex={0}
-                    onClick={() => onNodeSelect?.(isSelected ? null : node)}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (hasLlmSpanDetail(node)) {
+                        setExpandedLlmAgentIds((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(node.id)) next.delete(node.id)
+                          else next.add(node.id)
+                          return next
+                        })
+                        onNodeSelect?.(node)
+                        return
+                      }
+                      onNodeSelect?.(isSelected ? null : node)
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault()
+                        if (hasLlmSpanDetail(node)) {
+                          setExpandedLlmAgentIds((prev) => {
+                            const next = new Set(prev)
+                            if (next.has(node.id)) next.delete(node.id)
+                            else next.add(node.id)
+                            return next
+                          })
+                          onNodeSelect?.(node)
+                          return
+                        }
                         onNodeSelect?.(isSelected ? null : node)
                       }
                     }}
                   >
                     {/* Left: task label */}
                     <div
-                      className="flex items-center gap-0 h-9 text-sm flex-shrink-0 bg-muted/20 border-r border-border/40 overflow-hidden"
+                      className={cn(
+                        "flex items-center gap-0 h-9 text-sm flex-shrink-0 bg-muted/20 border-r border-border/40 overflow-hidden",
+                        node.hasChildren && "group/icon"
+                      )}
                       style={{ width: LEFT_WIDTH, paddingLeft: node.depth * 16 }}
                     >
-                      {node.hasChildren ? (
-                        <button
-                          type="button"
-                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-muted"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            toggle(node.id)
-                          }}
-                          aria-label={collapsed.has(node.id) ? "Expand" : "Collapse"}
-                        >
-                          {collapsed.has(node.id) ? (
-                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                          )}
-                        </button>
-                      ) : (
-                        <span className="w-6 shrink-0" aria-hidden />
-                      )}
+                      <span className="w-6 shrink-0" aria-hidden />
                       <span
                         role="button"
                         tabIndex={0}
-                        className="flex items-center gap-1.5 rounded-md py-0.5 pl-0.5 pr-3 min-w-0 flex-1"
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-md py-0.5 pl-0.5 pr-3 min-w-0 flex-1",
+                          hasLlmSpanDetail(node) && !node.hasChildren && "group/icon"
+                        )}
                         onClick={(e) => {
                           e.stopPropagation()
+                          if (hasLlmSpanDetail(node)) {
+                            setExpandedLlmAgentIds((prev) => {
+                              const next = new Set(prev)
+                              if (next.has(node.id)) next.delete(node.id)
+                              else next.add(node.id)
+                              return next
+                            })
+                            onNodeSelect?.(node)
+                            return
+                          }
                           onNodeSelect?.(node)
                         }}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault()
                             e.stopPropagation()
+                            if (hasLlmSpanDetail(node)) {
+                              setExpandedLlmAgentIds((prev) => {
+                                const next = new Set(prev)
+                                if (next.has(node.id)) next.delete(node.id)
+                                else next.add(node.id)
+                                return next
+                              })
+                            }
                             onNodeSelect?.(node)
                           }
                         }}
@@ -558,23 +1004,76 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                         {node.hasChildren ? (
                           <button
                             type="button"
-                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted/60 border border-border/50 hover:bg-muted cursor-pointer"
+                            className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted/60 border border-border/50 hover:bg-muted cursor-pointer"
                             onClick={(e) => {
                               e.stopPropagation()
                               toggle(node.id)
                             }}
                             aria-label={collapsed.has(node.id) ? "Expand" : "Collapse"}
                           >
-                            <GanttNodeIcon type={node.icon} />
+                            {collapsed.has(node.id) ? (
+                              <>
+                                <span className="flex group-hover/icon:hidden">
+                                  <GanttNodeIcon type={node.icon} />
+                                </span>
+                                <span className="pointer-events-none hidden group-hover/icon:flex absolute inset-0 items-center justify-center">
+                                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                                </span>
+                              </>
+                            ) : (
+                              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                            )}
                           </button>
+                        ) : hasLlmSpanDetail(node) ? (
+                          <span className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted/60 border border-border/50" aria-hidden>
+                            {expandedLlmAgentIds.has(node.id) ? (
+                              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                            ) : (
+                              <>
+                                <span className="flex group-hover/icon:hidden">
+                                  <GanttNodeIcon type={node.icon} />
+                                </span>
+                                <span className="pointer-events-none hidden group-hover/icon:flex absolute inset-0 items-center justify-center">
+                                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                                </span>
+                              </>
+                            )}
+                          </span>
                         ) : (
                           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted/60 border border-border/50">
                             <GanttNodeIcon type={node.icon} />
                           </span>
                         )}
-                        <span className="truncate text-foreground flex-1 min-w-0">
+                        <span className={cn("truncate flex-1 min-w-0", isSignaled ? "text-amber-700 font-medium" : "text-foreground")}>
                           {node.label}
                         </span>
+                        {isSignaled && (
+                          <span className="shrink-0 flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-white" title="Signal detected on this node">
+                            <span className="text-[9px] font-bold leading-none">!</span>
+                          </span>
+                        )}
+                        {node.label === "AI Agent" && (
+                          <Tooltip delayDuration={200}>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon-sm"
+                                className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                                aria-label="Compare"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  onCompareClick?.(node)
+                                }}
+                              >
+                                <GitCompare className="h-3.5 w-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" sideOffset={4} className="text-xs bg-white dark:bg-card border border-border shadow-md" hideArrow>
+                              Compare
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
                         <span
                           className={cn(
                             "flex h-3 w-3 shrink-0 items-center justify-center rounded-full",
@@ -597,11 +1096,29 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                       className="flex-1 min-w-0 relative h-9 flex items-center pl-8 pr-8"
                       onClick={(e) => {
                         e.stopPropagation()
+                        if (hasLlmSpanDetail(node)) {
+                          setExpandedLlmAgentIds((prev) => {
+                            const next = new Set(prev)
+                            if (next.has(node.id)) next.delete(node.id)
+                            else next.add(node.id)
+                            return next
+                          })
+                          onNodeSelect?.(node)
+                          return
+                        }
                         onNodeSelect?.(node)
                       }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault()
+                          if (hasLlmSpanDetail(node)) {
+                            setExpandedLlmAgentIds((prev) => {
+                              const next = new Set(prev)
+                              if (next.has(node.id)) next.delete(node.id)
+                              else next.add(node.id)
+                              return next
+                            })
+                          }
                           onNodeSelect?.(node)
                         }
                       }}

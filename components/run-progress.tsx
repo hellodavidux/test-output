@@ -1,12 +1,38 @@
 "use client"
 
 import React, { useState, useEffect, useRef } from "react"
-import { Clock, X, ChevronUp, Maximize2 } from "lucide-react"
+import { Clock, ChevronUp, ChevronDown, Loader2, CheckCircle2, Database, BarChart3, MoreVertical, GitFork } from "lucide-react"
 import type { Node, Edge } from "@xyflow/react"
 import { getNodeIconBg, AppIcon } from "./workflow-node"
 import { NodeDetailModal } from "./node-detail-modal"
 import { WorkflowGantt, type GanttNode } from "./workflow-gantt"
 import { TabContext } from "./dashboard-layout"
+import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { SaveRunToDatabaseModal } from "./save-run-to-database-modal"
+import type { WorkflowNodeData } from "@/lib/types"
+
+const DEFAULT_WORKFLOW_INPUT_FALLBACK =
+  "I was charged twice for my Pro subscription this month. This is the third time I've reached out with no response."
+
+/** Pull trigger/input message from workflow node data after a run (matches page.tsx mock email payload). */
+function getWorkflowCaseInput(nodes: Node[]): string {
+  for (const n of nodes) {
+    const d = n.data as WorkflowNodeData
+    const inp = d?.input
+    if (inp && typeof inp === "object" && "message" in inp) {
+      const msg = (inp as { message?: unknown }).message
+      if (typeof msg === "string" && msg.trim()) return msg.trim()
+    }
+  }
+  return DEFAULT_WORKFLOW_INPUT_FALLBACK
+}
 
 interface RunProgressProps {
   nodes: Node[]
@@ -15,6 +41,8 @@ interface RunProgressProps {
   runStatus?: "success" | "error" | "running"
   shouldExpand?: boolean
   onExpandChange?: (expanded: boolean) => void
+  /** Current workflow run id (used when forking from Run progress). */
+  runId?: string
 }
 
 interface NodeProgress {
@@ -28,11 +56,28 @@ interface NodeProgress {
   nodeData: { appName: string; actionName: string; type: string }
 }
 
-export function RunProgress({ nodes, edges = [], isRunning = false, runStatus = "success", shouldExpand = false, onExpandChange }: RunProgressProps) {
+export function RunProgress({
+  nodes,
+  edges = [],
+  isRunning = false,
+  runStatus = "success",
+  shouldExpand = false,
+  onExpandChange,
+  runId,
+}: RunProgressProps) {
+  const [stableFallbackRunId] = useState(
+    () =>
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `run-${Date.now()}`,
+  )
+  const effectiveRunId = runId ?? stableFallbackRunId
+
   const [isExpanded, setIsExpanded] = useState(false)
   const [selectedNode, setSelectedNode] = useState<Node | null>(null)
   const [selectedGanttNodeId, setSelectedGanttNodeId] = useState<string | null>(null)
   const [runStartTime, setRunStartTime] = useState<number | null>(null)
+  const [saveToDatabaseOpen, setSaveToDatabaseOpen] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const tabContext = React.useContext(TabContext)
@@ -138,12 +183,26 @@ export function RunProgress({ nodes, edges = [], isRunning = false, runStatus = 
       // Count output nodes separately
       const outputIndex = nodes.slice(0, index + 1).filter(n => (n.data as any)?.type === "output").length - 1
       identifier = `out-${outputIndex}`
-    } else if ((appName === "AI Agent" && actionName === "LLM") || appName.toLowerCase().includes("openai") || appName.toLowerCase().includes("anthropic")) {
+    } else if (
+      (appName === "AI Agent" && actionName === "LLM") ||
+      actionName === "Draft Response" ||
+      actionName === "Intent Classifier" ||
+      appName.toLowerCase().includes("openai") ||
+      appName.toLowerCase().includes("anthropic")
+    ) {
       // Count LLM nodes separately
-      const llmIndex = nodes.slice(0, index + 1).filter(n => {
-        const d = n.data as any
-        return (d?.appName === "AI Agent" && d?.actionName === "LLM") || d?.appName?.toLowerCase().includes("openai") || d?.appName?.toLowerCase().includes("anthropic")
-      }).length - 1
+      const llmIndex =
+        nodes.slice(0, index + 1).filter((n) => {
+          const d = n.data as any
+          const a = d?.actionName
+          return (
+            (d?.appName === "AI Agent" && a === "LLM") ||
+            a === "Draft Response" ||
+            a === "Intent Classifier" ||
+            d?.appName?.toLowerCase().includes("openai") ||
+            d?.appName?.toLowerCase().includes("anthropic")
+          )
+        }).length - 1
       identifier = `llm-${llmIndex}`
     } else if (actionName.toLowerCase().includes("if") || actionName.toLowerCase().includes("else")) {
       identifier = `ifelse-${index}`
@@ -152,10 +211,13 @@ export function RunProgress({ nodes, edges = [], isRunning = false, runStatus = 
     } else if (actionName.toLowerCase().includes("delay")) {
       identifier = `delay-${index}`
     } else {
-      // Fallback: use node id
-      identifier = node.id.includes("-") 
-        ? node.id.split("-").slice(-2).join("-")
-        : node.id
+      // Fallback: action-N
+      const actionIndex = nodes.slice(0, index + 1).filter(n => {
+        const d = n.data as any
+        const t = d?.type || "action"
+        return t !== "input" && t !== "output"
+      }).length - 1
+      identifier = `action-${actionIndex}`
     }
 
     // Determine status based on node type and run state
@@ -167,7 +229,12 @@ export function RunProgress({ nodes, edges = [], isRunning = false, runStatus = 
 
     // Generate duration for certain node types
     let duration: number | undefined
-    if ((appName === "AI Agent" && actionName === "LLM") || appName.toLowerCase().includes("openai")) {
+    if (
+      (appName === "AI Agent" && actionName === "LLM") ||
+      actionName === "Draft Response" ||
+      actionName === "Intent Classifier" ||
+      appName.toLowerCase().includes("openai")
+    ) {
       duration = 11.3 // Match the image example
     } else if (actionName.toLowerCase().includes("delay")) {
       duration = 5.0
@@ -192,17 +259,32 @@ export function RunProgress({ nodes, edges = [], isRunning = false, runStatus = 
 
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement
-      
+
       // Don't close if clicking on the modal (which is rendered via portal)
-      if (target.closest('[data-node-detail-modal]')) {
+      if (target.closest("[data-node-detail-modal]")) {
         return
       }
-      
+
+      if (
+        target.closest("[data-slot=\"dialog-content\"]") ||
+        target.closest("[data-slot=\"dialog-overlay\"]")
+      ) {
+        return
+      }
+
+      // Radix menus/portals render outside the panel — clicks must not collapse the panel before onSelect runs
+      if (
+        target.closest('[data-slot="dropdown-menu-content"]') ||
+        target.closest('[data-slot="dropdown-menu-sub-content"]')
+      ) {
+        return
+      }
+
       // Don't close if clicking inside the run progress panel
-      if (target.closest('[data-run-progress-panel]')) {
+      if (target.closest("[data-run-progress-panel]")) {
         return
       }
-      
+
       // Close if clicking outside the container (the outer fixed div)
       if (containerRef.current && !containerRef.current.contains(target)) {
         handleExpandChange(false)
@@ -237,7 +319,7 @@ export function RunProgress({ nodes, edges = [], isRunning = false, runStatus = 
   }
 
   // Render run progress panel content (to be used in modal or standalone)
-  const renderRunProgressPanel = (isInModal: boolean = false, onModalClose?: () => void, onStandaloneClose?: () => void) => (
+  const renderRunProgressPanel = (isInModal: boolean = false) => (
     <div 
       data-run-progress-panel={isInModal ? "in-modal" : "standalone-content"}
       className={`w-[400px] ${isInModal ? 'h-fit' : 'max-h-full'} flex flex-col ${isInModal ? 'rounded-lg' : ''}`}
@@ -252,60 +334,158 @@ export function RunProgress({ nodes, edges = [], isRunning = false, runStatus = 
     >
       <div ref={panelRef} className={`flex flex-col ${isInModal ? 'h-fit' : 'h-full'}`}>
         {/* Header */}
-        <div className={`flex items-center justify-between px-6 py-4 border-b flex-shrink-0 ${isInModal ? 'rounded-t-lg' : ''}`}>
+        <div className={`flex items-center justify-between pl-6 pr-3 py-4 border-b flex-shrink-0 ${isInModal ? 'rounded-t-lg' : ''}`}>
           <div className="flex items-center gap-3">
-            <h2 className="text-base font-semibold">Run Progress</h2>
-            <span className={`px-2.5 py-0.5 text-xs font-medium rounded-full ${
-              runStatus === "success" 
-                ? "bg-green-100 text-green-700" 
+            <h2 className="text-base font-semibold">Run progress</h2>
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium rounded-md border ${
+              runStatus === "success"
+                ? "bg-green-50 text-green-700 border-green-200"
                 : runStatus === "error"
-                ? "bg-red-100 text-red-700"
-                : "bg-purple-100 text-purple-700"
+                ? "bg-red-50 text-red-700 border-red-200"
+                : "bg-white text-purple-600 border-purple-300"
             }`}>
+              {runStatus === "running" && <Loader2 className="w-3 h-3 animate-spin" />}
               {runStatus === "success" ? "Success" : runStatus === "error" ? "Error" : "Running"}
             </span>
           </div>
           <div className="flex items-center gap-1">
             {!isInModal && tabContext && (
-              <button
-                onClick={() => {
-                  tabContext.setOpenAnalyticsRunDetail(true)
-                  tabContext.setActiveTab("Analytics")
-                  tabContext.setResetAnalyticsKey?.((k) => k + 1)
-                  handleExpandChange(false)
-                }}
-                className="rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden p-1"
-                aria-label="Expand to Analytics"
-              >
-                <Maximize2 className="w-3.5 h-3.5" />
-              </button>
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 rounded-md px-3 text-xs font-medium text-foreground shadow-none bg-white hover:bg-gray-50"
+                      onClick={() => {
+                        tabContext.openExperimentWithRun({
+                          runId: effectiveRunId,
+                          caseInput: getWorkflowCaseInput(nodes),
+                        })
+                        handleExpandChange(false)
+                      }}
+                    >
+                      Evaluate Run
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs">
+                    Open the Experiment tab with this run so you can compare variants and evaluate them against it.
+                  </TooltipContent>
+                </Tooltip>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-7 w-7 rounded-md text-foreground shadow-none bg-white hover:bg-gray-50"
+                      aria-label="More options"
+                    >
+                      <MoreVertical className="h-3.5 w-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <DropdownMenuItem
+                          className="cursor-pointer"
+                          onSelect={() => setSaveToDatabaseOpen(true)}
+                        >
+                          <Database className="h-4 w-4" />
+                          Save Run to dataset
+                        </DropdownMenuItem>
+                      </TooltipTrigger>
+                      <TooltipContent side="left" className="max-w-xs">
+                        Store this run’s inputs and outputs in a dataset for training, review, or audits later.
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <DropdownMenuItem
+                          className="cursor-pointer"
+                          onSelect={() => {
+                            tabContext.openAnalyticsForkDraft({
+                              runId: effectiveRunId,
+                              caseInput: getWorkflowCaseInput(nodes),
+                            })
+                            handleExpandChange(false)
+                          }}
+                        >
+                          <GitFork className="h-4 w-4" />
+                          Fork Run
+                        </DropdownMenuItem>
+                      </TooltipTrigger>
+                      <TooltipContent side="left" className="max-w-xs">
+                        Duplicate this run’s workflow in Analytics so you can change steps and replay without altering
+                        the original.
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <DropdownMenuItem
+                          className="cursor-pointer"
+                          onSelect={() => {
+                            tabContext.setOpenAnalyticsRunDetail(true)
+                            tabContext.setActiveTab("Analytics")
+                            tabContext.setResetAnalyticsKey?.((k) => k + 1)
+                            handleExpandChange(false)
+                          }}
+                        >
+                          <BarChart3 className="h-4 w-4" />
+                          Inspect Run
+                        </DropdownMenuItem>
+                      </TooltipTrigger>
+                      <TooltipContent side="left" className="max-w-xs">
+                        Open the Analytics tab with run detail focused for a deeper breakdown of this run.
+                      </TooltipContent>
+                    </Tooltip>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </TooltipProvider>
             )}
-            {isInModal && onModalClose ? (
-              <button
-                onClick={() => {
-                  onModalClose()
-                  onStandaloneClose?.()
-                }}
-                className="rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden p-1"
-                aria-label="Close"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            ) : !selectedNode ? (
-              <button
-                onClick={() => handleExpandChange(false)}
-                className="rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden p-1"
-                aria-label="Close"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            ) : null}
           </div>
         </div>
 
-        {/* Content - Compact Gantt (scrollable sideways) */}
-        <div className={`${isInModal ? "rounded-b-lg" : "flex-1 min-h-0 flex flex-col"} overflow-hidden px-3 py-3 bg-muted/30`}>
-          <WorkflowGantt compact onNodeSelect={handleGanttNodeSelect} selectedNodeId={selectedGanttNodeId} isRunning={isRunning} runStartTime={runStartTime} />
+        {/* Content - Node list */}
+        <div className={`${isInModal ? "rounded-b-lg" : "flex-1 min-h-0 rounded-b-lg"} overflow-y-auto px-5 py-3 bg-[#f7f7f8]`}>
+          <div className="flex flex-col">
+            {nodeProgress.map((item, index) => (
+              <div key={item.id} className="flex gap-2.5 items-start">
+                {/* Left icon + connector line — height matches card row */}
+                <div className="flex flex-col items-center shrink-0 w-7">
+                  <div className="h-11 flex items-center justify-center">
+                    <div className="w-7 h-7 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center shrink-0">
+                      <AppIcon appName={item.nodeData.appName} className="w-3.5 h-3.5" />
+                    </div>
+                  </div>
+                  {index < nodeProgress.length - 1 && (
+                    <div className="w-px bg-gray-200 my-0.5" style={{ flex: 1, minHeight: 8 }} />
+                  )}
+                </div>
+
+                {/* Node card */}
+                <div className={`min-w-0 flex-1 flex items-center justify-between bg-white border border-gray-200 rounded-2xl px-4 h-11 ${index < nodeProgress.length - 1 ? "mb-0.5" : ""}`}>
+                  <div className="flex items-center gap-2 min-w-0">
+                    {item.status === "running" ? (
+                      <Loader2 className="w-4 h-4 text-purple-500 animate-spin flex-shrink-0" />
+                    ) : item.status === "success" ? (
+                      <CheckCircle2 className="w-[18px] h-[18px] text-green-500 flex-shrink-0" />
+                    ) : (
+                      <div className="w-4 h-4 rounded-full border-2 border-gray-300 flex-shrink-0" />
+                    )}
+                    <span className="font-semibold text-[13px] text-gray-900 truncate">{item.name}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+                    {item.duration != null && (
+                      <span className="text-xs text-gray-400">{item.duration}s</span>
+                    )}
+                    <ChevronDown className="w-4 h-4 text-gray-400" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -314,10 +494,15 @@ export function RunProgress({ nodes, edges = [], isRunning = false, runStatus = 
   // Expanded state - modal/panel
   return (
     <>
+      <SaveRunToDatabaseModal
+        open={saveToDatabaseOpen}
+        onOpenChange={setSaveToDatabaseOpen}
+        runId={effectiveRunId}
+      />
       <div 
         ref={containerRef}
         data-run-progress-panel="standalone"
-        className="fixed bottom-6 right-6 z-50 w-[400px] max-h-[80vh] bg-white rounded-lg shadow-xl flex flex-col"
+        className="fixed bottom-6 right-6 z-50 w-[400px] max-h-[80vh] bg-white rounded-lg shadow-xl flex flex-col overflow-hidden"
         onClick={(e) => {
           // Stop propagation to prevent modal from closing when clicking inside
           e.stopPropagation()
@@ -341,11 +526,7 @@ export function RunProgress({ nodes, edges = [], isRunning = false, runStatus = 
             handleExpandChange(false)
           }}
           showRunProgress={true}
-          runProgressComponent={renderRunProgressPanel(true, () => {
-            setSelectedNode(null)
-            setSelectedGanttNodeId(null)
-            handleExpandChange(false)
-          }, () => handleExpandChange(false))}
+          runProgressComponent={renderRunProgressPanel(true)}
           nodes={nodes}
           edges={edges}
         />

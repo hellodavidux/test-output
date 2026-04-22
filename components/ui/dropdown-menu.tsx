@@ -86,24 +86,60 @@ function DropdownMenuCheckboxItem({
   className,
   children,
   checked,
+  indicatorPosition = 'start',
+  multiline = false,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.CheckboxItem>) {
+}: React.ComponentProps<typeof DropdownMenuPrimitive.CheckboxItem> & {
+  indicatorPosition?: 'start' | 'end'
+  /** When true with end indicator, label area is not single-line truncated and row aligns to top. */
+  multiline?: boolean
+}) {
+  const isEnd = indicatorPosition === 'end'
   return (
     <DropdownMenuPrimitive.CheckboxItem
       data-slot="dropdown-menu-checkbox-item"
       className={cn(
-        "focus:bg-accent focus:text-accent-foreground relative flex cursor-default items-center gap-2 rounded-sm py-1.5 pr-2 pl-8 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        'focus:bg-accent focus:text-accent-foreground relative flex cursor-default items-center gap-2 rounded-sm py-1.5 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*="size-"])]:size-4',
+        isEnd
+          ? 'w-full min-w-0 justify-between px-2'
+          : 'pr-2 pl-8',
+        multiline && 'items-start py-2',
         className,
       )}
       checked={checked}
       {...props}
     >
-      <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
-        <DropdownMenuPrimitive.ItemIndicator>
-          <CheckIcon className="size-4" />
-        </DropdownMenuPrimitive.ItemIndicator>
-      </span>
-      {children}
+      {!isEnd && (
+        <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
+          <DropdownMenuPrimitive.ItemIndicator>
+            <CheckIcon className="size-4" />
+          </DropdownMenuPrimitive.ItemIndicator>
+        </span>
+      )}
+      {isEnd ? (
+        <>
+          <span
+            className={cn(
+              'min-w-0 flex-1 text-left',
+              multiline ? 'whitespace-normal' : 'truncate',
+            )}
+          >
+            {children}
+          </span>
+          <span
+            className={cn(
+              'pointer-events-none flex size-3.5 shrink-0 items-center justify-center',
+              multiline && 'self-start pt-0.5',
+            )}
+          >
+            <DropdownMenuPrimitive.ItemIndicator>
+              <CheckIcon className="size-4" />
+            </DropdownMenuPrimitive.ItemIndicator>
+          </span>
+        </>
+      ) : (
+        children
+      )}
     </DropdownMenuPrimitive.CheckboxItem>
   )
 }

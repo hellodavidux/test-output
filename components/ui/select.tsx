@@ -28,10 +28,18 @@ function SelectTrigger({
   className,
   size = 'default',
   children,
+  parenWrapped = false,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
   size?: 'sm' | 'default'
+  /** When true, renders ( value + chevron ) for compact inline selects */
+  parenWrapped?: boolean
 }) {
+  const chevron = (
+    <SelectPrimitive.Icon asChild>
+      <ChevronDownIcon className="size-4 opacity-50" />
+    </SelectPrimitive.Icon>
+  )
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
@@ -42,10 +50,25 @@ function SelectTrigger({
       )}
       {...props}
     >
-      {children}
-      <SelectPrimitive.Icon asChild>
-        <ChevronDownIcon className="size-4 opacity-50" />
-      </SelectPrimitive.Icon>
+      {parenWrapped ? (
+        <span className="inline-flex max-w-full items-center gap-0">
+          <span className="shrink-0 text-muted-foreground/80" aria-hidden>
+            (
+          </span>
+          <span className="inline-flex min-w-0 items-center gap-1 overflow-hidden [&_svg]:shrink-0">
+            {children}
+            {chevron}
+          </span>
+          <span className="shrink-0 text-muted-foreground/80" aria-hidden>
+            )
+          </span>
+        </span>
+      ) : (
+        <>
+          {children}
+          {chevron}
+        </>
+      )}
     </SelectPrimitive.Trigger>
   )
 }
