@@ -68,6 +68,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Select,
   SelectContent,
@@ -98,7 +99,14 @@ import { GANTT_NODES, GanttNodeIcon } from "@/components/workflow-gantt"
 
 type NodeField =
   | { key: string; label: string; type: "select"; options: { value: string; label: string }[] }
-  | { key: string; label: string; type: "textarea"; placeholder: string }
+  | {
+      key: string
+      label: string
+      type: "textarea"
+      placeholder: string
+      /** When the saved override is blank, show this as the textarea value (workflow default / binding). */
+      inheritedDefault?: string
+    }
   | { key: string; label: string; type: "slider"; min: number; max: number; step: number }
 
 export type WorkflowNodeIconKind = "zap" | "database" | "mail"
@@ -202,6 +210,8 @@ export const WORKFLOW_NODES: WorkflowNodeDef[] = [
         label: "Query override",
         type: "textarea",
         placeholder: "Leave blank to use default query…",
+        inheritedDefault:
+          "{{ticket.subject}}\n{{ticket.body}}\n\nRetrieve concise passages from the selected knowledge bases that best answer the ticket. Prefer official policy and troubleshooting steps.",
       },
     ],
   },
@@ -911,7 +921,10 @@ function EvalGradingRow({ evalLabel, score, threshold, truncated, full, hasMore 
           {showToggle ? (
             <button
               type="button"
-              onClick={() => setExpanded((e) => !e)}
+              onClick={(evt) => {
+                evt.stopPropagation()
+                setExpanded((x) => !x)
+              }}
               className="shrink-0 rounded-sm p-0.5 text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground"
               aria-label={expanded ? "Show less" : "Show more"}
             >
@@ -1236,15 +1249,21 @@ export function VariantNodeConfigFields({
                 ))}
               </select>
             )}
-            {field.type === "textarea" && (
-              <textarea
-                value={values[field.key] ?? ""}
-                onChange={(e) => onFieldChange(field.key, e.target.value)}
-                placeholder={field.placeholder}
-                rows={6}
-                className="min-h-[140px] w-full resize-none rounded-lg border border-gray-200 bg-gray-50/50 px-3 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200"
-              />
-            )}
+            {field.type === "textarea" && (() => {
+              const raw = values[field.key] ?? ""
+              const inheritedRaw = field.inheritedDefault ?? ""
+              const displayValue =
+                raw.trim() === "" && inheritedRaw.trim() !== "" ? inheritedRaw : raw
+              return (
+                <textarea
+                  value={displayValue}
+                  onChange={(e) => onFieldChange(field.key, e.target.value)}
+                  placeholder={field.placeholder}
+                  rows={6}
+                  className="min-h-[140px] w-full resize-none rounded-lg border border-gray-200 bg-gray-50/50 px-3 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                />
+              )
+            })()}
             {field.type === "slider" && (
               <div className="flex items-center gap-3">
                 <input
@@ -1409,6 +1428,11 @@ function ExperimentTab({
     return labels[0]
   }, [selectedEvalIds, evalDefs])
 
+  const singleSelectedEvalLabel = useMemo(() => {
+    if (selectedEvalIds.length !== 1) return null
+    return evalDefs.find((e) => e.id === selectedEvalIds[0])?.label ?? null
+  }, [selectedEvalIds, evalDefs])
+
   /** Second column: expected ground truth when any selected evaluator compares to expected output. */
   const showExpectedOutputColumn = useMemo(
     () =>
@@ -1480,7 +1504,13 @@ function ExperimentTab({
   }
 
   const addCase = () => {
-    setCases(prev => [...prev, { id: `c-${Date.now()}`, input: "", expected: "" }])
+    const id = `c-${Date.now()}`
+    setCases((prev) => [...prev, { id, input: "", expected: "" }])
+    setInputDraft("")
+    setSheetDatasetId(null)
+    setSheetRunId(null)
+    setInputSheetSource("manual")
+    setInputSheet({ caseId: id, field: "input" })
   }
   const removeCase = (id: string) => setCases(prev => prev.filter(c => c.id !== id))
 
@@ -1545,8 +1575,22 @@ function ExperimentTab({
             <DropdownMenu open={addEvalMenuOpen} onOpenChange={setAddEvalMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="gap-1.5 h-8 min-w-[10rem] max-w-[280px] justify-between font-normal">
-                  <span className={cn("flex min-w-0 flex-1 truncate text-left font-medium", selectedEvalSummary ? "text-foreground" : "text-muted-foreground")}>
-                    {selectedEvalSummary ?? "Select evals"}
+                  <span
+                    className={cn(
+                      "flex min-w-0 flex-1 items-center gap-2 truncate text-left font-medium",
+                      selectedEvalSummary ? "text-foreground" : "text-muted-foreground",
+                    )}
+                  >
+                    {singleSelectedEvalLabel ? (
+                      <>
+                        <span className="shrink-0 rounded border border-border bg-muted/60 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Eval
+                        </span>
+                        <span className="min-w-0 truncate">{singleSelectedEvalLabel}</span>
+                      </>
+                    ) : (
+                      <span className="truncate">{selectedEvalSummary ?? "Select evals"}</span>
+                    )}
                   </span>
                   <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
                 </Button>
@@ -1591,7 +1635,7 @@ function ExperimentTab({
               }, 1800)
             }}>
             <Play className={cn("w-3.5 h-3.5", isRunning && "animate-spin")} />
-            {isRunning ? "running…" : selectedEvalIds.length > 1 ? "run evals" : "run eval"}
+            {isRunning ? "running…" : selectedEvalIds.length > 1 ? "Run Evaluators" : "Run Evaluator"}
           </Button>
         </div>
       </div>
@@ -1609,7 +1653,7 @@ function ExperimentTab({
             </div>
             <div className="min-w-0 flex items-center px-4 py-2.5 border-b border-border/70 bg-muted/30 border-r border-border/60">
               <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-                {inputMode === "input" ? "Input" : "Trigger"}
+                Input
               </span>
             </div>
             {showExpectedOutputColumn ? (
@@ -1853,7 +1897,7 @@ function ExperimentTab({
                     )}>
                     {tc.input || (
                       <span className="opacity-50">
-                        {inputMode === "input" ? "add workflow input…" : "add workflow trigger…"}
+                        {inputMode === "input" ? "Click to add input" : "add workflow trigger…"}
                       </span>
                     )}
                   </button>
@@ -1886,23 +1930,23 @@ function ExperimentTab({
                       key={`${tc.id}-${v.id}`}
                       className={cn(
                         "relative flex min-h-0 min-w-0 flex-col border-r border-border/60",
-                        !hasRun && "bg-muted/20"
+                        !hasRun && "bg-muted/20",
+                        hasRun && output && "cursor-pointer",
                       )}
+                      onClick={() => {
+                        if (hasRun && output) setCellSheet({ caseId: tc.id, variantId: v.id })
+                      }}
                     >
                       {/* Output (full width, wraps) */}
                       <div className="w-full min-w-0 shrink-0 px-4 pt-2 pb-0">
                         {isRunning ? (
                           <span className="text-[13px] text-muted-foreground/50 animate-pulse">…</span>
                         ) : output ? (
-                          <button
-                            type="button"
-                            onClick={() => setCellSheet({ caseId: tc.id, variantId: v.id })}
-                            className="flex min-h-0 w-full min-w-0 items-start text-left transition-colors hover:text-foreground"
-                          >
+                          <div className="flex min-h-0 w-full min-w-0 items-start text-left transition-colors hover:text-foreground">
                             <span className="line-clamp-3 w-full min-w-0 break-words font-mono text-[12px] leading-5 text-muted-foreground">
                               {output}
                             </span>
-                          </button>
+                          </div>
                         ) : (
                           <span className="text-[13px] text-muted-foreground/40">—</span>
                         )}
@@ -2035,7 +2079,7 @@ function ExperimentTab({
 
       {/* ── Add test case ────────────────────────────────────────────── */}
       <Button variant="ghost" size="sm" className="h-auto px-2 py-1 text-muted-foreground hover:text-foreground font-normal gap-1.5 w-fit" onClick={addCase}>
-        <Plus className="w-3.5 h-3.5" /> add test case
+        <Plus className="w-3.5 h-3.5" /> Add another input
       </Button>
 
       <Dialog
@@ -2280,93 +2324,12 @@ function ExperimentTab({
 
               <div className="flex-1 flex flex-col overflow-auto min-h-0">
 
-                {/* ── Input / trigger: source, node type, content ── */}
+                {/* ── Input / trigger: node type, source, content ── */}
                 <div className={cn("flex-1 min-h-0 p-5 flex flex-col gap-3", !isExpected && "border-b border-gray-100")}>
                   {!isExpected ? (
                     <>
                       <div className="flex w-full shrink-0 flex-col gap-2">
-                        <p className="text-xs font-medium text-gray-500">Input source</p>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button
-                              type="button"
-                              className="flex w-full items-center justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50/50 px-3 py-2 text-left text-sm text-gray-900 transition-colors hover:border-gray-300"
-                            >
-                              <span className="flex min-w-0 items-center gap-2">
-                                {inputSheetSource === "manual" ? (
-                                  <TextCursorInput className="h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden />
-                                ) : inputSheetSource === "dataset" ? (
-                                  <Database className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
-                                ) : (
-                                  <History className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
-                                )}
-                                <span className="truncate">
-                                  {inputSheetSource === "manual"
-                                    ? isTrigger
-                                      ? "Manual — sample payloads"
-                                      : "Manual"
-                                    : inputSheetSource === "dataset"
-                                      ? (activeDataset?.name ?? "From a dataset")
-                                      : activeLoggedRun
-                                        ? `${activeLoggedRun.label} · ${activeLoggedRun.meta}`
-                                        : "From a logged run"}
-                                </span>
-                              </span>
-                              <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-[14rem]">
-                            <DropdownMenuItem
-                              className={cn("flex flex-col items-start gap-0.5 py-2.5", inputSheetSource === "manual" && "font-medium")}
-                              onClick={() => {
-                                setInputSheetSource("manual")
-                                setSheetDatasetId(null)
-                                setSheetRunId(null)
-                              }}
-                            >
-                              <span className="flex items-center gap-2 text-sm">
-                                <TextCursorInput className="h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden />
-                                Manual
-                              </span>
-                              <span className="pl-6 text-[11px] text-muted-foreground">
-                                {isTrigger ? "Built-in sample payloads" : "Type or paste workflow input"}
-                              </span>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className={cn("flex flex-col items-start gap-0.5 py-2.5", inputSheetSource === "dataset" && "font-medium")}
-                              onClick={() => {
-                                setInputSheetSource("dataset")
-                                setSheetRunId(null)
-                              }}
-                            >
-                              <span className="flex items-center gap-2 text-sm">
-                                <Database className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
-                                From a dataset
-                              </span>
-                              <span className="pl-6 text-[11px] text-muted-foreground">Pick a saved dataset row</span>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className={cn("flex flex-col items-start gap-0.5 py-2.5", inputSheetSource === "run" && "font-medium")}
-                              onClick={() => {
-                                setInputSheetSource("run")
-                                setSheetDatasetId(null)
-                              }}
-                            >
-                              <span className="flex items-center gap-2 text-sm">
-                                <History className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
-                                From a logged run
-                              </span>
-                              <span className="pl-6 text-[11px] text-muted-foreground">Reuse input from a past workflow run</span>
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                      <p className="text-[11px] leading-relaxed text-gray-400">
-                        One active source per case — switching source clears the other pickers.
-                      </p>
-
-                      <div className="flex w-full shrink-0 flex-col gap-2">
-                        <p className="text-xs font-medium text-gray-500">Input type</p>
+                        <p className="text-xs font-medium text-gray-500">Select Input/Trigger node</p>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <button
@@ -2401,6 +2364,52 @@ function ExperimentTab({
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
+                      </div>
+
+                      <div className="flex w-full shrink-0 flex-col gap-2">
+                        <p className="text-xs font-medium text-gray-500">Input source</p>
+                        <Tabs
+                          value={inputSheetSource}
+                          onValueChange={(v) => {
+                            const next = v as "manual" | "dataset" | "run"
+                            if (next === "manual") {
+                              setInputSheetSource("manual")
+                              setSheetDatasetId(null)
+                              setSheetRunId(null)
+                            } else if (next === "dataset") {
+                              setInputSheetSource("dataset")
+                              setSheetRunId(null)
+                            } else {
+                              setInputSheetSource("run")
+                              setSheetDatasetId(null)
+                            }
+                          }}
+                          className="gap-2"
+                        >
+                          <TabsList className="border-gray-200 bg-gray-50/50 text-gray-600 grid h-auto w-full min-h-9 grid-cols-3 gap-0.5 rounded-lg p-1">
+                            <TabsTrigger
+                              value="manual"
+                              className="h-auto min-h-[36px] gap-1.5 px-1.5 py-2 text-xs shadow-none data-[state=active]:border-gray-200 data-[state=active]:bg-white data-[state=active]:text-gray-900"
+                            >
+                              <TextCursorInput className="h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden />
+                              <span className="truncate">Manual</span>
+                            </TabsTrigger>
+                            <TabsTrigger
+                              value="dataset"
+                              className="h-auto min-h-[36px] gap-1.5 px-1.5 py-2 text-xs shadow-none data-[state=active]:border-gray-200 data-[state=active]:bg-white data-[state=active]:text-gray-900"
+                            >
+                              <Database className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
+                              <span className="truncate">Dataset</span>
+                            </TabsTrigger>
+                            <TabsTrigger
+                              value="run"
+                              className="h-auto min-h-[36px] gap-1.5 px-1.5 py-2 text-xs shadow-none data-[state=active]:border-gray-200 data-[state=active]:bg-white data-[state=active]:text-gray-900"
+                            >
+                              <History className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
+                              <span className="truncate">Past run</span>
+                            </TabsTrigger>
+                          </TabsList>
+                        </Tabs>
                       </div>
 
                       {inputSheetSource === "manual" && (
