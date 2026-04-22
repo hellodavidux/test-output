@@ -81,6 +81,8 @@ export const TabContext = React.createContext<{
     /** Fills the Input column (e.g. workflow trigger message). */
     caseInput?: string
     caseExpected?: string
+    /** When true, opens the Workflow variant drawer (Run progress → Compare). */
+    openWorkflowVariantDrawer?: boolean
   }) => void
   /** Opens Analytics → empty fork run detail with the fork configuration drawer. */
   openAnalyticsForkDraft: (payload: { runId: string; caseInput?: string }) => void
@@ -143,7 +145,12 @@ export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLa
   }, [router])
 
   const openExperimentWithRun = React.useCallback(
-    (payload: { runId: string; caseInput?: string; caseExpected?: string }) => {
+    (payload: {
+      runId: string
+      caseInput?: string
+      caseExpected?: string
+      openWorkflowVariantDrawer?: boolean
+    }) => {
       setExperimentSeedFromRun(buildExperimentSeedFromPrefill(payload))
       setActiveTab("Evaluator")
     },

@@ -45,7 +45,7 @@ function FlowCanvas({
   } | null>(null)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null)
-  const [shouldExpandRunProgress, setShouldExpandRunProgress] = useState(false)
+  const [shouldExpandRunProgress, setShouldExpandRunProgress] = useState(true)
   const [activeRunId, setActiveRunId] = useState(() =>
     typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `run-${Date.now()}`,
   )

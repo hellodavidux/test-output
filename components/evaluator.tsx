@@ -94,6 +94,7 @@ import {
 } from "@/components/ui/sheet"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { GANTT_NODES, GanttNodeIcon } from "@/components/workflow-gantt"
+import { SaveRunToDatabaseModal } from "@/components/save-run-to-database-modal"
 
 // ─── Workflow nodes available for intermediary config ─────────────────────────
 
@@ -1408,6 +1409,14 @@ function ExperimentTab({
   const [cellSheet, setCellSheet]       = useState<{ caseId: string; variantId: string } | null>(null)
   const [addVariantOpen, setAddVariantOpen] = useState(false)
   const [newVariantDraft, setNewVariantDraft] = useState(emptyNewVariantDraft)
+  const [saveToDatasetOpen, setSaveToDatasetOpen] = useState(false)
+  const [saveToDatasetRunId, setSaveToDatasetRunId] = useState<string | undefined>(undefined)
+
+  useLayoutEffect(() => {
+    if (!seedCase?.openWorkflowVariantDrawer) return
+    setAddVariantOpen(true)
+    setNewVariantDraft(emptyNewVariantDraft())
+  }, [seedCase])
 
   const [addEvalMenuOpen, setAddEvalMenuOpen]         = useState(false)
 
@@ -1854,9 +1863,10 @@ function ExperimentTab({
                           type="button"
                           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
                           aria-label="Save to dataset"
-                          onClick={() =>
-                            toast.message("Save to dataset", { description: "Not wired in this prototype." })
-                          }
+                          onClick={() => {
+                            setSaveToDatasetRunId(tc.sourceRunId ?? tc.id)
+                            setSaveToDatasetOpen(true)
+                          }}
                         >
                           <Database className="h-3.5 w-3.5" aria-hidden />
                         </button>
@@ -2782,6 +2792,12 @@ function ExperimentTab({
           </DrawerFooter>
         </DrawerContent>
       </Drawer>
+
+      <SaveRunToDatabaseModal
+        open={saveToDatasetOpen}
+        onOpenChange={setSaveToDatasetOpen}
+        runId={saveToDatasetRunId}
+      />
     </div>
   )
 }
@@ -4418,7 +4434,7 @@ export function Evaluator({
           <ExperimentTab
             key={
               experimentSeedFromRun
-                ? `${experimentSeedFromRun.runId}-${experimentSeedFromRun.input.slice(0, 48)}`
+                ? `${experimentSeedFromRun.runId}-${experimentSeedFromRun.input.slice(0, 48)}-${experimentSeedFromRun.intentNonce ?? "default"}`
                 : "default"
             }
             evalDefs={evalDefs}

@@ -1,7 +1,17 @@
 "use client"
 
 import React, { useState, useEffect, useRef } from "react"
-import { Clock, ChevronUp, ChevronDown, Loader2, CheckCircle2, Database, BarChart3, MoreVertical, GitFork } from "lucide-react"
+import {
+  Clock,
+  ChevronUp,
+  ChevronDown,
+  Loader2,
+  CheckCircle2,
+  Database,
+  BarChart3,
+  MoreVertical,
+  GitCompare,
+} from "lucide-react"
 import type { Node, Edge } from "@xyflow/react"
 import { getNodeIconBg, AppIcon } from "./workflow-node"
 import { NodeDetailModal } from "./node-detail-modal"
@@ -73,7 +83,7 @@ export function RunProgress({
   )
   const effectiveRunId = runId ?? stableFallbackRunId
 
-  const [isExpanded, setIsExpanded] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(true)
   const [selectedNode, setSelectedNode] = useState<Node | null>(null)
   const [selectedGanttNodeId, setSelectedGanttNodeId] = useState<string | null>(null)
   const [runStartTime, setRunStartTime] = useState<number | null>(null)
@@ -405,20 +415,21 @@ export function RunProgress({
                         <DropdownMenuItem
                           className="cursor-pointer"
                           onSelect={() => {
-                            tabContext.openAnalyticsForkDraft({
+                            tabContext.openExperimentWithRun({
                               runId: effectiveRunId,
                               caseInput: getWorkflowCaseInput(nodes),
+                              openWorkflowVariantDrawer: true,
                             })
                             handleExpandChange(false)
                           }}
                         >
-                          <GitFork className="h-4 w-4" />
-                          Fork Run
+                          <GitCompare className="h-4 w-4" />
+                          Compare to variation
                         </DropdownMenuItem>
                       </TooltipTrigger>
                       <TooltipContent side="left" className="max-w-xs">
-                        Duplicate this run’s workflow in Analytics so you can change steps and replay without altering
-                        the original.
+                        Open the Evaluator tab with this run and add a workflow variation column to compare outputs side
+                        by side.
                       </TooltipContent>
                     </Tooltip>
                     <Tooltip>
