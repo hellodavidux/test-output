@@ -426,9 +426,8 @@ export function RunProgress({
                         <DropdownMenuItem
                           className="cursor-pointer"
                           onSelect={() => {
-                            tabContext.setOpenAnalyticsRunDetail(true)
-                            tabContext.setActiveTab("Analytics")
                             tabContext.setResetAnalyticsKey?.((k) => k + 1)
+                            tabContext.openAnalyticsRunDetailForRun(effectiveRunId)
                             handleExpandChange(false)
                           }}
                         >

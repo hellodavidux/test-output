@@ -73,8 +73,8 @@ import { AskAiPanel } from "@/components/ask-ai-panel"
 export const TabContext = React.createContext<{
   setActiveTab: (tab: string) => void
   setResetAnalyticsKey?: React.Dispatch<React.SetStateAction<number>>
-  openAnalyticsRunDetail: boolean
-  setOpenAnalyticsRunDetail: (v: boolean) => void
+  /** Opens Analytics on Run Details for the given workflow run id (must exist in the runs table). */
+  openAnalyticsRunDetailForRun: (runId: string) => void
   /** Opens Evaluator → Experiment with one test case row seeded from this workflow run. */
   openExperimentWithRun: (payload: {
     runId: string
@@ -110,7 +110,7 @@ export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLa
   const tabFromUrl = SLUG_TO_TAB[searchParams.get("tab") ?? ""] ?? "Workflow"
   const [activeTab, setActiveTabState] = React.useState(tabFromUrl)
   const [resetAnalyticsKey, setResetAnalyticsKey] = React.useState(0)
-  const [openAnalyticsRunDetail, setOpenAnalyticsRunDetail] = React.useState(false)
+  const [pendingOpenRunId, setPendingOpenRunId] = React.useState<string | null>(null)
   /** Persists in layout so Experiment keeps the seeded row after Evaluator remounts (Evaluate / Compare from Run progress). */
   const [experimentSeedFromRun, setExperimentSeedFromRun] = React.useState<ExperimentRunSeed | null>(null)
   /** Handed to Analytics once to open fork draft + drawer (Run progress / table Fork). */
@@ -157,6 +157,18 @@ export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLa
     },
     [setActiveTab],
   )
+
+  const openAnalyticsRunDetailForRun = React.useCallback(
+    (runId: string) => {
+      setPendingOpenRunId(runId)
+      setActiveTab("Analytics")
+    },
+    [setActiveTab],
+  )
+
+  const clearPendingOpenRunId = React.useCallback(() => {
+    setPendingOpenRunId(null)
+  }, [])
 
   const clearPendingForkFromRun = React.useCallback(() => {
     setPendingForkFromRun(null)
@@ -363,6 +375,8 @@ export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLa
               onFixWithAi={() => setAskAiOpen(true)}
               pendingForkFromRun={pendingForkFromRun}
               onPendingForkConsumed={clearPendingForkFromRun}
+              pendingOpenRunId={pendingOpenRunId}
+              onPendingOpenRunConsumed={clearPendingOpenRunId}
               runs={analyticsRuns}
               onAppendRun={appendAnalyticsRun}
             />
@@ -386,8 +400,7 @@ export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLa
       value={{
         setActiveTab,
         setResetAnalyticsKey,
-        openAnalyticsRunDetail,
-        setOpenAnalyticsRunDetail,
+        openAnalyticsRunDetailForRun,
         openExperimentWithRun,
         openAnalyticsForkDraft,
         appendAnalyticsRun,

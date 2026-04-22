@@ -65,6 +65,7 @@ import { OverviewClustersPanel, OverviewSignalsPanel } from "@/components/analyt
 import { WorkflowGantt, type GanttNode, GANTT_NODES, GanttNodeIcon, varyGanttNodesByRunId } from "@/components/workflow-gantt"
 import {
   EVALUATOR_DISPLAY_LABELS,
+  EVALUATOR_PASS_THRESHOLDS,
   WORKFLOW_NODES,
   VariantNodeConfigFields,
   WorkflowNodeLucideIcon,
@@ -655,26 +656,27 @@ function RunDetailEvalGradingRow({
   summary: string
 }) {
   const [expanded, setExpanded] = React.useState(false)
-  const full = `Score ${formatRunEvalScoreTenPoint(score)}/10 — ${summary}`
-  const sentences = full.split(/(?<=[.!?])\s+/)
-  const truncated = sentences.slice(0, 2).join(" ")
-  const hasMore = sentences.length > 2
+  const full = "Score " + formatRunEvalScoreTenPoint(score) + "/10 \u2014 " + summary
+  const truncated = full.length > 180 ? full.slice(0, 180) + "\u2026" : full
+  const hasMore = full.length > 180
   const showToggle = hasMore || expanded
+  const threshold = EVALUATOR_PASS_THRESHOLDS[evalLabel]
+  const pass = threshold == null || score >= threshold
+  const wrapCls =
+    "flex flex-col gap-1 rounded-lg border border-border/70 bg-muted/40 p-2 dark:border-border dark:bg-muted/30"
+  const chipCls = pass
+    ? "inline-flex w-fit shrink-0 items-center rounded px-1 py-0.5 tabular-nums text-[11px] font-semibold leading-none bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+    : "inline-flex w-fit shrink-0 items-center rounded px-1 py-0.5 tabular-nums text-[11px] font-semibold leading-none bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400"
   return (
-    <div className="rounded-lg border border-border/60 bg-foreground/[0.02] px-4 py-2.5 flex flex-col gap-0.5">
-      <div className="flex items-center gap-2 min-w-0">
-        <span className="inline-flex shrink-0 items-center tabular-nums text-[11px] font-medium text-foreground">
+    <div className={wrapCls}>
+      <div className="flex min-w-0 flex-row flex-wrap items-center gap-2">
+        <span className={chipCls}>
           {formatRunEvalScoreTenPoint(score)}
         </span>
-        <span className="min-w-0 truncate text-[11px] text-muted-foreground/60">{evalLabel}</span>
+        <span className="min-w-0 text-[11px] font-medium leading-tight text-foreground">{evalLabel}</span>
       </div>
       <div className="flex min-w-0 items-start gap-1">
-        <p
-          className={cn(
-            "min-w-0 flex-1 text-[12px] leading-snug text-muted-foreground",
-            !expanded && "line-clamp-2"
-          )}
-        >
+        <p className={cn("min-w-0 flex-1 text-[12px] leading-snug text-muted-foreground", !expanded && "line-clamp-2")}>
           {expanded ? full : truncated}
         </p>
         {showToggle ? (
@@ -701,6 +703,10 @@ const OVERVIEW_CLUSTERS = [
     affectedRuns: 18,
     timeWindow: "48h",
     trend: "+11 since prompt update v7",
+    firstSeen: "Apr 14, 11:24 AM",
+    lastSeen: "11 min ago",
+    /** Daily event counts for the last 7 days (oldest → newest) */
+    sparkline: [1, 2, 1, 3, 4, 3, 4],
     failureMode: "Agent tells customers they are eligible for refunds outside the 30-day window, citing a stale or hallucinated policy that states 60 days.",
     suspectedCause: "The KB refund policy document was not updated when the policy changed from 60 to 30 days in Q1 2026. The Draft Response node retrieves this stale doc and uses it as ground truth.",
     suggestion: "Update the KB refund policy document immediately. Add a prompt guardrail: 'Refund window is strictly 30 days — do not approve requests beyond this without escalating to the billing team.' Promote the failing example to the Billing disputes eval dataset.",
@@ -720,6 +726,9 @@ const OVERVIEW_CLUSTERS = [
     affectedRuns: 11,
     timeWindow: "24h",
     trend: "+4 since yesterday",
+    firstSeen: "Apr 16, 9:02 AM",
+    lastSeen: "2 hrs ago",
+    sparkline: [0, 1, 0, 2, 1, 3, 4],
     failureMode: "Agent gives cancellation instructions but does not confirm whether the account was cancelled or offer to complete it directly on behalf of the customer.",
     suspectedCause: "System prompt instructs the agent to 'guide users through self-service steps.' For cancellation requests, this results in step-by-step instructions being sent without the agent confirming the action or offering to execute it.",
     suggestion: "Update the cancellation handler: when a user explicitly says 'cancel my account', the agent should confirm the cancellation immediately and send a confirmation, rather than redirecting to Settings. Add this as an eval test case.",
@@ -834,6 +843,9 @@ interface AnalyticsProps {
   /** From layout: open fork draft once for this source run (Run progress / global Fork). */
   pendingForkFromRun?: { runId: string; caseInput?: string } | null
   onPendingForkConsumed?: () => void
+  /** From layout / Experiment: focus Run Details for this run id once it exists in `runs`. */
+  pendingOpenRunId?: string | null
+  onPendingOpenRunConsumed?: () => void
   /** Workflow + evaluator runs (layout-owned so Experiment / Fork can append). */
   runs: RunData[]
   onAppendRun: (run: RunData) => void
@@ -844,6 +856,8 @@ export function Analytics({
   onFixWithAi,
   pendingForkFromRun = null,
   onPendingForkConsumed,
+  pendingOpenRunId = null,
+  onPendingOpenRunConsumed,
   runs,
   onAppendRun,
 }: AnalyticsProps) {
@@ -938,13 +952,22 @@ export function Analytics({
     onPendingForkConsumed?.()
   }, [pendingForkFromRun, onPendingForkConsumed, clearForkRunTimer, openForkSheetFresh])
 
-  // When opened from Run Progress "Expand", land on run detail view
+  // Run progress "Inspect Run" / Experiment cell sheet: open Run Details for a specific run id
   useEffect(() => {
-    if (tabContext?.openAnalyticsRunDetail && runs.length > 0) {
-      setSelectedRunId(runs[0].runId)
-      tabContext.setOpenAnalyticsRunDetail(false)
+    if (!pendingOpenRunId) return
+    const exists = runs.some((r) => r.runId === pendingOpenRunId)
+    const targetId = exists ? pendingOpenRunId : runs[0]?.runId ?? null
+    if (targetId) {
+      clearForkRunTimer()
+      setForkRunPhase("draft")
+      setForkRunStartTime(null)
+      setForkSourceRun(null)
+      setForkDrawerOpen(false)
+      setSelectedRunId(targetId)
+      setSelectedGanttNode(null)
     }
-  }, [tabContext?.openAnalyticsRunDetail, runs])
+    onPendingOpenRunConsumed?.()
+  }, [pendingOpenRunId, runs, onPendingOpenRunConsumed, clearForkRunTimer])
 
   // When landing on run detail, show General in sidebar and no node selected (signal + recommendation live there)
   useEffect(() => {
@@ -2751,10 +2774,23 @@ export function Analytics({
                             return (
                               <Tooltip delayDuration={200}>
                                 <TooltipTrigger asChild>
-                                  <div className="inline-flex max-w-[14rem] cursor-default items-center gap-2 text-left">
-                                    <span className="truncate text-xs font-medium text-foreground">{ev.evaluatorName}</span>
-                                    <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[11px] tabular-nums text-muted-foreground">{ev.score}</span>
-                                  </div>
+                                  {(() => {
+                                    const threshold = EVALUATOR_PASS_THRESHOLDS[ev.evaluatorName]
+                                    const pass = threshold == null || ev.score >= threshold
+                                    return (
+                                      <div className="inline-flex max-w-[14rem] cursor-default items-center gap-2 text-left">
+                                        <span className="truncate text-xs font-medium text-foreground">{ev.evaluatorName}</span>
+                                        <span className={cn(
+                                          "shrink-0 rounded px-1.5 py-0.5 text-[11px] tabular-nums font-semibold",
+                                          pass
+                                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                                            : "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400",
+                                        )}>
+                                          {(ev.score / 10).toFixed(1)}
+                                        </span>
+                                      </div>
+                                    )
+                                  })()}
                                 </TooltipTrigger>
                                 <TooltipContent side="top" className="max-w-xs text-xs" hideArrow>
                                   {ev.summary}
@@ -2982,25 +3018,22 @@ export function Analytics({
           </TabsContent>
 
           <TabsContent value="clusters" className="mt-0">
-            <div className="overflow-x-auto rounded-xl border border-border/80 bg-background shadow-sm">
-              <div
-                className={cn(
-                  CLUSTER_TABLE_COL,
-                  "min-w-[860px] px-4 py-2.5 border-b border-border/70 bg-muted/30 text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
-                )}
-              >
-                <span>Cluster</span>
-                <span>Severity</span>
-                <span>Failure mode</span>
-                <span>Window / trend</span>
-                <span className="text-right">Runs</span>
+            <div className="overflow-hidden rounded-xl border border-border/80 bg-background shadow-sm">
+              {/* Header */}
+              <div className="grid grid-cols-[1fr_140px_72px_96px_96px_32px] items-center gap-0 border-b border-border/70 bg-muted/30 px-4 py-2.5">
+                <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Issue</span>
+                <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Graph</span>
+                <span className="text-right text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Events</span>
+                <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground pl-4">First seen</span>
+                <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground pl-2">Last seen</span>
                 <span className="sr-only">Expand</span>
               </div>
 
-              <div className="min-w-[860px] divide-y divide-border/70">
+              <div className="divide-y divide-border/70">
               {OVERVIEW_CLUSTERS.map((c) => {
                 const isOpen = expandedClusterIds.has(c.id)
-                const sevLabel = c.severity === "high" ? "HIGH" : "MEDIUM"
+                const isHigh = c.severity === "high"
+                const maxBar = Math.max(...c.sparkline, 1)
                 return (
                   <Collapsible
                     key={c.id}
@@ -3017,57 +3050,96 @@ export function Analytics({
                     <CollapsibleTrigger asChild>
                       <button
                         type="button"
-                        className={cn(
-                          CLUSTER_TABLE_COL,
-                          "group w-full px-4 py-4 min-h-[4.25rem] text-left transition-colors hover:bg-muted/40"
-                        )}
+                        className="group grid w-full grid-cols-[1fr_140px_72px_96px_96px_32px] items-center gap-0 px-4 py-3.5 text-left transition-colors hover:bg-muted/30"
                       >
-                        <div className="min-w-0 flex flex-col gap-0.5">
-                          <span className="text-sm font-semibold text-foreground truncate">{c.label}</span>
-                          <span className="text-xs text-muted-foreground truncate" title={c.workflow}>
-                            {c.workflow}
-                          </span>
-                        </div>
-
-                        <div className="min-w-0 flex items-center gap-2">
+                        {/* Issue: severity dot + title + description */}
+                        <div className="flex min-w-0 items-start gap-3 pr-4">
                           <span
                             className={cn(
-                              "text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0",
-                              c.severity === "high"
-                                ? "bg-red-50 text-red-600 ring-1 ring-red-200"
-                                : "bg-amber-50 text-amber-600 ring-1 ring-amber-200"
+                              "mt-1 h-2 w-2 shrink-0 rounded-full",
+                              isHigh ? "bg-red-500" : "bg-amber-400"
+                            )}
+                            aria-label={isHigh ? "High severity" : "Medium severity"}
+                          />
+                          <div className="min-w-0 flex flex-col gap-0.5">
+                            <span className="truncate text-[13px] font-semibold leading-snug text-foreground">
+                              {c.label}
+                            </span>
+                            <span className="line-clamp-1 text-xs leading-snug text-muted-foreground">
+                              {c.workflow} · {c.failureMode.length > 80 ? c.failureMode.slice(0, 80) + "…" : c.failureMode}
+                            </span>
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                              <span
+                                className={cn(
+                                  "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                                  isHigh
+                                    ? "bg-red-50 text-red-600 ring-1 ring-inset ring-red-200 dark:bg-red-950/40 dark:text-red-400 dark:ring-red-800/50"
+                                    : "bg-amber-50 text-amber-600 ring-1 ring-inset ring-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:ring-amber-800/50"
+                                )}
+                              >
+                                {isHigh ? "High" : "Medium"}
+                              </span>
+                              <span
+                                className={cn(
+                                  "text-[11px] font-medium",
+                                  isHigh ? "text-red-500" : "text-amber-500"
+                                )}
+                              >
+                                ↑ {c.trend}
+                              </span>
+                              {c.affectedVariants.map((v) => (
+                                <span
+                                  key={v}
+                                  className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                                >
+                                  {v}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Sparkline: 7-bar chart */}
+                        <div className="flex items-end gap-[3px] h-8" aria-hidden>
+                          {c.sparkline.map((v, i) => (
+                            <div
+                              key={i}
+                              className={cn(
+                                "flex-1 rounded-sm min-w-[6px] transition-opacity",
+                                isHigh ? "bg-red-400/70" : "bg-amber-400/70",
+                                i === c.sparkline.length - 1 && (isHigh ? "bg-red-500" : "bg-amber-500")
+                              )}
+                              style={{ height: `${Math.max(15, Math.round((v / maxBar) * 100))}%` }}
+                            />
+                          ))}
+                        </div>
+
+                        {/* Event count */}
+                        <div className="flex flex-col items-end tabular-nums">
+                          <span className="text-[15px] font-semibold leading-none text-foreground">
+                            {c.affectedRuns}
+                          </span>
+                          <span className="mt-0.5 text-[10px] text-muted-foreground">events</span>
+                        </div>
+
+                        {/* First seen */}
+                        <div className="flex flex-col gap-0.5 pl-4">
+                          <span className="text-[11px] leading-snug text-foreground/80">{c.firstSeen}</span>
+                        </div>
+
+                        {/* Last seen */}
+                        <div className="flex flex-col gap-0.5 pl-2">
+                          <span
+                            className={cn(
+                              "text-[11px] font-medium leading-snug",
+                              isHigh ? "text-red-500" : "text-amber-500"
                             )}
                           >
-                            {sevLabel}
+                            {c.lastSeen}
                           </span>
                         </div>
 
-                        <div className="min-w-0">
-                          <p className="text-[13px] text-muted-foreground leading-snug line-clamp-2" title={c.failureMode}>
-                            {c.failureMode}
-                          </p>
-                        </div>
-
-                        <div className="min-w-0 flex flex-col gap-1">
-                          <p className="text-[13px] leading-snug text-foreground line-clamp-2">
-                            <span className="text-muted-foreground">Last · </span>
-                            {c.timeWindow}
-                          </p>
-                          <p
-                            className={cn(
-                              "text-xs leading-snug line-clamp-2",
-                              c.severity === "high" ? "text-red-600" : "text-amber-600"
-                            )}
-                            title={c.trend}
-                          >
-                            {c.trend}
-                          </p>
-                        </div>
-
-                        <div className="text-right tabular-nums">
-                          <span className="text-[13px] font-medium text-foreground">{c.affectedRuns} runs</span>
-                        </div>
-
+                        {/* Expand chevron */}
                         <div className="flex justify-end">
                           <ChevronRight
                             className={cn(

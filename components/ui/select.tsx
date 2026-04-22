@@ -77,11 +77,36 @@ function SelectContent({
   className,
   children,
   position = 'popper',
+  startAtTop = false,
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Content>) {
+}: React.ComponentProps<typeof SelectPrimitive.Content> & {
+  /** When true, list opens scrolled to the top instead of jumping to the selected item. */
+  startAtTop?: boolean
+}) {
+  const contentRef = React.useRef<HTMLDivElement | null>(null)
+  const viewportRef = React.useRef<HTMLDivElement | null>(null)
+
+  React.useEffect(() => {
+    if (!startAtTop) return
+    const reset = () => {
+      const content = contentRef.current
+      const viewport = viewportRef.current
+      if (content) content.scrollTop = 0
+      if (viewport) viewport.scrollTop = 0
+    }
+    reset()
+    const t0 = window.setTimeout(reset, 0)
+    const t1 = window.setTimeout(reset, 32)
+    return () => {
+      window.clearTimeout(t0)
+      window.clearTimeout(t1)
+    }
+  }, [startAtTop])
+
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content
+        ref={contentRef}
         data-slot="select-content"
         className={cn(
           'bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 relative z-50 max-h-(--radix-select-content-available-height) min-w-[8rem] origin-(--radix-select-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-md border shadow-md',
@@ -94,10 +119,11 @@ function SelectContent({
       >
         <SelectScrollUpButton />
         <SelectPrimitive.Viewport
+          ref={viewportRef}
           className={cn(
             'p-1',
             position === 'popper' &&
-              'h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)] scroll-my-1',
+              'min-h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)] scroll-my-1',
           )}
         >
           {children}
