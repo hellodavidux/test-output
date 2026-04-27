@@ -80,7 +80,6 @@ import type { RunData } from "@/lib/analytics-runs"
 import { formatAnalyticsRunTimestamp } from "@/lib/analytics-runs"
 import {
   EVAL_RUN_PRESET_LIST,
-  EV_ESCALATION,
   EV_RESPONSE,
   EV_RESOLUTION,
   EV_TONE,
@@ -117,6 +116,13 @@ import {
   DrawerFooter,
   DrawerTitle,
 } from "@/components/ui/drawer"
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetFooter,
+} from "@/components/ui/sheet"
 
 // Renders text as beautified JSON (parsed if valid JSON, otherwise wrapped in { "message": "..." }) with syntax highlighting
 function BeautifiedJson({ text, className }: { text: string; className?: string }) {
@@ -265,6 +271,48 @@ const mockConversations: ConversationPreview[] = [
 
 /** Run detail uses this id for an empty fork draft (not a row in the runs table). */
 const FORK_DRAFT_RUN_ID = "__fork-draft__"
+
+/** Maps specific Gantt node labels to their WORKFLOW_NODES type id for config rendering. */
+const GANTT_LABEL_TO_WORKFLOW_NODE_ID: Record<string, string> = {
+  "Intent Classifier": "ai-agent",
+  "Draft Response": "ai-agent",
+  "Knowledge Base Lookup": "knowledge-base",
+  "Email Preprocessing": "ai-agent",
+  "Extract Intent": "ai-agent",
+  "Escalation Router": "ai-agent",
+  "Send Reply": "send-email",
+}
+
+/** Prefilled node config values for the rerun sheet. */
+const GANTT_NODE_PREFILL: Record<string, Record<string, string>> = {
+  "Intent Classifier": {
+    model: "gpt-4o",
+    system_prompt: "You are an intent classification assistant for a customer support team.\n\nClassify the customer message into one of the following intents:\n- billing_dispute\n- cancellation_request\n- refund_request\n- technical_issue\n- general_inquiry\n- escalation_needed\n\nFor refund or billing requests older than 30 days, always classify as escalation_needed.\nReturn only the intent label, nothing else.",
+    user_prompt: "{{input.message}}",
+    temperature: "0.1",
+  },
+  "Draft Response": {
+    model: "gpt-4o",
+    system_prompt: "You are a senior customer support agent for a SaaS company. Your tone is warm, empathetic, and professional.\n\nWhen handling billing disputes or refund requests:\n- Acknowledge the customer's frustration first\n- Clearly explain the relevant policy\n- Offer a concrete next step or escalation path\n- Never promise outcomes you cannot guarantee\n\nUse the knowledge base context and ticket history provided to personalize the response.",
+    user_prompt: "Customer message: {{input.message}}\n\nTicket history: {{knowledge_base.ticket_history}}\n\nRelevant policy: {{knowledge_base.policy}}\n\nDraft a helpful, empathetic reply.",
+    temperature: "0.7",
+  },
+  "Escalation Router": {
+    model: "gpt-4o-mini",
+    system_prompt: "You are a routing agent. Based on the intent and ticket metadata, decide whether to route to:\n- self_serve: customer can resolve independently\n- billing_team: requires human billing review\n- tier2_support: requires advanced technical support\n\nRoute to billing_team if days_since_charge > 30 or amount > 500.\nReturn only the routing key.",
+    user_prompt: "Intent: {{intent_classifier.output}}\nDays since charge: {{input.days_since_charge}}\nAmount: {{input.amount}}",
+    temperature: "0.1",
+  },
+  "Knowledge Base Lookup": {
+    kb: "kb-2",
+    top_k: "5",
+    query_override: "{{ticket.subject}}\n{{ticket.body}}\n\nRetrieve concise passages from the selected knowledge bases that best answer the ticket. Prefer official policy and troubleshooting steps.",
+  },
+  "Send Reply": {
+    to: "{{input.customer_email}}",
+    subject: "Re: {{input.subject}}",
+  },
+}
 
 function resolveForkSourceRun(payload: { runId: string; caseInput?: string }, runs: RunData[]): RunData {
   const found = runs.find((r) => r.runId === payload.runId)
@@ -488,10 +536,10 @@ const RUN_EVALUATION_BY_ID: Record<string, RunEvaluationSummary> = {
       "Agent reaches a clear resolution, but the answer relies on a stale policy snippet (60-day window). Live policy is 30 days — aligned with the policy signal, not a contradiction.",
   },
   "d0e1f2a3-b4c5-6789-3456-890123456789": {
-    evaluatorName: EV_ESCALATION,
+    evaluatorName: EV_TONE,
     score: 52,
     summary:
-      "The run should have routed to human billing review for a charge older than 30 days, but the agent issued a self-serve refund form instead. The Escalation Router node did not fire despite explicit policy thresholds in the workflow context. Reliability for this evaluator is below the bar you would want for production billing disputes.",
+      "Tone reads transactional around the billing dispute and steers straight to a self-serve path without acknowledging urgency or older charges; empathy and clear human handoff language are thin for this scenario.",
   },
 }
 
@@ -528,7 +576,7 @@ const OVERVIEW_SIGNALS = [
     runId: "d0e1f2a3-b4c5-6789-3456-890123456789",
     time: "12:05 PM",
     confidence: 87,
-    nodeId: "5",
+    nodeId: "4",
     causeNodeId: "2",
     causeNodeLabel: "Intent Classifier",
     recommendation: "Add a charge_age check to the escalation router: if days_since_charge > 30, route directly to the billing team and skip the self-serve path.",
@@ -633,7 +681,7 @@ function SignalInsightCard({
       className={cn(
         "shrink-0 rounded-xl py-3.5 shadow-none",
         isHigh
-          ? "border-destructive/40 bg-destructive/5 text-destructive [&>svg]:text-destructive *:data-[slot=alert-description]:text-destructive/85"
+          ? "border-amber-500/45 bg-amber-100/75 text-amber-950 dark:border-amber-400/35 dark:bg-amber-950/50 dark:text-amber-50 [&>svg]:text-amber-700 dark:[&>svg]:text-amber-400 *:data-[slot=alert-description]:text-amber-900/85 dark:*:data-[slot=alert-description]:text-amber-100/85"
           : "border-amber-500/35 bg-amber-50 text-amber-950 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-50 [&>svg]:text-amber-600 dark:[&>svg]:text-amber-400 *:data-[slot=alert-description]:text-amber-900/80 dark:*:data-[slot=alert-description]:text-amber-100/85",
         containerClassName ?? "mx-4 mt-3 mb-0"
       )}
@@ -645,7 +693,7 @@ function SignalInsightCard({
           className={cn(
             "inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
             isHigh
-              ? "bg-destructive/15 text-destructive dark:text-destructive"
+              ? "bg-amber-500/25 text-amber-900 dark:bg-amber-400/20 dark:text-amber-100"
               : "bg-amber-500/15 text-amber-800 dark:text-amber-200"
           )}
         >
@@ -657,11 +705,12 @@ function SignalInsightCard({
         <div className="flex justify-end pt-0.5">
           <Button
             size="sm"
-            variant={isHigh ? "destructive" : "secondary"}
+            variant="secondary"
             className={cn(
               "h-8 w-fit gap-1.5 px-3 text-xs font-medium shadow-none",
-              !isHigh &&
-                "border-amber-200/80 bg-amber-100/80 text-amber-950 hover:bg-amber-100 dark:border-amber-700/50 dark:bg-amber-900/50 dark:text-amber-50 dark:hover:bg-amber-900/70"
+              "border-amber-200/80 bg-amber-100/80 text-amber-950 hover:bg-amber-100 dark:border-amber-700/50 dark:bg-amber-900/50 dark:text-amber-50 dark:hover:bg-amber-900/70",
+              isHigh &&
+                "border-amber-300/90 bg-amber-200/85 hover:bg-amber-200 dark:border-amber-600/50 dark:bg-amber-800/55 dark:hover:bg-amber-800/75"
             )}
             onClick={() => {
               if (onFixWithAi) onFixWithAi()
@@ -690,10 +739,17 @@ function RunDetailEvalGradingRow({
   evalLabel,
   score,
   summary,
+  latencyLabel,
+  tokensLabel,
+  signalRow,
 }: {
   evalLabel: string
   score: number
   summary: string
+  latencyLabel?: string
+  tokensLabel?: string
+  /** Match overview table: yellow score chip when this run has a linked signal (non-error). */
+  signalRow?: boolean
 }) {
   const [expanded, setExpanded] = React.useState(false)
   const full = "Score " + formatRunEvalScoreTenPoint(score) + "/10 \u2014 " + summary
@@ -702,35 +758,55 @@ function RunDetailEvalGradingRow({
   const showToggle = hasMore || expanded
   const threshold = EVALUATOR_PASS_THRESHOLDS[evalLabel]
   const pass = threshold == null || score >= threshold
+  const showStats = Boolean(latencyLabel && tokensLabel)
+  const tokensCountDisplay =
+    tokensLabel?.replace(/\s*tokens\s*$/i, "").trim() ?? ""
   const wrapCls =
-    "flex flex-col gap-1 rounded-lg border border-border/70 bg-muted/40 p-2 dark:border-border dark:bg-muted/30"
-  const chipCls = pass
-    ? "inline-flex w-fit shrink-0 items-center rounded px-1 py-0.5 tabular-nums text-[11px] font-semibold leading-none bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
-    : "inline-flex w-fit shrink-0 items-center rounded px-1 py-0.5 tabular-nums text-[11px] font-semibold leading-none bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400"
+    "flex flex-col gap-1 rounded-lg border border-border/70 bg-muted/40 p-2 text-left dark:border-border dark:bg-muted/30"
+  const chipCls = signalRow
+    ? "inline-flex w-fit shrink-0 items-center rounded border border-yellow-200 px-1 py-0.5 tabular-nums text-[11px] font-semibold leading-none bg-yellow-50 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300"
+    : pass
+      ? "inline-flex w-fit shrink-0 items-center rounded px-1 py-0.5 tabular-nums text-[11px] font-semibold leading-none bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+      : "inline-flex w-fit shrink-0 items-center rounded px-1 py-0.5 tabular-nums text-[11px] font-semibold leading-none bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400"
   return (
-    <div className={wrapCls}>
-      <div className="flex min-w-0 flex-row flex-wrap items-center gap-2">
-        <span className={chipCls}>
-          {formatRunEvalScoreTenPoint(score)}
+    <button
+      type="button"
+      className={cn(
+        wrapCls,
+        "w-full cursor-pointer transition-colors hover:bg-muted/55 active:bg-muted/65 dark:hover:bg-muted/40 dark:active:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+      )}
+      onClick={() => setExpanded((e) => !e)}
+      aria-expanded={showToggle ? expanded : undefined}
+      aria-label={showToggle ? (expanded ? "Show less evaluation detail" : "Show more evaluation detail") : "Evaluation result"}
+    >
+      <div className="flex min-w-0 flex-row flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="flex min-w-0 w-fit max-w-full shrink-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span className={chipCls}>{formatRunEvalScoreTenPoint(score)}</span>
+          <span className="min-w-0 text-[11px] font-medium leading-tight text-foreground">{evalLabel}</span>
         </span>
-        <span className="min-w-0 text-[11px] font-medium leading-tight text-foreground">{evalLabel}</span>
+        {showStats ? (
+          <span className="flex min-w-0 flex-wrap items-center gap-x-2 text-[9px] font-medium leading-tight tabular-nums text-muted-foreground">
+            <span title="Latency">Latency: {latencyLabel}</span>
+            <span className="text-muted-foreground/35 select-none" aria-hidden>
+              ·
+            </span>
+            <span title="Tokens used">
+              Tokens: {tokensCountDisplay || tokensLabel}
+            </span>
+          </span>
+        ) : null}
       </div>
       <div className="flex min-w-0 items-start gap-1">
         <p className={cn("min-w-0 flex-1 text-[12px] leading-snug text-muted-foreground", !expanded && "line-clamp-2")}>
           {expanded ? full : truncated}
         </p>
         {showToggle ? (
-          <button
-            type="button"
-            onClick={() => setExpanded((e) => !e)}
-            className="shrink-0 rounded-sm p-0.5 text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground"
-            aria-label={expanded ? "Show less" : "Show more"}
-          >
+          <span className="shrink-0 rounded-sm p-0.5 text-muted-foreground/60" aria-hidden>
             <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", expanded && "rotate-180")} />
-          </button>
+          </span>
         ) : null}
       </div>
-    </div>
+    </button>
   )
 }
 
@@ -926,6 +1002,10 @@ export function Analytics({
   const [saveDatasets, setSaveDatasets] = useState<SaveDatasetItem[]>(INITIAL_SAVE_DATASETS)
   const [forkSourceRun, setForkSourceRun] = useState<RunData | null>(null)
   const [forkDrawerOpen, setForkDrawerOpen] = useState(false)
+  const [rerunNodeSheetOpen, setRerunNodeSheetOpen] = useState(false)
+  const [rerunTargetNode, setRerunTargetNode] = useState<GanttNode | null>(null)
+  const [rerunNodeValues, setRerunNodeValues] = useState<Record<string, string>>({})
+  const [rerunPickNodeMode, setRerunPickNodeMode] = useState(false)
   const [forkSteps, setForkSteps] = useState<ForkStepEdit[]>([])
   const [forkAddQuery, setForkAddQuery] = useState("")
   const [forkAddPopoverOpen, setForkAddPopoverOpen] = useState(false)
@@ -1136,7 +1216,7 @@ export function Analytics({
       {
         title: "Signal Alerts",
         value: "847",
-        data: CHART_DATES.map((date, i) => ({ date, value: Math.round(20 + i * 45 + Math.sin(i * 0.5) * 15) })),
+        data: CHART_DATES.map((date, i) => ({ date, value: Math.round(35 + Math.sin(i * 1.3) * 20 + Math.cos(i * 0.7) * 15 + (i % 3 === 0 ? 25 : 0)) })),
       },
       {
         title: "Evaluation",
@@ -1470,11 +1550,14 @@ export function Analytics({
                             <DropdownMenuItem
                               className="gap-2"
                               onSelect={() => {
-                                tabContext?.openExperimentVariantBuilderIntro?.()
+                                setRerunTargetNode(null)
+                                setRerunNodeValues({})
+                                setRerunPickNodeMode(true)
+                                setRerunNodeSheetOpen(true)
                               }}
                             >
                               <GitFork className="h-4 w-4" />
-                              Fork Run
+                              Rerun with changes
                             </DropdownMenuItem>
                           </TooltipTrigger>
                           <TooltipContent side="left" className="max-w-xs text-balance">
@@ -1571,6 +1654,16 @@ export function Analytics({
                   signalNodeId={ganttSignalNodeId}
                   rootCauseNodeId={ganttRootCauseNodeId}
                   onCompareClick={handleCompareClick}
+                  onForkClick={(node) => {
+                    const workflowNodeId = GANTT_LABEL_TO_WORKFLOW_NODE_ID[node.label] ?? "ai-agent"
+                    setRerunTargetNode(node)
+                    setRerunPickNodeMode(false)
+                    setRerunNodeValues({
+                      ...defaultValuesForNode(workflowNodeId),
+                      ...(GANTT_NODE_PREFILL[node.label] ?? {}),
+                    })
+                    setRerunNodeSheetOpen(true)
+                  }}
                 />
               )}
               <div className="flex shrink-0 justify-end gap-2 pt-3">
@@ -1751,7 +1844,7 @@ export function Analytics({
                     />
                   ) : null}
                   {isForkDraftView && forkSourceRun ? (
-                    <div className="mb-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-xs">
+                    <div className="mt-3 mb-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-xs">
                       <p className="font-medium text-foreground">Source run</p>
                       <p className="mt-1 font-mono text-[11px] text-muted-foreground break-all">{forkSourceRun.runId}</p>
                       <button
@@ -1769,16 +1862,6 @@ export function Analytics({
                       >
                         Apply changes to the draft
                       </Button>
-                    </div>
-                  ) : null}
-                  {runEvaluation ? (
-                    <div className="mt-4 mb-4 shrink-0 space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground">Evaluation</p>
-                      <RunDetailEvalGradingRow
-                        evalLabel={runEvaluation.evaluatorName}
-                        score={runEvaluation.score}
-                        summary={runEvaluation.summary}
-                      />
                     </div>
                   ) : null}
                   {(() => {
@@ -1858,6 +1941,31 @@ export function Analytics({
                     </div>
                   ) : null}
                   <div className="flex flex-col text-sm">
+                    {runEvaluation ? (
+                      <div className="flex flex-col gap-3 py-3 border-b border-border/60">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <ListChecks className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          <span className="text-muted-foreground font-medium">Evaluation</span>
+                        </div>
+                        <div className="min-w-0 w-full">
+                          <RunDetailEvalGradingRow
+                            evalLabel={runEvaluation.evaluatorName}
+                            score={runEvaluation.score}
+                            summary={runEvaluation.summary}
+                            latencyLabel={selectedRun?.latency}
+                            tokensLabel={
+                              selectedRun != null
+                                ? `${selectedRun.tokens.toLocaleString()} tokens`
+                                : undefined
+                            }
+                            signalRow={
+                              Boolean(selectedRun && getOverviewSignalForRun(selectedRun.runId)) &&
+                              selectedRun.status !== "error"
+                            }
+                          />
+                        </div>
+                      </div>
+                    ) : null}
                     {[
                       { icon: Hash, label: "Run ID", value: selectedRun.runId },
                       { icon: MessageCircle, label: "Conversation ID", value: selectedRun.conversationId },
@@ -2364,6 +2472,137 @@ export function Analytics({
             </>,
             document.body
           )}
+        <Sheet open={rerunNodeSheetOpen} onOpenChange={setRerunNodeSheetOpen}>
+          <SheetContent side="right" className="flex h-full w-full max-w-[400px] flex-col gap-0 p-0 overflow-hidden">
+            <SheetHeader className="flex-shrink-0 border-b border-border/60 px-5 py-4">
+              <div className="flex items-center gap-2 min-w-0">
+                {rerunTargetNode && <WorkflowNodeLucideIcon nodeId={GANTT_LABEL_TO_WORKFLOW_NODE_ID[rerunTargetNode.label] ?? "ai-agent"} className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                <SheetTitle className="truncate text-base">
+                  {rerunPickNodeMode && !rerunTargetNode ? "Rerun with changes" : (rerunTargetNode?.label ?? "Node")}
+                </SheetTitle>
+                {rerunTargetNode && (
+                  <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">action-node</span>
+                )}
+              </div>
+            </SheetHeader>
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              {rerunPickNodeMode ? (
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-sm font-medium text-foreground">Node to modify</label>
+                    <Select
+                      value={rerunTargetNode?.id ?? ""}
+                      onValueChange={(val) => {
+                        const node = activeRunDetailGanttNodes.find(n => n.id === val)
+                        if (!node) return
+                        const wnId = GANTT_LABEL_TO_WORKFLOW_NODE_ID[node.label] ?? "ai-agent"
+                        setRerunTargetNode(node)
+                        setRerunNodeValues({
+                          ...defaultValuesForNode(wnId),
+                          ...(GANTT_NODE_PREFILL[node.label] ?? {}),
+                        })
+                      }}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select a node…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {activeRunDetailGanttNodes
+                          .filter(n => GANTT_LABEL_TO_WORKFLOW_NODE_ID[n.label])
+                          .map(n => (
+                            <SelectItem key={n.id} value={n.id}>{n.label}</SelectItem>
+                          ))
+                        }
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {rerunTargetNode && (() => {
+                    const wnId = GANTT_LABEL_TO_WORKFLOW_NODE_ID[rerunTargetNode.label] ?? "ai-agent"
+                    const wn = WORKFLOW_NODES.find(n => n.id === wnId) ?? null
+                    return wn ? (
+                      <VariantNodeConfigFields
+                        selectedNode={wn}
+                        values={rerunNodeValues}
+                        onFieldChange={(key, value) => setRerunNodeValues(prev => ({ ...prev, [key]: value }))}
+                      />
+                    ) : null
+                  })()}
+                </div>
+              ) : rerunTargetNode ? (() => {
+                const wnId = GANTT_LABEL_TO_WORKFLOW_NODE_ID[rerunTargetNode.label] ?? "ai-agent"
+                const wn = WORKFLOW_NODES.find(n => n.id === wnId) ?? null
+                return wn ? (
+                  <VariantNodeConfigFields
+                    selectedNode={wn}
+                    values={rerunNodeValues}
+                    onFieldChange={(key, value) => setRerunNodeValues(prev => ({ ...prev, [key]: value }))}
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">No configurable settings for this node.</p>
+                )
+              })() : null}
+            </div>
+            <SheetFooter className="flex-shrink-0 border-t border-border/60 px-5 py-4">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  if (rerunPickNodeMode && rerunTargetNode) {
+                    setRerunTargetNode(null)
+                    setRerunNodeValues({})
+                  } else {
+                    setRerunNodeSheetOpen(false)
+                  }
+                }}
+              >
+                {rerunPickNodeMode && rerunTargetNode ? "Back" : "Cancel"}
+              </Button>
+              <Button
+                type="button"
+                className="flex-1 bg-foreground text-background hover:bg-foreground/90"
+                disabled={!rerunTargetNode}
+                onClick={() => {
+                  setRerunNodeSheetOpen(false)
+                  const src = selectedRun
+                  clearForkRunTimer()
+                  setForkSourceRun(src)
+                  setForkRunPhase("running")
+                  setForkRunStartTime(Date.now())
+                  setSelectedRunId(FORK_DRAFT_RUN_ID)
+                  setSelectedGanttNode(null)
+                  toast.success("Simulating run", {
+                    description: rerunTargetNode
+                      ? `Replaying with changes to ${rerunTargetNode.label}.`
+                      : "Replay started.",
+                  })
+                  forkRunCompleteTimerRef.current = setTimeout(() => {
+                    setForkRunPhase("complete")
+                    setForkRunStartTime(null)
+                    forkRunCompleteTimerRef.current = null
+                    if (src) {
+                      onAppendRunRef.current({
+                        runId: crypto.randomUUID(),
+                        conversationId: src.conversationId,
+                        created: formatAnalyticsRunTimestamp(),
+                        origin: "Fork",
+                        version: src.version,
+                        status: "success",
+                        input: src.input,
+                        output: src.output,
+                        latency: "2.04s",
+                        tokens: Math.max(8, src.tokens - 7),
+                        user: src.user,
+                      })
+                    }
+                  }, 5200)
+                }}
+              >
+                Simulate run
+              </Button>
+            </SheetFooter>
+          </SheetContent>
+        </Sheet>
         <Drawer
           open={forkDrawerOpen}
           onOpenChange={(open) => {
@@ -2767,19 +3006,16 @@ export function Analytics({
                               <button
                                 type="button"
                                 className={cn(
-                                  "inline-flex h-5 items-center gap-0.5 rounded-sm px-0.5 text-[11px] font-normal leading-none transition-colors cursor-pointer select-none",
+                                  "inline-flex h-5 items-center gap-0.5 rounded-sm px-0.5 text-[11px] font-medium leading-none transition-colors cursor-pointer select-none",
                                   activeMetric === "Tokens"
-                                    ? "text-muted-foreground/45 hover:text-muted-foreground/65"
-                                    : "text-muted-foreground/35 hover:text-muted-foreground/50"
+                                    ? "text-muted-foreground hover:text-foreground"
+                                    : "text-muted-foreground/90 hover:text-foreground/90"
                                 )}
                                 aria-label="Token breakdown"
                               >
                                 {tokenView === "total" ? "total" : tokenView === "input" ? "input" : "output"}
                                 <ChevronDown
-                                  className={cn(
-                                    "h-2.5 w-2.5 shrink-0 transition-opacity",
-                                    activeMetric === "Tokens" ? "opacity-30" : "opacity-20"
-                                  )}
+                                  className="h-2.5 w-2.5 shrink-0 text-muted-foreground"
                                   aria-hidden
                                 />
                               </button>
@@ -2800,7 +3036,14 @@ export function Analytics({
                         </div>
                       )}
                     </div>
-                    <span className={cn("text-xl font-semibold tabular-nums", activeMetric === "Tokens" ? "text-foreground" : "text-muted-foreground")}>
+                    <span
+                      className={cn(
+                        "text-xl font-semibold tabular-nums",
+                        activeMetric === "Tokens"
+                          ? "text-foreground"
+                          : "text-muted-foreground"
+                      )}
+                    >
                       {statValue}
                     </span>
                   </div>
@@ -2816,7 +3059,12 @@ export function Analytics({
                   <span className={cn("text-xs font-medium", activeMetric === metric.title ? "text-muted-foreground" : "text-muted-foreground/60")}>
                     {metric.title}
                   </span>
-                  <span className={cn("text-xl font-semibold tabular-nums", activeMetric === metric.title ? "text-foreground" : "text-muted-foreground")}>
+                  <span
+                    className={cn(
+                      "text-xl font-semibold tabular-nums",
+                      activeMetric === metric.title ? "text-foreground" : "text-muted-foreground"
+                    )}
+                  >
                     {statValue}
                   </span>
                 </button>
@@ -2970,6 +3218,17 @@ export function Analytics({
                   {runsForOverviewTable.map((run) => {
                     const sig = getOverviewSignalForRun(run.runId)
                     const isError = run.status === "error"
+                    const evRow = evaluationOverrides[run.runId] ?? RUN_EVALUATION_BY_ID[run.runId]
+                    const evThreshold = evRow ? EVALUATOR_PASS_THRESHOLDS[evRow.evaluatorName] : undefined
+                    const evaluatorFlagged =
+                      Boolean(evRow) && evThreshold != null && evRow.score < evThreshold
+                    /** Yellow overview row = open signal; do not show Success while that alert exists. */
+                    const signalFlagged = Boolean(sig) && !isError
+                    const statusDisplay = isError
+                      ? "error"
+                      : evaluatorFlagged || signalFlagged
+                        ? "flagged"
+                        : run.status
                     return (
                     <TableRow
                       key={run.runId}
@@ -3023,52 +3282,58 @@ export function Analytics({
                       <TableCell>
                         <span className={cn(
                           "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium",
-                          run.status === "success"
+                          statusDisplay === "success"
                             ? "border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/40 dark:text-green-400"
-                            : run.status === "error"
+                            : statusDisplay === "error"
                             ? "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-400"
+                            : statusDisplay === "flagged"
+                            ? "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/45 dark:text-amber-200"
                             : "border-yellow-200 bg-yellow-50 text-yellow-700 dark:border-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-400"
                         )}>
                           <span className={cn(
                             "h-1.5 w-1.5 rounded-full",
-                            run.status === "success" ? "bg-green-500" :
-                            run.status === "error" ? "bg-red-500" :
+                            statusDisplay === "success" ? "bg-green-500" :
+                            statusDisplay === "error" ? "bg-red-500" :
+                            statusDisplay === "flagged" ? "bg-amber-500" :
                             "bg-yellow-500"
                           )} />
-                          <span className="capitalize">{run.status}</span>
+                          <span className="capitalize">{statusDisplay}</span>
                         </span>
                       </TableCell>
                       <TableCell className="text-muted-foreground">{run.created}</TableCell>
                       {overviewShowEvaluatorColumn && (
                         <TableCell className="align-middle">
                           {(() => {
-                            const ev = evaluationOverrides[run.runId] ?? RUN_EVALUATION_BY_ID[run.runId]
-                            if (!ev) {
+                            if (!evRow) {
                               return <span className="text-sm text-muted-foreground/60">—</span>
                             }
                             return (
                               <Tooltip delayDuration={200}>
                                 <TooltipTrigger asChild>
                                   {(() => {
-                                    const threshold = EVALUATOR_PASS_THRESHOLDS[ev.evaluatorName]
-                                    const pass = threshold == null || ev.score >= threshold
+                                    const threshold = EVALUATOR_PASS_THRESHOLDS[evRow.evaluatorName]
+                                    const pass = threshold == null || evRow.score >= threshold
+                                    const signalRowChip =
+                                      Boolean(sig) && !isError
                                     return (
                                       <div className="inline-flex max-w-[14rem] cursor-default items-center gap-2 text-left">
-                                        <span className="truncate text-xs font-medium text-foreground">{ev.evaluatorName}</span>
                                         <span className={cn(
                                           "shrink-0 rounded px-1.5 py-0.5 text-[11px] tabular-nums font-semibold",
-                                          pass
-                                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
-                                            : "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400",
+                                          signalRowChip
+                                            ? "border border-yellow-200 bg-yellow-50 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300"
+                                            : pass
+                                              ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                                              : "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400",
                                         )}>
-                                          {(ev.score / 10).toFixed(1)}
+                                          {(evRow.score / 10).toFixed(1)}
                                         </span>
+                                        <span className="min-w-0 truncate text-xs font-medium text-foreground">{evRow.evaluatorName}</span>
                                       </div>
                                     )
                                   })()}
                                 </TooltipTrigger>
                                 <TooltipContent side="top" className="max-w-xs text-xs" hideArrow>
-                                  {ev.summary}
+                                  {evRow.summary}
                                 </TooltipContent>
                               </Tooltip>
                             )
@@ -3144,16 +3409,20 @@ export function Analytics({
                                 <DropdownMenuItem
                                   className="gap-2"
                                   onSelect={() => {
-                                    tabContext?.openExperimentVariantBuilderIntro?.()
+                                    setSelectedRunId(run.runId)
+                                    setSelectedGanttNode(null)
+                                    setRerunTargetNode(null)
+                                    setRerunNodeValues({})
+                                    setRerunPickNodeMode(true)
+                                    setRerunNodeSheetOpen(true)
                                   }}
                                 >
                                   <GitFork className="h-4 w-4" />
-                                  Fork Run
+                                  Rerun with changes
                                 </DropdownMenuItem>
                               </TooltipTrigger>
                               <TooltipContent side="left" className="max-w-xs text-balance">
-                                Open the Experiment variant-builder flow (intro modal, then Workflow in variant mode,
-                                then Create variant)—same as Add variant column on the Experiment tab.
+                                Modify a node's settings and simulate a new run.
                               </TooltipContent>
                             </Tooltip>
                             <Tooltip>

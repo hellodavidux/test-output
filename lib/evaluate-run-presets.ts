@@ -9,7 +9,6 @@ export type RunEvaluationSummary = {
 export const EV_RESPONSE = "Response accuracy"
 export const EV_TONE = "Tone & empathy"
 export const EV_RESOLUTION = "Resolution completeness"
-export const EV_ESCALATION = "Escalation detection rate"
 
 export type EvalRunPreset = {
   id: string
@@ -25,8 +24,8 @@ export const EVAL_RUN_PRESET_LIST: EvalRunPreset[] = [
   {
     id: "preset-tone",
     evaluatorName: EV_TONE,
-    subtitle: "LLM judge · Draft Response",
-    evaluatedNodeLabel: "Draft Response",
+    subtitle: "LLM judge · Output",
+    evaluatedNodeLabel: "Output",
     score: 82,
     summary:
       "Tone remains professional with appropriate empathy; pacing is clear and the closing aligns with support standards.",
@@ -51,11 +50,11 @@ export const EVAL_RUN_PRESET_LIST: EvalRunPreset[] = [
   },
   {
     id: "preset-escalation",
-    evaluatorName: EV_ESCALATION,
-    subtitle: "Policy trace · Escalation Router",
-    evaluatedNodeLabel: "Escalation Router",
+    evaluatorName: EV_TONE,
+    subtitle: "LLM judge · Output",
+    evaluatedNodeLabel: "Output",
     score: 52,
     summary:
-      "The run should have routed to human billing review for a charge older than 30 days, but the agent issued a self-serve refund form instead. The Escalation Router node did not fire despite explicit policy thresholds in the workflow context. Reliability for this evaluator is below the bar you would want for production billing disputes.",
+      "Tone reads transactional around the billing dispute and steers straight to a self-serve path without acknowledging urgency or older charges; empathy and clear human handoff language are thin for this scenario.",
   },
 ]

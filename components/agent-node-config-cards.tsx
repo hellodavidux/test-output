@@ -193,7 +193,7 @@ export function AgentPlaceholderSections() {
       {AGENT_PLACEHOLDER_SECTIONS.map(({ label, Icon }) => (
         <div
           key={label}
-          className="flex items-center justify-between rounded-lg bg-gray-50/80 px-3 py-2.5 text-sm text-gray-600"
+          className="flex items-center justify-between rounded-lg px-3 py-2.5 text-sm text-gray-600"
         >
           <span className="flex min-w-0 items-center gap-2.5">
             <Icon className="size-4 shrink-0 text-gray-500" aria-hidden />

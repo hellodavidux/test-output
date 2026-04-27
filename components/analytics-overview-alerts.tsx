@@ -72,7 +72,7 @@ export function UnifiedAlertsPanel({
           <TriangleAlert className="h-3.5 w-3.5 text-yellow-500" />
           <span className="font-medium text-foreground">{signals.length} signal{signals.length !== 1 ? "s" : ""}</span>
           {signalsHighCount > 0 && (
-            <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-600">
+            <span className="rounded-full bg-yellow-100 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-800">
               {signalsHighCount} high
             </span>
           )}
@@ -85,7 +85,7 @@ export function UnifiedAlertsPanel({
           <Layers className="h-3.5 w-3.5 text-amber-500" />
           <span className="font-medium text-foreground">{clusters.length} cluster{clusters.length !== 1 ? "s" : ""}</span>
           {clustersHighCount > 0 && (
-            <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-600">
+            <span className="rounded-full bg-yellow-100 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-800">
               {clustersHighCount} high
             </span>
           )}

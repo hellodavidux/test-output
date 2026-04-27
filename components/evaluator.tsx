@@ -699,14 +699,11 @@ const INITIAL_CASES: TestCase[] = [{ id: "c-default", input: "", expected: "" }]
 
 /** Prototype: default experiment rows → existing Analytics mock runs (Gantt / Run Details). */
 const DEMO_ANALYTICS_RUN_ID_BY_CASE_ID: Record<string, string> = {
-  "c-1": "c9d0e1f2-a3b4-5678-2345-789012345678",
+  /** Same run as Analytics overview policy signal (yellow row) — aligns experiment “View run” + score chips. */
+  "c-1": "c3d4e5f6-a7b8-9012-cdef-123456789012",
   "c-2": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "c-3": "a7b8c9d0-e1f2-3456-0123-567890123456",
   "c-4": "b8c9d0e1-f2a3-4567-1234-678901234567",
-}
-
-function analyticsRunIdForExperimentCase(tc: TestCase): string | null {
-  return tc.sourceRunId ?? DEMO_ANALYTICS_RUN_ID_BY_CASE_ID[tc.id] ?? null
 }
 
 // Mock outputs: [caseId][variantId] → output string
@@ -866,6 +863,25 @@ function experimentMockBackingCaseId(caseId: string): string {
   return MOCK_CELL_OUTPUTS[caseId] ? caseId : "c-1"
 }
 
+/** Sync with `OVERVIEW_SIGNALS` runIds in `components/analytics.tsx`. */
+const ANALYTICS_SIGNAL_LINKED_RUN_IDS = new Set<string>([
+  "c3d4e5f6-a7b8-9012-cdef-123456789012",
+  "d0e1f2a3-b4c5-6789-3456-890123456789",
+])
+
+function analyticsRunIdForExperimentCase(tc: TestCase): string | null {
+  if (tc.sourceRunId) return tc.sourceRunId
+  const explicit = DEMO_ANALYTICS_RUN_ID_BY_CASE_ID[tc.id]
+  if (explicit) return explicit
+  const backing = experimentMockBackingCaseId(tc.id)
+  return DEMO_ANALYTICS_RUN_ID_BY_CASE_ID[backing] ?? null
+}
+
+function experimentCaseLinkedToAnalyticsSignal(tc: TestCase): boolean {
+  const id = analyticsRunIdForExperimentCase(tc)
+  return id != null && ANALYTICS_SIGNAL_LINKED_RUN_IDS.has(id)
+}
+
 const EXPERIMENT_COLUMN_OUTPUT_ALT_SUFFIX = "__output-2"
 
 const KNOWN_MOCK_EXPERIMENT_VARIANT_IDS = new Set<string>(["v-1", "v-2", "v-3"])
@@ -946,13 +962,44 @@ function resolveExperimentCellExplanation(
   return `Score ${formatScoreTenPoint(score)}/10 — Preview for "${evalLabel}". Detailed judge rationale will follow your rubric once this evaluator runs on the table.`
 }
 
+/** Stable mock latency / token usage per experiment cell (prototype). */
+function resolveExperimentCellEvalStats(
+  mockCaseId: string,
+  variantId: string,
+  mockVKey: string,
+  evalId: string,
+): { latencyLabel: string; tokensLabel: string } {
+  const seed = hashStringToSeed(`${mockCaseId}:${variantId}:${mockVKey}:${evalId}:eval-stats`)
+  const latencyMs = 820 + (seed % 3180)
+  const latencyLabel = `${(latencyMs / 1000).toFixed(2)}s`
+  const tokens = 140 + (seed % 820)
+  const tokensLabel = `${tokens.toLocaleString()} tokens`
+  return { latencyLabel, tokensLabel }
+}
+
 function scorePassFail(score: number, threshold: number | undefined): "pass" | "fail" | "neutral" {
   if (threshold == null) return "neutral"
   return score >= threshold ? "pass" : "fail"
 }
 
-function ScoreChip({ score, threshold }: { score: number | null; threshold?: number }) {
+function ScoreChip({
+  score,
+  threshold,
+  signalRow,
+}: {
+  score: number | null
+  threshold?: number
+  /** When the experiment case is tied to an Analytics run with an open signal (yellow overview row). */
+  signalRow?: boolean
+}) {
   if (score === null) return null
+  if (signalRow) {
+    return (
+      <span className="inline-flex items-center rounded border border-yellow-200 bg-yellow-50 px-1 py-0.5 text-[11px] font-semibold tabular-nums leading-none text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300">
+        {formatScoreTenPoint(score)}
+      </span>
+    )
+  }
   const state = scorePassFail(score, threshold)
   return (
     <span
@@ -981,22 +1028,55 @@ function MatchChip({ match }: { match: boolean | null }) {
   )
 }
 
-function EvalGradingRow({ evalLabel, score, threshold, truncated, full, hasMore }: {
+function EvalGradingRow({
+  evalLabel,
+  score,
+  threshold,
+  truncated,
+  full,
+  hasMore,
+  latencyLabel,
+  tokensLabel,
+  signalRow,
+}: {
   evalLabel: string
   score: number
   threshold?: number
   truncated: string
   full: string
   hasMore: boolean
+  /** Evaluator wall-clock latency (e.g. \`1.24s\`). */
+  latencyLabel?: string
+  /** Token usage for this eval call (e.g. \`412 tokens\`). */
+  tokensLabel?: string
+  signalRow?: boolean
 }) {
   const [expanded, setExpanded] = React.useState(false)
   const showToggle = hasMore || expanded
+  const showStats = Boolean(latencyLabel && tokensLabel)
+  const tokensCountDisplay =
+    tokensLabel?.replace(/\s*tokens\s*$/i, "").trim() ?? ""
   return (
     <div className="px-4 py-1.5">
       <div className="flex flex-col gap-1 rounded-lg border border-border/70 bg-muted/40 p-2 dark:border-border dark:bg-muted/30">
-        <div className="flex min-w-0 flex-row flex-wrap items-center gap-2">
-          <ScoreChip score={score} threshold={threshold} />
-          <span className="min-w-0 text-[11px] font-medium leading-tight text-foreground">{evalLabel}</span>
+        <div className="flex min-w-0 flex-row flex-wrap items-center gap-x-3 gap-y-1">
+          <label className="flex min-w-0 w-fit max-w-full shrink-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+            <ScoreChip score={score} threshold={threshold} signalRow={signalRow} />
+            <span className="min-w-0 text-[11px] font-medium leading-tight text-foreground">{evalLabel}</span>
+          </label>
+          {showStats ? (
+            <span className="flex min-w-0 flex-wrap items-center gap-x-2 text-[9px] font-medium leading-tight tabular-nums text-muted-foreground">
+              <span title="Latency">
+                Latency: {latencyLabel}
+              </span>
+              <span className="text-muted-foreground/35 select-none" aria-hidden>
+                ·
+              </span>
+              <span title="Tokens used">
+                Tokens: {tokensCountDisplay || tokensLabel}
+              </span>
+            </span>
+          ) : null}
         </div>
         <div className="flex min-w-0 items-start gap-1">
           <p
@@ -1824,7 +1904,7 @@ function ExperimentTab({
                     <span className="inline-flex shrink-0 rounded-md">
                       <Button
                         size="sm"
-                        className="h-8 w-[168px] shrink-0 justify-center gap-1.5 bg-foreground text-background hover:bg-foreground/90 disabled:opacity-60"
+                        className="h-8 w-[133px] shrink-0 justify-center gap-1.5 bg-foreground text-background hover:bg-foreground/90 disabled:opacity-60"
                         disabled
                         onClick={handleRunEvaluator}
                       >
@@ -1841,7 +1921,7 @@ function ExperimentTab({
             ) : (
               <Button
                 size="sm"
-                className="h-8 w-[168px] shrink-0 justify-center gap-1.5 bg-foreground text-background hover:bg-foreground/90 disabled:opacity-60"
+                className="h-8 w-[133px] shrink-0 justify-center gap-1.5 bg-foreground text-background hover:bg-foreground/90 disabled:opacity-60"
                 onClick={handleRunEvaluator}
               >
                 <Play className={cn("w-3.5 h-3.5", isRunning && "animate-spin")} />
@@ -2262,6 +2342,12 @@ function ExperimentTab({
                             const sentences = explanation ? explanation.split(/(?<=[.!?])\s+/) : []
                             const truncated = sentences.slice(0, 2).join(" ")
                             const hasMore = sentences.length > 2
+                            const { latencyLabel, tokensLabel } = resolveExperimentCellEvalStats(
+                              mockCaseId,
+                              v.id,
+                              mockVKey,
+                              ev.id,
+                            )
                             return (
                               <EvalGradingRow
                                 key={ev.id}
@@ -2271,6 +2357,9 @@ function ExperimentTab({
                                 truncated={truncated}
                                 full={explanation ?? ""}
                                 hasMore={hasMore}
+                                latencyLabel={latencyLabel}
+                                tokensLabel={tokensLabel}
+                                signalRow={experimentCaseLinkedToAnalyticsSignal(tc)}
                               />
                             )
                           })
@@ -2770,6 +2859,8 @@ function ExperimentTab({
         const outSrc = v.columnOutput ?? DEFAULT_EXPERIMENT_COLUMN_OUTPUT
         const sheetEvalDefs = evalDefs.filter((ev) => selectedEvalIds.includes(ev.id))
         const linkedAnalyticsRunId = analyticsRunIdForExperimentCase(tc)
+        const signalLinkedCase =
+          linkedAnalyticsRunId != null && ANALYTICS_SIGNAL_LINKED_RUN_IDS.has(linkedAnalyticsRunId)
         const cellSheetInputResolved = experimentTriggerPayloadForDisplay(tc.input)
         return (
           <>
@@ -2789,23 +2880,6 @@ function ExperimentTab({
                 </div>
                 <button type="button" onClick={() => setCellSheet(null)} className="shrink-0 text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
               </div>
-              {linkedAnalyticsRunId && tabContext?.openAnalyticsRunDetailForRun ? (
-                <div className="border-b border-gray-100 px-5 py-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-9 w-full gap-2 border-gray-200 bg-white text-gray-800 hover:bg-gray-50"
-                    onClick={() => {
-                      tabContext.openAnalyticsRunDetailForRun(linkedAnalyticsRunId)
-                      setCellSheet(null)
-                    }}
-                  >
-                    <BarChart3 className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
-                    View run timeline in Analytics
-                  </Button>
-                </div>
-              ) : null}
               <div className="flex-1 flex flex-col gap-0 overflow-auto divide-y divide-gray-100">
                 <div className="flex flex-col gap-1.5 px-5 py-4">
                   <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Input</p>
@@ -2845,12 +2919,22 @@ function ExperimentTab({
                           key={ev.id}
                           className={cn(
                             "flex flex-col gap-2 rounded-lg border px-3 py-2.5",
-                            state === "fail" ? "border-red-100 bg-red-50/50" : "border-gray-100 bg-gray-50/50",
+                            state === "fail" && signalLinkedCase && "border-yellow-200 bg-yellow-50/80",
+                            state === "fail" && !signalLinkedCase && "border-red-100 bg-red-50/50",
+                            state !== "fail" && "border-gray-100 bg-gray-50/50",
                           )}
                         >
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-[13px] font-medium text-gray-700">{ev.label}</span>
-                            {ev.type === "reference" ? <MatchChip match={match} /> : <ScoreChip score={score} threshold={ev.passThreshold} />}
+                            {ev.type === "reference" ? (
+                              <MatchChip match={match} />
+                            ) : (
+                              <ScoreChip
+                                score={score}
+                                threshold={ev.passThreshold}
+                                signalRow={signalLinkedCase}
+                              />
+                            )}
                           </div>
                           {explanation && (
                             <p className="text-[12px] text-gray-500 leading-snug">{explanation}</p>
@@ -2860,6 +2944,23 @@ function ExperimentTab({
                     })
                   )}
                 </div>
+                {linkedAnalyticsRunId && tabContext?.openAnalyticsRunDetailForRun ? (
+                  <div className="px-5 py-4">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 w-full gap-2 border-gray-200 bg-white text-gray-800 hover:bg-gray-50"
+                      onClick={() => {
+                        tabContext.openAnalyticsRunDetailForRun(linkedAnalyticsRunId)
+                        setCellSheet(null)
+                      }}
+                    >
+                      <BarChart3 className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+                      View run timeline in Analytics
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             </div>
           </>
@@ -3706,7 +3807,7 @@ const INITIAL_EVALUATORS: EvaluatorConfig[] = [
   {
     id: 2,
     name: "Tone & empathy",
-    output: "Draft Response → output",
+    output: "Output → output",
     type: "LLM judge",
     judgeModel: "gpt-4o",
     expected: "1–5 scale · must acknowledge frustration for priority:high tickets",
@@ -3929,7 +4030,7 @@ function EvaluatorsTab({
                 {parseAutoRunFromStored(ev.runWhen) ? (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:border-emerald-800/50 dark:bg-emerald-950/40 dark:text-emerald-400 cursor-default">
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 cursor-default">
                         <span className="relative flex h-1.5 w-1.5 shrink-0">
                           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                           <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
@@ -3942,7 +4043,7 @@ function EvaluatorsTab({
                     </TooltipContent>
                   </Tooltip>
                 ) : (
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/40" />
                     Manual
                   </span>
@@ -4967,6 +5068,10 @@ function CreateSignalSheet({
   const [prompt, setPrompt] = useState("")
   const [alertsEnabled, setAlertsEnabled] = useState(false)
   const [scope, setScope] = useState<SignalScopeValue>("full-trace")
+  const [historicalRunMode, setHistoricalRunMode] = useState<"all" | "specific">("all")
+  const [historicalRunIds, setHistoricalRunIds] = useState<string[]>([])
+  const [historicalRunning, setHistoricalRunning] = useState(false)
+  const [historicalResults, setHistoricalResults] = useState<{ id: string; label: string; fired: boolean }[] | null>(null)
 
   const tpl =
     category != null
@@ -5150,6 +5255,93 @@ function CreateSignalSheet({
                 </div>
                 <Switch checked={alertsEnabled} onCheckedChange={setAlertsEnabled} />
               </section>
+
+              {/* ── Test with historical runs ── */}
+              <section className="space-y-3 rounded-lg border border-border/60 bg-muted/10 px-4 py-4">
+                <div className="space-y-0.5">
+                  <p className="text-sm font-semibold">Test signal with historical runs</p>
+                  <p className="text-xs text-muted-foreground">Run a retrospective analysis to see how this signal would have fired on past runs.</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">Runs to test against</Label>
+                  <Select value={historicalRunMode} onValueChange={(v) => { setHistoricalRunMode(v as "all" | "specific"); setHistoricalRunIds([]); setHistoricalResults(null) }}>
+                    <SelectTrigger className="h-9 w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All historical runs</SelectItem>
+                      <SelectItem value="specific">Specific runs</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {historicalRunMode === "specific" && (
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Select runs</Label>
+                    <div className="space-y-1.5 rounded-md border border-border/70 bg-background px-3 py-2">
+                      {MOCK_LOGGED_RUNS.map((run) => (
+                        <label key={run.id} className="flex cursor-pointer items-center gap-2.5 py-0.5">
+                          <input
+                            type="checkbox"
+                            className="h-3.5 w-3.5 rounded accent-foreground"
+                            checked={historicalRunIds.includes(run.id)}
+                            onChange={(e) => {
+                              setHistoricalRunIds((prev) =>
+                                e.target.checked ? [...prev, run.id] : prev.filter((id) => id !== run.id)
+                              )
+                              setHistoricalResults(null)
+                            }}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="text-xs font-medium text-foreground">{run.label}</span>
+                            <span className="ml-1.5 text-[11px] text-muted-foreground">{run.meta}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {historicalResults && (
+                  <div className="space-y-1.5 rounded-md border border-border/60 bg-background px-3 py-2.5">
+                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Results</p>
+                    {historicalResults.map((r) => (
+                      <div key={r.id} className="flex items-center justify-between gap-2">
+                        <span className="text-xs text-foreground">{r.label}</span>
+                        <span className={cn("text-[11px] font-medium", r.fired ? "text-amber-600" : "text-emerald-600")}>
+                          {r.fired ? "Would fire" : "No match"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-2"
+                  disabled={historicalRunning || (historicalRunMode === "specific" && historicalRunIds.length === 0)}
+                  onClick={() => {
+                    setHistoricalRunning(true)
+                    setHistoricalResults(null)
+                    setTimeout(() => {
+                      const runsToTest = historicalRunMode === "all"
+                        ? MOCK_LOGGED_RUNS
+                        : MOCK_LOGGED_RUNS.filter((r) => historicalRunIds.includes(r.id))
+                      setHistoricalResults(runsToTest.map((r, i) => ({ id: r.id, label: r.label, fired: i % 2 === 0 })))
+                      setHistoricalRunning(false)
+                    }, 1400)
+                  }}
+                >
+                  {historicalRunning ? (
+                    <><Loader2 className="h-3.5 w-3.5 animate-spin" />Running…</>
+                  ) : (
+                    <><Play className="h-3.5 w-3.5" />Run retrospective</>
+                  )}
+                </Button>
+              </section>
             </>
           )}
 
@@ -5225,7 +5417,8 @@ function SignalsTab({
 
       <div className="flex justify-end">
         <Button variant="outline" size="sm" className="h-8 shrink-0" type="button" onClick={() => setCreateSignalOpen(true)}>
-          + add signal
+          <Plus className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          Create New Signal
         </Button>
       </div>
 
@@ -5253,26 +5446,29 @@ function SignalsTab({
                 "group px-4 py-3.5 min-h-[4rem] transition-colors hover:bg-muted/30"
               )}
             >
-              {/* Name + linked evaluator under title */}
-              <div className="min-w-0 flex flex-col gap-1">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-sm font-semibold text-foreground truncate">{sig.name}</span>
-                  {sig.badge ? (
-                    <Badge variant="secondary" className="shrink-0 text-[10px] font-medium px-1.5 py-0">{sig.badge}</Badge>
-                  ) : null}
-                </div>
+              {/* Linked: eval name; else signal name. */}
+              <div className="min-w-0 flex flex-wrap items-center gap-1.5">
                 {sig.linkedEvaluatorName ? (
-                  <button
-                    type="button"
-                    onClick={() => sig.linkedEvaluatorId != null && onOpenEvaluator(sig.linkedEvaluatorId)}
-                    className="w-fit min-w-0 max-w-full text-left text-[12px] text-foreground/80 underline-offset-2 hover:text-foreground hover:underline"
-                    title={sig.linkedEvaluatorName}
-                  >
-                    <span className="truncate">{sig.linkedEvaluatorName}</span>
-                  </button>
+                  sig.linkedEvaluatorId != null ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpenEvaluator(sig.linkedEvaluatorId!)}
+                      className="w-fit min-w-0 max-w-full text-left text-sm font-semibold text-foreground truncate underline-offset-2 hover:text-foreground hover:underline"
+                      title={sig.linkedEvaluatorName}
+                    >
+                      <span className="truncate">{sig.linkedEvaluatorName}</span>
+                    </button>
+                  ) : (
+                    <span className="text-sm font-semibold text-foreground truncate" title={sig.linkedEvaluatorName}>
+                      {sig.linkedEvaluatorName}
+                    </span>
+                  )
                 ) : (
-                  <span className="text-[12px] text-muted-foreground/50 italic">Standalone</span>
+                  <span className="text-sm font-semibold text-foreground truncate">{sig.name}</span>
                 )}
+                {sig.badge ? (
+                  <Badge variant="secondary" className="shrink-0 text-[10px] font-medium px-1.5 py-0">{sig.badge}</Badge>
+                ) : null}
               </div>
 
               {/* Category */}

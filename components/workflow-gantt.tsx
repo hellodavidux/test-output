@@ -17,6 +17,7 @@ import {
   X,
   Loader2,
   GitCompare,
+  GitFork,
   Shield,
   Wrench,
   Sparkles,
@@ -216,23 +217,19 @@ function spanAbsoluteRange(parent: GanttNode, span: LlmSpan): { startSec: number
   }
 }
 
-function LlmSpanKindIcon({ kind, result }: { kind: LlmSpan["kind"]; result?: LlmSpan["result"] }) {
+function LlmSpanKindIcon({ kind }: { kind: LlmSpan["kind"]; result?: LlmSpan["result"] }) {
+  const mono = "h-3 w-3 text-muted-foreground"
   switch (kind) {
     case "thinking":
-      return <Sparkles className="h-3 w-3 text-violet-500/90" />
+      return <Sparkles className={mono} />
     case "tool":
-      return <Wrench className="h-3 w-3 text-amber-600/90" />
+      return <Wrench className={mono} />
     case "completion":
-      return <MessageSquare className="h-3 w-3 text-sky-600/90" />
+      return <MessageSquare className={mono} />
     case "guardrail":
-      return (
-        <Shield className={cn(
-          "h-3 w-3",
-          result === "block" ? "text-red-500/90" : result === "flag" ? "text-amber-500/90" : "text-emerald-600/90"
-        )} />
-      )
+      return <Shield className={mono} />
     default:
-      return <Sparkles className="h-3 w-3 text-muted-foreground" />
+      return <Sparkles className={mono} />
   }
 }
 
@@ -302,13 +299,15 @@ interface WorkflowGanttProps {
   highlightNodeId?: string | null
   /** Called when the compare action is triggered on an AI Agent row. */
   onCompareClick?: (node: GanttNode) => void
+  /** Called when the rerun-with-changes action is triggered on a row. */
+  onForkClick?: (node: GanttNode) => void
   /** When set, this node id is marked with a signal warning indicator. */
   signalNodeId?: string | null
   /** When set, this node id is highlighted as the root cause of a quality failure. */
   rootCauseNodeId?: string | null
 }
 
-export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = false, isRunning = false, runStartTime = null, nodes: nodesProp, highlightNodeId = null, onCompareClick, signalNodeId = null, rootCauseNodeId = null }: WorkflowGanttProps) {
+export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = false, isRunning = false, runStartTime = null, nodes: nodesProp, highlightNodeId = null, onCompareClick, onForkClick, signalNodeId = null, rootCauseNodeId = null }: WorkflowGanttProps) {
   const sourceNodes = nodesProp ?? MOCK_NODES
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set(["9"]))
   const [expandedLlmAgentIds, setExpandedLlmAgentIds] = useState<Set<string>>(new Set())
@@ -876,10 +875,10 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                     >
                       <div
                         className="flex items-center gap-0 h-8 text-sm flex-shrink-0 bg-muted/10 border-r border-border/40 overflow-hidden"
-                        style={{ width: LEFT_WIDTH, paddingLeft: parent.depth * 16 + 20 }}
+                        style={{ width: LEFT_WIDTH, paddingLeft: parent.depth * 16 + 12 }}
                       >
-                        <span className="w-6 shrink-0" aria-hidden />
-                        <span className="flex items-center gap-1.5 rounded-md py-0.5 pl-0.5 pr-3 min-w-0 flex-1">
+                        <span className="w-4 shrink-0" aria-hidden />
+                        <span className="flex items-center gap-1.5 rounded-md py-0.5 pl-0 pr-3 min-w-0 flex-1">
                           <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-muted/50 border border-border/40">
                             <LlmSpanKindIcon kind={span.kind} result={span.result} />
                           </span>
@@ -954,7 +953,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                       isSelected && "bg-muted/30 shadow-[inset_2px_0_0_0_hsl(var(--primary))]",
                       isHighlighted && "bg-primary/5 hover:bg-primary/5",
                       isSignaled && "bg-amber-50/60 shadow-[inset_2px_0_0_0_theme(colors.amber.400)] hover:bg-amber-50/80",
-                      isRootCause && "bg-red-50/50 shadow-[inset_2px_0_0_0_theme(colors.red.400)] hover:bg-red-50/70 dark:bg-red-950/20 dark:shadow-[inset_2px_0_0_0_theme(colors.red.600)]"
+                      isRootCause && ""
                     )}
                     style={{ minHeight: ROW_HEIGHT }}
                     role="button"
@@ -998,12 +997,12 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                       )}
                       style={{ width: LEFT_WIDTH, paddingLeft: node.depth * 16 }}
                     >
-                      <span className="w-6 shrink-0" aria-hidden />
+                      <span className="w-4 shrink-0" aria-hidden />
                       <span
                         role="button"
                         tabIndex={0}
                         className={cn(
-                          "flex items-center gap-1.5 rounded-md py-0.5 pl-0.5 pr-3 min-w-0 flex-1",
+                          "flex items-center gap-1.5 rounded-md py-0.5 pl-0 pr-3 min-w-0 flex-1",
                           hasLlmSpanDetail(node) && !node.hasChildren && "group/icon"
                         )}
                         onClick={(e) => {
@@ -1081,20 +1080,35 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                         )}
                         <span className={cn(
                           "truncate flex-1 min-w-0",
-                          isRootCause ? "text-red-700 dark:text-red-400 font-medium" : isSignaled ? "text-amber-700 font-medium" : "text-foreground"
+                          isSignaled ? "text-amber-700 font-medium" : "text-foreground"
                         )}>
                           {node.label}
                         </span>
                         {isRootCause && (
-                          <span className="shrink-0 inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-400" title="Root cause of quality failure">
+                          <span className="shrink-0 inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide bg-yellow-100 text-yellow-800 dark:bg-yellow-950/60 dark:text-yellow-400" title="Root cause of quality failure">
                             Root cause
                           </span>
                         )}
-                        {isSignaled && !isRootCause && (
-                          <span className="shrink-0 flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-white" title="Signal detected on this node">
-                            <span className="text-[9px] font-bold leading-none">!</span>
-                          </span>
-                        )}
+                        <Tooltip delayDuration={200}>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                              aria-label="Rerun with changes"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                onForkClick?.(node)
+                              }}
+                            >
+                              <GitFork className="h-3.5 w-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" sideOffset={4} className="text-xs bg-white dark:bg-card border border-border shadow-md" hideArrow>
+                            Rerun with changes
+                          </TooltipContent>
+                        </Tooltip>
                         {node.label === "AI Agent" && (
                           <Tooltip delayDuration={200}>
                             <TooltipTrigger asChild>
@@ -1119,15 +1133,37 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                         )}
                         <span
                           className={cn(
-                            "flex h-3 w-3 shrink-0 items-center justify-center rounded-full",
-                            effectiveStatus === "error" && "bg-red-500",
-                            effectiveStatus === "success" && "bg-green-500",
-                            effectiveStatus === "skipped" && "bg-muted-foreground/30"
+                            "flex shrink-0 items-center justify-center rounded-full",
+                            effectiveStatus === "error" && "h-3 w-3 bg-red-500",
+                            !isSignaled &&
+                              effectiveStatus === "success" &&
+                              "h-3 w-3 bg-green-500",
+                            !isSignaled &&
+                              effectiveStatus === "skipped" &&
+                              "h-3 w-3 bg-muted-foreground/30",
+                            isSignaled &&
+                              effectiveStatus !== "error" &&
+                              "h-3 w-3 bg-amber-400 text-white"
                           )}
-                          aria-label={effectiveStatus === "error" ? "Failed" : effectiveStatus === "success" ? "Success" : "Skipped"}
+                          title={
+                            isSignaled && effectiveStatus !== "error"
+                              ? "Signal detected on this node"
+                              : undefined
+                          }
+                          aria-label={
+                            effectiveStatus === "error"
+                              ? "Failed"
+                              : isSignaled && effectiveStatus !== "error"
+                                ? "Signal detected on this node"
+                                : effectiveStatus === "success"
+                                  ? "Success"
+                                  : "Skipped"
+                          }
                         >
                           {effectiveStatus === "error" ? (
                             <X className="h-2 w-2 text-white stroke-[3]" />
+                          ) : isSignaled ? (
+                            <span className="text-[8px] font-bold leading-none">!</span>
                           ) : effectiveStatus === "success" ? (
                             <Check className="h-2 w-2 text-white stroke-[3]" />
                           ) : null}
