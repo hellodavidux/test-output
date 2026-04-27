@@ -31,6 +31,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { cn } from "@/lib/utils"
 import { buildExperimentSeedFromPrefill, type ExperimentRunSeed } from "@/lib/experiment-run-seed"
 import { INITIAL_ANALYTICS_RUNS, type RunData } from "@/lib/analytics-runs"
+import type { RunEvaluationSummary } from "@/lib/evaluate-run-presets"
 import type { SelectedAction } from "@/lib/types"
 import { Analytics } from "@/components/analytics"
 import { Evaluator } from "@/components/evaluator"
@@ -68,6 +69,8 @@ export const TabContext = React.createContext<{
   }) => void
   /** Workflow Run progress ⋯: switch to Analytics and open the Evaluate run dialog for this run id. */
   openEvaluateRunFromWorkflow: (runId: string) => void
+  /** Persist a completed “Run evaluation” result so Run Details shows it (Workflow modal + Analytics). */
+  applyRunEvaluationOverride: (runId: string, summary: RunEvaluationSummary) => void
 } | null>(null)
 
 interface DashboardLayoutProps {
@@ -112,6 +115,13 @@ export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLa
   const [variantBuilderIntroToken, setVariantBuilderIntroToken] = React.useState<string | null>(null)
   const [publishMenuOpen, setPublishMenuOpen] = React.useState(false)
   const [runEvaluatorOnPublish, setRunEvaluatorOnPublish] = React.useState(true)
+  const [runEvaluationOverrides, setRunEvaluationOverrides] = React.useState<
+    Record<string, RunEvaluationSummary>
+  >({})
+
+  const applyRunEvaluationOverride = React.useCallback((runId: string, summary: RunEvaluationSummary) => {
+    setRunEvaluationOverrides((prev) => ({ ...prev, [runId]: summary }))
+  }, [])
 
   const appendAnalyticsRun = React.useCallback((run: RunData) => {
     setAnalyticsRuns((prev) => [...prev, run])
@@ -556,6 +566,8 @@ export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLa
               onPendingEvaluateRunConsumed={clearPendingEvaluateRunId}
               runs={analyticsRuns}
               onAppendRun={appendAnalyticsRun}
+              evaluationOverrides={runEvaluationOverrides}
+              onApplyEvalOverride={applyRunEvaluationOverride}
             />
           ) : activeTab === "Evaluator" ? (
             <Evaluator
@@ -591,6 +603,7 @@ export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLa
         cancelWorkflowVariantEditFromExperiment,
         openExperimentVariantBuilderIntro,
         openEvaluateRunFromWorkflow,
+        applyRunEvaluationOverride,
       }}
     >
       <div

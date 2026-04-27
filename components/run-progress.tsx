@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useRef } from "react"
+import React, { useState, useEffect, useRef, useCallback } from "react"
 import {
   Clock,
   ChevronUp,
@@ -28,6 +28,18 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { SaveRunToDatabaseModal } from "./save-run-to-database-modal"
 import type { WorkflowNodeData } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { EVAL_RUN_PRESET_LIST } from "@/lib/evaluate-run-presets"
+import { toast } from "sonner"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 const DEFAULT_WORKFLOW_INPUT_FALLBACK =
   "I was charged twice for my Pro subscription this month. This is the third time I've reached out with no response."
@@ -87,6 +99,9 @@ export function RunProgress({
   const [isExpanded, setIsExpanded] = useState(true)
   const [selectedNode, setSelectedNode] = useState<Node | null>(null)
   const [saveToDatabaseOpen, setSaveToDatabaseOpen] = useState(false)
+  const [workflowEvaluateOpen, setWorkflowEvaluateOpen] = useState(false)
+  const [workflowEvaluatePresetId, setWorkflowEvaluatePresetId] = useState(EVAL_RUN_PRESET_LIST[0]!.id)
+  const [workflowEvaluateBusy, setWorkflowEvaluateBusy] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const tabContext = React.useContext(TabContext)
@@ -104,6 +119,33 @@ export function RunProgress({
     setIsExpanded(expanded)
     onExpandChange?.(expanded)
   }
+
+  const confirmWorkflowEvaluate = useCallback(() => {
+    if (!tabContext?.applyRunEvaluationOverride || workflowEvaluateBusy) return
+    const ctx = tabContext
+    const preset = EVAL_RUN_PRESET_LIST.find((p) => p.id === workflowEvaluatePresetId)
+    if (!preset) return
+    setWorkflowEvaluateBusy(true)
+    const targetRunId = effectiveRunId
+    window.setTimeout(() => {
+      ctx.applyRunEvaluationOverride(targetRunId, {
+        evaluatorName: preset.evaluatorName,
+        score: preset.score,
+        summary: preset.summary,
+      })
+      toast.success("Evaluation complete", {
+        description: `${preset.evaluatorName}: ${(preset.score / 10).toFixed(1)}/10 — results are in the Evaluation section of the run panel.`,
+      })
+      ctx.setResetAnalyticsKey?.((k) => k + 1)
+      ctx.openAnalyticsRunDetailForRun(targetRunId)
+      handleExpandChange(false)
+      setWorkflowEvaluateBusy(false)
+      setWorkflowEvaluateOpen(false)
+    }, 950)
+  }, [tabContext, workflowEvaluateBusy, workflowEvaluatePresetId, effectiveRunId, handleExpandChange])
+
+  const selectedWorkflowEvaluatePreset =
+    EVAL_RUN_PRESET_LIST.find((p) => p.id === workflowEvaluatePresetId) ?? EVAL_RUN_PRESET_LIST[0]!
 
   // Generate node progress data from nodes
   const nodeProgress: NodeProgress[] = nodes.map((node, index) => {
@@ -297,20 +339,24 @@ export function RunProgress({
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="h-7 rounded-md px-3 text-xs font-medium text-foreground shadow-none bg-white hover:bg-gray-50"
+                      className={cn(
+                        "h-7 rounded-md px-3 text-xs font-medium text-foreground shadow-none bg-white hover:bg-gray-50",
+                        runStatus === "running" && "opacity-50",
+                      )}
+                      aria-disabled={runStatus === "running"}
                       onClick={() => {
-                        tabContext.openExperimentWithRun({
-                          runId: effectiveRunId,
-                          caseInput: getWorkflowCaseInput(nodes),
-                        })
-                        handleExpandChange(false)
+                        if (runStatus === "running") return
+                        setWorkflowEvaluatePresetId(EVAL_RUN_PRESET_LIST[0]!.id)
+                        setWorkflowEvaluateOpen(true)
                       }}
                     >
                       Evaluate Run
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-xs">
-                    Open the Experiment tab with this run so you can compare variants and evaluate them against it.
+                    {runStatus === "running"
+                      ? "Wait until this run finishes before running an evaluation."
+                      : "Choose an evaluator, run it on this run, then open Run details with the new score in the Evaluation section."}
                   </TooltipContent>
                 </Tooltip>
                 <DropdownMenu>
@@ -462,6 +508,79 @@ export function RunProgress({
         onOpenChange={setSaveToDatabaseOpen}
         runId={effectiveRunId}
       />
+      <Dialog
+        open={workflowEvaluateOpen}
+        onOpenChange={(open) => {
+          if (!open && workflowEvaluateBusy) return
+          setWorkflowEvaluateOpen(open)
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Evaluate run</DialogTitle>
+            <DialogDescription>
+              Pick an evaluator, run it against this run, and see the score in the run sidebar under Evaluation.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-1">
+            <Label htmlFor="evaluate-preset-workflow-run-progress" className="text-sm text-muted-foreground">
+              Evaluator
+            </Label>
+            <Select
+              value={workflowEvaluatePresetId}
+              onValueChange={setWorkflowEvaluatePresetId}
+              disabled={workflowEvaluateBusy}
+            >
+              <SelectTrigger
+                id="evaluate-preset-workflow-run-progress"
+                className="h-auto min-h-10 w-full items-start gap-3 whitespace-normal py-3 data-[size=default]:h-auto [&>svg]:mt-0.5 [&>svg]:shrink-0 [&_[data-slot=select-value]]:line-clamp-none [&_[data-slot=select-value]]:min-h-0 [&_[data-slot=select-value]]:w-full [&_[data-slot=select-value]]:flex-1 [&_[data-slot=select-value]]:items-start [&_[data-slot=select-value]]:self-stretch"
+              >
+                <SelectValue placeholder="Select evaluator">
+                  <span className="flex min-w-0 flex-col items-start gap-0.5 text-left">
+                    <span className="text-sm font-medium leading-snug text-foreground">
+                      {selectedWorkflowEvaluatePreset.evaluatorName}
+                    </span>
+                    <span className="text-xs font-normal leading-tight text-muted-foreground">
+                      Node · {selectedWorkflowEvaluatePreset.evaluatedNodeLabel}
+                    </span>
+                  </span>
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent className="max-w-[min(100vw-2rem,26rem)]">
+                {EVAL_RUN_PRESET_LIST.map((p) => (
+                  <SelectItem key={p.id} value={p.id} className="items-start py-2.5">
+                    <span className="flex min-w-0 flex-col gap-0.5 pr-6 text-left">
+                      <span className="text-sm font-medium leading-snug">{p.evaluatorName}</span>
+                      <span className="text-xs font-normal leading-tight text-muted-foreground">{p.subtitle}</span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setWorkflowEvaluateOpen(false)}
+              disabled={workflowEvaluateBusy}
+            >
+              Cancel
+            </Button>
+            <Button type="button" size="sm" onClick={confirmWorkflowEvaluate} disabled={workflowEvaluateBusy}>
+              {workflowEvaluateBusy ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
+                  Running…
+                </>
+              ) : (
+                "Run evaluation"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <div 
         ref={containerRef}
         data-run-progress-panel="standalone"

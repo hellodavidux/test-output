@@ -78,6 +78,14 @@ import { Command, CommandEmpty, CommandItem, CommandList } from "@/components/ui
 import { TabContext } from "@/components/dashboard-layout"
 import type { RunData } from "@/lib/analytics-runs"
 import { formatAnalyticsRunTimestamp } from "@/lib/analytics-runs"
+import {
+  EVAL_RUN_PRESET_LIST,
+  EV_ESCALATION,
+  EV_RESPONSE,
+  EV_RESOLUTION,
+  EV_TONE,
+  type RunEvaluationSummary,
+} from "@/lib/evaluate-run-presets"
 import { CollapsibleJsonView } from "@/components/collapsible-json"
 import { toast } from "sonner"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -461,18 +469,6 @@ function SaveToDatasetModal({
 }
 
 /** Mock: some runs already scored by a configured evaluator; others not evaluated yet */
-type RunEvaluationSummary = {
-  evaluatorName: string
-  score: number
-  summary: string
-}
-
-/** Label strings for mock run rows — not tied to `INITIAL_EVALUATORS_DEF` order */
-const EV_RESPONSE = "Response accuracy"
-const EV_TONE = "Tone & empathy"
-const EV_RESOLUTION = "Resolution completeness"
-const EV_ESCALATION = "Escalation detection rate"
-
 const RUN_EVALUATION_BY_ID: Record<string, RunEvaluationSummary> = {
   "8af162da-6ee4-4bcf-aa7a-99b1f4adf151": {
     evaluatorName: EV_TONE,
@@ -498,49 +494,6 @@ const RUN_EVALUATION_BY_ID: Record<string, RunEvaluationSummary> = {
       "The run should have routed to human billing review for a charge older than 30 days, but the agent issued a self-serve refund form instead. The Escalation Router node did not fire despite explicit policy thresholds in the workflow context. Reliability for this evaluator is below the bar you would want for production billing disputes.",
   },
 }
-
-/** Selectable presets when the user runs Evaluate from the UI (prototype). */
-const EVAL_RUN_PRESET_LIST: {
-  id: string
-  evaluatorName: string
-  /** Short line under the name (e.g. method + what is scored), shown in the select like Experiment eval pickers. */
-  subtitle: string
-  score: number
-  summary: string
-}[] = [
-  {
-    id: "preset-tone",
-    evaluatorName: EV_TONE,
-    subtitle: "LLM judge · Politeness, empathy, and how clearly the reply reads to the customer",
-    score: 82,
-    summary:
-      "Tone remains professional with appropriate empathy; pacing is clear and the closing aligns with support standards.",
-  },
-  {
-    id: "preset-response",
-    evaluatorName: EV_RESPONSE,
-    subtitle: "LLM judge · Whether facts, numbers, and claims match the conversation and tool outputs",
-    score: 71,
-    summary:
-      "Factual alignment is strong on billed amounts and dates; one secondary detail in the timeline is slightly misstated compared to the source transcript.",
-  },
-  {
-    id: "preset-resolution",
-    evaluatorName: EV_RESOLUTION,
-    subtitle: "Rubric · Closure quality—next steps, ownership, and whether the issue is actually resolved",
-    score: 65,
-    summary:
-      "The agent proposes a resolution path and next steps, though follow-ups for edge cases (policy exceptions) are thin.",
-  },
-  {
-    id: "preset-escalation",
-    evaluatorName: EV_ESCALATION,
-    subtitle: "Policy trace · Escalation thresholds, human handoff, and router decisions vs what the run did",
-    score: 52,
-    summary:
-      "The run should have routed to human billing review for a charge older than 30 days, but the agent issued a self-serve refund form instead. The Escalation Router node did not fire despite explicit policy thresholds in the workflow context. Reliability for this evaluator is below the bar you would want for production billing disputes.",
-  },
-]
 
 /** Overview "Signals" strip — run IDs must match `runs` for Review run navigation */
 const OVERVIEW_SIGNALS = [
@@ -936,6 +889,9 @@ interface AnalyticsProps {
   /** Workflow + evaluator runs (layout-owned so Experiment / Fork can append). */
   runs: RunData[]
   onAppendRun: (run: RunData) => void
+  /** User-ran evaluations (Workflow Run progress modal + Analytics evaluate dialog). */
+  evaluationOverrides: Record<string, RunEvaluationSummary>
+  onApplyEvalOverride: (runId: string, summary: RunEvaluationSummary) => void
 }
 
 export function Analytics({
@@ -949,6 +905,8 @@ export function Analytics({
   onPendingEvaluateRunConsumed,
   runs,
   onAppendRun,
+  evaluationOverrides,
+  onApplyEvalOverride,
 }: AnalyticsProps) {
   const tabContext = React.useContext(TabContext)
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
@@ -983,7 +941,6 @@ export function Analytics({
   const [evaluateRunTargetId, setEvaluateRunTargetId] = useState<string | null>(null)
   const [evaluatePresetId, setEvaluatePresetId] = useState<string>(EVAL_RUN_PRESET_LIST[0]!.id)
   const [evaluateRunBusy, setEvaluateRunBusy] = useState(false)
-  const [evalOverridesByRunId, setEvalOverridesByRunId] = useState<Record<string, RunEvaluationSummary>>({})
 
   const openEvaluateRunDialog = React.useCallback((runId: string) => {
     setEvaluateRunTargetId(runId)
@@ -998,14 +955,11 @@ export function Analytics({
     setEvaluateRunBusy(true)
     const targetId = evaluateRunTargetId
     window.setTimeout(() => {
-      setEvalOverridesByRunId((prev) => ({
-        ...prev,
-        [targetId]: {
-          evaluatorName: preset.evaluatorName,
-          score: preset.score,
-          summary: preset.summary,
-        },
-      }))
+      onApplyEvalOverride(targetId, {
+        evaluatorName: preset.evaluatorName,
+        score: preset.score,
+        summary: preset.summary,
+      })
       setSelectedRunId(targetId)
       setEvaluateRunBusy(false)
       setEvaluateRunDialogOpen(false)
@@ -1014,7 +968,7 @@ export function Analytics({
         description: `${preset.evaluatorName}: ${(preset.score / 10).toFixed(1)}/10 — results are in the Evaluation section of the run panel.`,
       })
     }, 950)
-  }, [evaluateRunTargetId, evaluatePresetId, evaluateRunBusy])
+  }, [evaluateRunTargetId, evaluatePresetId, evaluateRunBusy, onApplyEvalOverride])
 
   const addForkStep = React.useCallback((nodeId: string) => {
     setForkSteps((prev) => [
@@ -1349,7 +1303,7 @@ export function Analytics({
     : runs.find((r) => r.runId === selectedRunId)
   const runEvaluation =
     selectedRunId && !isForkDraftView
-      ? (evalOverridesByRunId[selectedRunId] ?? RUN_EVALUATION_BY_ID[selectedRunId])
+      ? (evaluationOverrides[selectedRunId] ?? RUN_EVALUATION_BY_ID[selectedRunId])
       : undefined
 
   const selectedEvaluatePreset =
@@ -1390,7 +1344,7 @@ export function Analytics({
                     {selectedEvaluatePreset.evaluatorName}
                   </span>
                   <span className="text-xs font-normal leading-tight text-muted-foreground">
-                    {selectedEvaluatePreset.subtitle}
+                    Node · {selectedEvaluatePreset.evaluatedNodeLabel}
                   </span>
                 </span>
               </SelectValue>
@@ -3088,7 +3042,7 @@ export function Analytics({
                       {overviewShowEvaluatorColumn && (
                         <TableCell className="align-middle">
                           {(() => {
-                            const ev = evalOverridesByRunId[run.runId] ?? RUN_EVALUATION_BY_ID[run.runId]
+                            const ev = evaluationOverrides[run.runId] ?? RUN_EVALUATION_BY_ID[run.runId]
                             if (!ev) {
                               return <span className="text-sm text-muted-foreground/60">—</span>
                             }
