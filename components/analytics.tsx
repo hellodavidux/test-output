@@ -40,6 +40,8 @@ import {
   MoreVertical,
   MapPin,
   GitFork,
+  Shield,
+  Loader2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -61,11 +63,12 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { cn } from "@/lib/utils"
 import { format } from "date-fns"
 import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid } from "recharts"
-import { OverviewClustersPanel, OverviewSignalsPanel } from "@/components/analytics-overview-alerts"
+import { UnifiedAlertsPanel } from "@/components/analytics-overview-alerts"
+import { Guardrails } from "@/components/guardrails"
 import { WorkflowGantt, type GanttNode, GANTT_NODES, GanttNodeIcon, varyGanttNodesByRunId } from "@/components/workflow-gantt"
 import {
-  EVALUATOR_DISPLAY_LABELS,
   EVALUATOR_PASS_THRESHOLDS,
+  ManusTipBanner,
   WORKFLOW_NODES,
   VariantNodeConfigFields,
   WorkflowNodeLucideIcon,
@@ -263,6 +266,7 @@ function resolveForkSourceRun(payload: { runId: string; caseInput?: string }, ru
     conversationId: "N/A",
     created: "—",
     origin: "Sandbox",
+    version: "v8",
     status: "success",
     input: payload.caseInput?.trim() ?? "",
     output: "",
@@ -278,6 +282,7 @@ function buildEmptyForkRunDisplay(_source: RunData): RunData {
     conversationId: "—",
     created: "—",
     origin: "Fork",
+    version: "—",
     status: "running",
     input: "",
     output: "",
@@ -462,7 +467,11 @@ type RunEvaluationSummary = {
   summary: string
 }
 
-const [EV_RESPONSE, EV_TONE, EV_RESOLUTION, EV_ESCALATION] = EVALUATOR_DISPLAY_LABELS
+/** Label strings for mock run rows — not tied to `INITIAL_EVALUATORS_DEF` order */
+const EV_RESPONSE = "Response accuracy"
+const EV_TONE = "Tone & empathy"
+const EV_RESOLUTION = "Resolution completeness"
+const EV_ESCALATION = "Escalation detection rate"
 
 const RUN_EVALUATION_BY_ID: Record<string, RunEvaluationSummary> = {
   "8af162da-6ee4-4bcf-aa7a-99b1f4adf151": {
@@ -490,6 +499,49 @@ const RUN_EVALUATION_BY_ID: Record<string, RunEvaluationSummary> = {
   },
 }
 
+/** Selectable presets when the user runs Evaluate from the UI (prototype). */
+const EVAL_RUN_PRESET_LIST: {
+  id: string
+  evaluatorName: string
+  /** Short line under the name (e.g. method + what is scored), shown in the select like Experiment eval pickers. */
+  subtitle: string
+  score: number
+  summary: string
+}[] = [
+  {
+    id: "preset-tone",
+    evaluatorName: EV_TONE,
+    subtitle: "LLM judge · Politeness, empathy, and how clearly the reply reads to the customer",
+    score: 82,
+    summary:
+      "Tone remains professional with appropriate empathy; pacing is clear and the closing aligns with support standards.",
+  },
+  {
+    id: "preset-response",
+    evaluatorName: EV_RESPONSE,
+    subtitle: "LLM judge · Whether facts, numbers, and claims match the conversation and tool outputs",
+    score: 71,
+    summary:
+      "Factual alignment is strong on billed amounts and dates; one secondary detail in the timeline is slightly misstated compared to the source transcript.",
+  },
+  {
+    id: "preset-resolution",
+    evaluatorName: EV_RESOLUTION,
+    subtitle: "Rubric · Closure quality—next steps, ownership, and whether the issue is actually resolved",
+    score: 65,
+    summary:
+      "The agent proposes a resolution path and next steps, though follow-ups for edge cases (policy exceptions) are thin.",
+  },
+  {
+    id: "preset-escalation",
+    evaluatorName: EV_ESCALATION,
+    subtitle: "Policy trace · Escalation thresholds, human handoff, and router decisions vs what the run did",
+    score: 52,
+    summary:
+      "The run should have routed to human billing review for a charge older than 30 days, but the agent issued a self-serve refund form instead. The Escalation Router node did not fire despite explicit policy thresholds in the workflow context. Reliability for this evaluator is below the bar you would want for production billing disputes.",
+  },
+]
+
 /** Overview "Signals" strip — run IDs must match `runs` for Review run navigation */
 const OVERVIEW_SIGNALS = [
   {
@@ -503,7 +555,15 @@ const OVERVIEW_SIGNALS = [
     time: "11:30 AM",
     confidence: 91,
     nodeId: "4",
+    causeNodeId: "3",
+    causeNodeLabel: "Knowledge Base Lookup",
     recommendation: "Update the KB refund policy document. Add a retrieval confidence threshold — if below 0.85, fall back to the hardcoded policy snippet in the system prompt.",
+    actions: [
+      { label: "Add to Evaluator", kind: "evaluator" as const },
+      { label: "Edit KB Lookup", kind: "workflow" as const },
+      { label: "Add guardrail", kind: "guardrail" as const },
+      { label: "Review run", kind: "review" as const },
+    ],
   },
   {
     id: "sig-2",
@@ -516,13 +576,45 @@ const OVERVIEW_SIGNALS = [
     time: "12:05 PM",
     confidence: 87,
     nodeId: "5",
+    causeNodeId: "2",
+    causeNodeLabel: "Intent Classifier",
     recommendation: "Add a charge_age check to the escalation router: if days_since_charge > 30, route directly to the billing team and skip the self-serve path.",
+    actions: [
+      { label: "Add to Evaluator", kind: "evaluator" as const },
+      { label: "Fix routing rule", kind: "workflow" as const },
+      { label: "Review run", kind: "review" as const },
+    ],
   },
 ]
 
 function getOverviewSignalForRun(runId: string) {
   return OVERVIEW_SIGNALS.find((s) => s.runId === runId) ?? null
 }
+
+type GuardrailEvent = {
+  id: string
+  label: string
+  node: string
+  result: "pass" | "flag" | "block"
+}
+
+const RUN_GUARDRAIL_EVENTS: Record<string, GuardrailEvent[]> = {
+  "c3d4e5f6-a7b8-9012-cdef-123456789012": [
+    { id: "ge-1", label: "PII check", node: "Draft Response", result: "pass" },
+    { id: "ge-2", label: "Policy validator", node: "Draft Response", result: "flag" },
+    { id: "ge-3", label: "Refund amount check", node: "Escalation Router", result: "pass" },
+  ],
+  "d0e1f2a3-b4c5-6789-3456-890123456789": [
+    { id: "ge-1", label: "PII check", node: "Intent Classifier", result: "pass" },
+    { id: "ge-2", label: "Escalation policy", node: "Escalation Router", result: "flag" },
+  ],
+  "8af162da-6ee4-4bcf-aa7a-99b1f4adf151": [
+    { id: "ge-1", label: "PII check", node: "Draft Response", result: "pass" },
+    { id: "ge-2", label: "Refund amount check", node: "Escalation Router", result: "pass" },
+  ],
+}
+
+const SHOW_RUN_SIDEBAR_GUARDRAILS = false
 
 type RunDetailSignal = {
   nodeId: string
@@ -577,7 +669,7 @@ function SignalInsightCard({
   onFixWithAi,
   containerClassName,
 }: {
-  signal: Pick<RunDetailSignal, "type" | "severity" | "reason" | "recommendation">
+  signal: Pick<RunDetailSignal, "type" | "severity" | "reason">
   onFixWithAi?: () => void
   /** e.g. aside strip uses horizontal inset; General tab is full width inside `px-4`. */
   containerClassName?: string
@@ -609,11 +701,6 @@ function SignalInsightCard({
       </AlertTitle>
       <AlertDescription className="flex flex-col gap-2 text-xs leading-relaxed">
         <p>{signal.reason}</p>
-        <p className="text-[11px] leading-relaxed">
-          <span className="font-medium text-current">Suggestion</span>
-          <span className="opacity-80"> — </span>
-          {signal.recommendation}
-        </p>
         <div className="flex justify-end pt-0.5">
           <Button
             size="sm"
@@ -705,8 +792,6 @@ const OVERVIEW_CLUSTERS = [
     trend: "+11 since prompt update v7",
     firstSeen: "Apr 14, 11:24 AM",
     lastSeen: "11 min ago",
-    /** Daily event counts for the last 7 days (oldest → newest) */
-    sparkline: [1, 2, 1, 3, 4, 3, 4],
     failureMode: "Agent tells customers they are eligible for refunds outside the 30-day window, citing a stale or hallucinated policy that states 60 days.",
     suspectedCause: "The KB refund policy document was not updated when the policy changed from 60 to 30 days in Q1 2026. The Draft Response node retrieves this stale doc and uses it as ground truth.",
     suggestion: "Update the KB refund policy document immediately. Add a prompt guardrail: 'Refund window is strictly 30 days — do not approve requests beyond this without escalating to the billing team.' Promote the failing example to the Billing disputes eval dataset.",
@@ -728,7 +813,6 @@ const OVERVIEW_CLUSTERS = [
     trend: "+4 since yesterday",
     firstSeen: "Apr 16, 9:02 AM",
     lastSeen: "2 hrs ago",
-    sparkline: [0, 1, 0, 2, 1, 3, 4],
     failureMode: "Agent gives cancellation instructions but does not confirm whether the account was cancelled or offer to complete it directly on behalf of the customer.",
     suspectedCause: "System prompt instructs the agent to 'guide users through self-service steps.' For cancellation requests, this results in step-by-step instructions being sent without the agent confirming the action or offering to execute it.",
     suggestion: "Update the cancellation handler: when a user explicitly says 'cancel my account', the agent should confirm the cancellation immediately and send a confirmation, rather than redirecting to Settings. Add this as an eval test case.",
@@ -846,6 +930,9 @@ interface AnalyticsProps {
   /** From layout / Experiment: focus Run Details for this run id once it exists in `runs`. */
   pendingOpenRunId?: string | null
   onPendingOpenRunConsumed?: () => void
+  /** Run progress ⋯ Evaluate Run: open picker once Analytics is active. */
+  pendingEvaluateRunId?: string | null
+  onPendingEvaluateRunConsumed?: () => void
   /** Workflow + evaluator runs (layout-owned so Experiment / Fork can append). */
   runs: RunData[]
   onAppendRun: (run: RunData) => void
@@ -858,6 +945,8 @@ export function Analytics({
   onPendingForkConsumed,
   pendingOpenRunId = null,
   onPendingOpenRunConsumed,
+  pendingEvaluateRunId = null,
+  onPendingEvaluateRunConsumed,
   runs,
   onAppendRun,
 }: AnalyticsProps) {
@@ -890,6 +979,42 @@ export function Analytics({
   const runsRef = React.useRef(runs)
   runsRef.current = runs
   const [applyWorkflowDraftModalOpen, setApplyWorkflowDraftModalOpen] = useState(false)
+  const [evaluateRunDialogOpen, setEvaluateRunDialogOpen] = useState(false)
+  const [evaluateRunTargetId, setEvaluateRunTargetId] = useState<string | null>(null)
+  const [evaluatePresetId, setEvaluatePresetId] = useState<string>(EVAL_RUN_PRESET_LIST[0]!.id)
+  const [evaluateRunBusy, setEvaluateRunBusy] = useState(false)
+  const [evalOverridesByRunId, setEvalOverridesByRunId] = useState<Record<string, RunEvaluationSummary>>({})
+
+  const openEvaluateRunDialog = React.useCallback((runId: string) => {
+    setEvaluateRunTargetId(runId)
+    setEvaluatePresetId(EVAL_RUN_PRESET_LIST[0]!.id)
+    setEvaluateRunDialogOpen(true)
+  }, [])
+
+  const confirmEvaluateRun = React.useCallback(() => {
+    if (!evaluateRunTargetId || evaluateRunBusy) return
+    const preset = EVAL_RUN_PRESET_LIST.find((p) => p.id === evaluatePresetId)
+    if (!preset) return
+    setEvaluateRunBusy(true)
+    const targetId = evaluateRunTargetId
+    window.setTimeout(() => {
+      setEvalOverridesByRunId((prev) => ({
+        ...prev,
+        [targetId]: {
+          evaluatorName: preset.evaluatorName,
+          score: preset.score,
+          summary: preset.summary,
+        },
+      }))
+      setSelectedRunId(targetId)
+      setEvaluateRunBusy(false)
+      setEvaluateRunDialogOpen(false)
+      setEvaluateRunTargetId(null)
+      toast.success("Evaluation complete", {
+        description: `${preset.evaluatorName}: ${(preset.score / 10).toFixed(1)}/10 — results are in the Evaluation section of the run panel.`,
+      })
+    }, 950)
+  }, [evaluateRunTargetId, evaluatePresetId, evaluateRunBusy])
 
   const addForkStep = React.useCallback((nodeId: string) => {
     setForkSteps((prev) => [
@@ -969,6 +1094,12 @@ export function Analytics({
     onPendingOpenRunConsumed?.()
   }, [pendingOpenRunId, runs, onPendingOpenRunConsumed, clearForkRunTimer])
 
+  useEffect(() => {
+    if (!pendingEvaluateRunId) return
+    openEvaluateRunDialog(pendingEvaluateRunId)
+    onPendingEvaluateRunConsumed?.()
+  }, [pendingEvaluateRunId, onPendingEvaluateRunConsumed, openEvaluateRunDialog])
+
   // When landing on run detail, show General in sidebar and no node selected (signal + recommendation live there)
   useEffect(() => {
     if (selectedRunId) {
@@ -1006,7 +1137,7 @@ export function Analytics({
   const [activeMetric, setActiveMetric] = useState("Runs")
   const [tokenView, setTokenView] = useState<"total" | "input" | "output">("total")
   const [analyticsTab, setAnalyticsTab] = useState("overview")
-  const [expandedClusterIds, setExpandedClusterIds] = useState<Set<string>>(() => new Set())
+  const [selectedClusterId, setSelectedClusterId] = useState<string | null>(null)
   /** Overview runs table: Evaluator column on by default */
   const [overviewShowEvaluatorColumn, setOverviewShowEvaluatorColumn] = useState(true)
   const [selectedConversationId, setSelectedConversationId] = useState(mockConversations[0]?.id ?? "")
@@ -1155,9 +1286,11 @@ export function Analytics({
         description: s.reason,
         nodeId: s.nodeId,
         recommendation: s.recommendation,
-        meta: `${s.runId} · ${s.time}`,
+        meta: `${s.runId.slice(0, 8)}… · ${s.time}`,
         cta: "Review run",
         runId: s.runId,
+        causeNodeLabel: s.causeNodeLabel,
+        actions: s.actions,
       })),
     []
   )
@@ -1171,6 +1304,7 @@ export function Analytics({
         description: c.failureMode,
         meta: `${c.affectedRuns} runs · last ${c.timeWindow}`,
         cta: "Open cluster",
+        why: c.suspectedCause.split(".")[0] + ".",
       })),
     []
   )
@@ -1188,6 +1322,7 @@ export function Analytics({
         runId: forkRunId,
         status: "running",
         latency: "—",
+        version: forkSourceRun.version,
         input: forkSourceRun.input,
         output: "",
         tokens: 0,
@@ -1200,6 +1335,7 @@ export function Analytics({
       conversationId: forkSourceRun.conversationId,
       created: forkSourceRun.created,
       origin: "Fork",
+      version: forkSourceRun.version,
       input: forkSourceRun.input,
       output: forkSourceRun.output,
       latency: "2.04s",
@@ -1212,15 +1348,108 @@ export function Analytics({
     ? forkPanelRun
     : runs.find((r) => r.runId === selectedRunId)
   const runEvaluation =
-    selectedRunId && !isForkDraftView ? RUN_EVALUATION_BY_ID[selectedRunId] : undefined
+    selectedRunId && !isForkDraftView
+      ? (evalOverridesByRunId[selectedRunId] ?? RUN_EVALUATION_BY_ID[selectedRunId])
+      : undefined
+
+  const selectedEvaluatePreset =
+    EVAL_RUN_PRESET_LIST.find((p) => p.id === evaluatePresetId) ?? EVAL_RUN_PRESET_LIST[0]!
+
+  const evaluateRunDialog = (
+    <Dialog
+      open={evaluateRunDialogOpen}
+      onOpenChange={(open) => {
+        if (!open && evaluateRunBusy) return
+        setEvaluateRunDialogOpen(open)
+        if (!open) setEvaluateRunTargetId(null)
+      }}
+    >
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Evaluate run</DialogTitle>
+          <DialogDescription>
+            Pick an evaluator, run it against this run, and see the score in the run sidebar under Evaluation.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2 py-1">
+          <Label htmlFor="evaluate-preset" className="text-sm text-muted-foreground">
+            Evaluator
+          </Label>
+          <Select
+            value={evaluatePresetId}
+            onValueChange={setEvaluatePresetId}
+            disabled={evaluateRunBusy}
+          >
+            <SelectTrigger
+              id="evaluate-preset"
+              className="h-auto min-h-10 w-full items-start gap-3 whitespace-normal py-3 data-[size=default]:h-auto [&>svg]:mt-0.5 [&>svg]:shrink-0 [&_[data-slot=select-value]]:line-clamp-none [&_[data-slot=select-value]]:min-h-0 [&_[data-slot=select-value]]:w-full [&_[data-slot=select-value]]:flex-1 [&_[data-slot=select-value]]:items-start [&_[data-slot=select-value]]:self-stretch"
+            >
+              <SelectValue placeholder="Select evaluator">
+                <span className="flex min-w-0 flex-col items-start gap-0.5 text-left">
+                  <span className="text-sm font-medium leading-snug text-foreground">
+                    {selectedEvaluatePreset.evaluatorName}
+                  </span>
+                  <span className="text-xs font-normal leading-tight text-muted-foreground">
+                    {selectedEvaluatePreset.subtitle}
+                  </span>
+                </span>
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent className="max-w-[min(100vw-2rem,26rem)]">
+              {EVAL_RUN_PRESET_LIST.map((p) => (
+                <SelectItem key={p.id} value={p.id} className="items-start py-2.5">
+                  <span className="flex min-w-0 flex-col gap-0.5 pr-6 text-left">
+                    <span className="text-sm font-medium leading-snug">{p.evaluatorName}</span>
+                    <span className="text-xs font-normal leading-tight text-muted-foreground">
+                      {p.subtitle}
+                    </span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <DialogFooter className="gap-2 sm:gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setEvaluateRunDialogOpen(false)}
+            disabled={evaluateRunBusy}
+          >
+            Cancel
+          </Button>
+          <Button type="button" size="sm" onClick={confirmEvaluateRun} disabled={evaluateRunBusy}>
+            {evaluateRunBusy ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
+                Running…
+              </>
+            ) : (
+              "Run evaluation"
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
   const resolvedRunSignal = useMemo(
     () => resolveRunDetailSignal(selectedRunId, selectedRun ?? null, isForkDraftView),
     [selectedRunId, selectedRun, isForkDraftView]
   )
   const ganttSignalNodeId =
     resolvedRunSignal?.nodeId && resolvedRunSignal.nodeId.length > 0 ? resolvedRunSignal.nodeId : null
+
+  const ganttRootCauseNodeId = useMemo(() => {
+    if (!selectedRunId || isForkDraftView) return null
+    const overviewSig = OVERVIEW_SIGNALS.find((s) => s.runId === selectedRunId)
+    if (overviewSig?.causeNodeId) return overviewSig.causeNodeId
+    const run = runs.find((r) => r.runId === selectedRunId)
+    return run?.nodeScores?.find((n) => n.rootCause)?.nodeId ?? null
+  }, [selectedRunId, isForkDraftView, runs])
   if (selectedRunId && selectedRun) {
     return (
+      <>
       <div className="flex h-full bg-background overflow-hidden">
         {/* Left: main content */}
         <div className="flex flex-1 flex-col min-w-0 overflow-hidden bg-muted">
@@ -1287,10 +1516,7 @@ export function Analytics({
                             <DropdownMenuItem
                               className="gap-2"
                               onSelect={() => {
-                                tabContext?.openAnalyticsForkDraft({
-                                  runId: selectedRun.runId,
-                                  caseInput: selectedRun.input,
-                                })
+                                tabContext?.openExperimentVariantBuilderIntro?.()
                               }}
                             >
                               <GitFork className="h-4 w-4" />
@@ -1298,8 +1524,8 @@ export function Analytics({
                             </DropdownMenuItem>
                           </TooltipTrigger>
                           <TooltipContent side="left" className="max-w-xs text-balance">
-                            Duplicate this run’s workflow so you can change steps and replay without altering the
-                            original.
+                            Open the Experiment variant-builder flow (intro modal, then Workflow in variant mode, then
+                            Create variant)—same as Add variant column on the Experiment tab.
                           </TooltipContent>
                         </Tooltip>
                       ) : (
@@ -1319,17 +1545,15 @@ export function Analytics({
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <DropdownMenuItem
-                            className={cn("gap-2", selectedRun.status === "running" && "opacity-50")}
-                            aria-disabled={selectedRun.status === "running"}
+                            className={cn(
+                              "gap-2",
+                              (selectedRun.status === "running" || isForkDraftView) && "opacity-50",
+                            )}
+                            aria-disabled={selectedRun.status === "running" || isForkDraftView}
                             onSelect={(e) => {
-                              if (selectedRun.status === "running") {
-                                e.preventDefault()
-                                return
-                              }
-                              toast.message("Evaluate run", {
-                                description:
-                                  "This prototype would queue an evaluation with your configured evaluators.",
-                              })
+                              e.preventDefault()
+                              if (selectedRun.status === "running" || isForkDraftView || !selectedRunId) return
+                              openEvaluateRunDialog(selectedRunId)
                             }}
                           >
                             <ListChecks className="h-4 w-4" />
@@ -1337,9 +1561,11 @@ export function Analytics({
                           </DropdownMenuItem>
                         </TooltipTrigger>
                         <TooltipContent side="left" className="max-w-xs text-balance">
-                          {selectedRun.status === "running"
-                            ? "Wait until this run finishes before queuing an evaluation."
-                            : "Run your configured evaluators against this run to score quality, safety, or policy fit."}
+                          {isForkDraftView
+                            ? "Evaluate the source run from the main runs list, or finish the fork first."
+                            : selectedRun.status === "running"
+                              ? "Wait until this run finishes before queuing an evaluation."
+                              : "Choose an evaluator and run it against this run; results appear in the sidebar."}
                         </TooltipContent>
                       </Tooltip>
                     </DropdownMenuContent>
@@ -1389,6 +1615,7 @@ export function Analytics({
                   onNodeSelect={setSelectedGanttNode}
                   highlightNodeId={hoveredContextNodeId}
                   signalNodeId={ganttSignalNodeId}
+                  rootCauseNodeId={ganttRootCauseNodeId}
                   onCompareClick={handleCompareClick}
                 />
               )}
@@ -1591,13 +1818,89 @@ export function Analytics({
                     </div>
                   ) : null}
                   {runEvaluation ? (
-                    <div className="mb-4 shrink-0 space-y-2">
+                    <div className="mt-4 mb-4 shrink-0 space-y-2">
                       <p className="text-xs font-medium text-muted-foreground">Evaluation</p>
                       <RunDetailEvalGradingRow
                         evalLabel={runEvaluation.evaluatorName}
                         score={runEvaluation.score}
                         summary={runEvaluation.summary}
                       />
+                    </div>
+                  ) : null}
+                  {(() => {
+                    if (!SHOW_RUN_SIDEBAR_GUARDRAILS) return null
+                    const guardrailEvents = selectedRunId ? RUN_GUARDRAIL_EVENTS[selectedRunId] : undefined
+                    if (!guardrailEvents?.length) return null
+                    return (
+                      <div className="mb-4 shrink-0 space-y-2">
+                        <p className="text-xs font-medium text-muted-foreground">Guardrails</p>
+                        <div className="rounded-lg border border-border/70 overflow-hidden">
+                          {guardrailEvents.map((ev) => (
+                            <div key={ev.id} className={cn(
+                              "flex items-center gap-2 px-3 py-2 text-xs border-b border-border/50 last:border-b-0",
+                              ev.result === "flag" && "bg-amber-50/50 dark:bg-amber-950/20",
+                              ev.result === "block" && "bg-red-50/50 dark:bg-red-950/20",
+                            )}>
+                              <Shield className={cn(
+                                "h-3 w-3 shrink-0",
+                                ev.result === "block" ? "text-red-500" : ev.result === "flag" ? "text-amber-500" : "text-emerald-600"
+                              )} aria-hidden />
+                              <div className="flex-1 min-w-0">
+                                <span className="block truncate font-medium text-foreground">{ev.label}</span>
+                                <span className="text-muted-foreground/60 text-[11px]">{ev.node}</span>
+                              </div>
+                              <span className={cn(
+                                "shrink-0 text-[9px] font-semibold uppercase tracking-wide rounded px-1.5 py-0.5",
+                                ev.result === "pass" && "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400",
+                                ev.result === "flag" && "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
+                                ev.result === "block" && "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400",
+                              )}>
+                                {ev.result === "pass" ? "Passed" : ev.result === "flag" ? "Flagged" : "Blocked"}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })()}
+                  {false /* hide per-node scores for now */ &&
+                  selectedRun.nodeScores &&
+                  selectedRun.nodeScores.length > 0 ? (
+                    <div className="mb-4 shrink-0 space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">Per-node scores</p>
+                      <div className="rounded-lg border border-border/70 overflow-hidden">
+                        {selectedRun.nodeScores.map((ns, i) => {
+                          const pass = ns.score >= 70
+                          return (
+                            <div
+                              key={ns.nodeId}
+                              className={cn(
+                                "flex items-center gap-2 px-3 py-2 text-xs border-b border-border/50 last:border-b-0",
+                                ns.rootCause && "bg-red-50/60 dark:bg-red-950/20"
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  "shrink-0 w-8 text-center tabular-nums font-semibold rounded px-1 py-0.5",
+                                  pass
+                                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                                    : "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400"
+                                )}
+                              >
+                                {(ns.score / 10).toFixed(1)}
+                              </span>
+                              <span className={cn("flex-1 min-w-0 truncate", ns.rootCause ? "text-red-700 dark:text-red-400 font-medium" : "text-foreground")}>
+                                {ns.nodeLabel}
+                              </span>
+                              {ns.rootCause && (
+                                <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wide rounded px-1.5 py-0.5 bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-400">
+                                  Root cause
+                                </span>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
                     </div>
                   ) : null}
                   <div className="flex flex-col text-sm">
@@ -2318,6 +2621,7 @@ export function Analytics({
                         conversationId: sourceSnapshot.conversationId,
                         created: formatAnalyticsRunTimestamp(),
                         origin: "Fork",
+                        version: sourceSnapshot.version,
                         status: "success",
                         input: sourceSnapshot.input,
                         output: out,
@@ -2393,10 +2697,13 @@ export function Analytics({
           setDatasets={setSaveDatasets}
         />
       </div>
+      {evaluateRunDialog}
+      </>
     )
   }
 
   return (
+    <>
     <div className="flex flex-col h-full bg-background overflow-hidden">
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {/* Single scroll region: sticky frosted toolbar so content slides underneath */}
@@ -2454,6 +2761,9 @@ export function Analytics({
             </TabsTrigger>
             <TabsTrigger value="clusters" className="px-3">
               Clusters
+            </TabsTrigger>
+            <TabsTrigger value="guardrails" className="px-3">
+              Guardrails
             </TabsTrigger>
           </TabsList>
 
@@ -2592,21 +2902,28 @@ export function Analytics({
           </div>
         </Card>
 
-        {/* Signals — row opens Run Details (Gantt) for that run; Clusters — opens Clusters tab */}
-        <div className="mb-4 flex flex-col gap-2">
-          <OverviewSignalsPanel
-            items={overviewSignalRows}
-            highSeverityCount={overviewSignalsHighCount}
+        {/* Unified recommendations + signals + clusters panel */}
+        <div className="mb-4">
+          <UnifiedAlertsPanel
+            signals={overviewSignalRows}
+            clusters={overviewClusterRows}
+            signalsHighCount={overviewSignalsHighCount}
+            clustersHighCount={overviewClustersHighCount}
             onReviewRun={(item) => {
               if (!item.runId) return
               setSelectedRunId(item.runId)
             }}
-          />
-          <OverviewClustersPanel
-            items={overviewClusterRows}
-            highSeverityCount={overviewClustersHighCount}
+            onSignalAction={(item, action) => {
+              if (action.kind === "evaluator") {
+                tabContext?.openExperimentWithRun({ runId: item.runId, caseInput: runs.find(r => r.runId === item.runId)?.input })
+              } else if (action.kind === "workflow") {
+                tabContext?.setActiveTab("Workflow")
+              } else if (action.kind === "guardrail") {
+                setAnalyticsTab("guardrails")
+              }
+            }}
             onOpenCluster={(clusterId) => {
-              setExpandedClusterIds(new Set([clusterId]))
+              setSelectedClusterId(clusterId)
               setAnalyticsTab("clusters")
             }}
           />
@@ -2649,6 +2966,7 @@ export function Analytics({
                     <TableHead className="w-[9rem] max-w-[9rem] text-xs font-medium text-muted-foreground">Run ID</TableHead>
                     <TableHead className="text-xs font-medium text-muted-foreground">Conversation ID</TableHead>
                     <TableHead className="w-[7.5rem] min-w-[7.5rem] text-xs font-medium text-muted-foreground">Where</TableHead>
+                    <TableHead className="w-[3.25rem] min-w-[3.25rem] text-xs font-medium text-muted-foreground">Version</TableHead>
                     <TableHead className="text-xs font-medium text-muted-foreground">
                       <div className="flex items-center gap-1">
                         Status
@@ -2745,6 +3063,9 @@ export function Analytics({
                           {run.origin}
                         </span>
                       </TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground tabular-nums">
+                        {run.version}
+                      </TableCell>
                       <TableCell>
                         <span className={cn(
                           "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium",
@@ -2767,7 +3088,7 @@ export function Analytics({
                       {overviewShowEvaluatorColumn && (
                         <TableCell className="align-middle">
                           {(() => {
-                            const ev = RUN_EVALUATION_BY_ID[run.runId]
+                            const ev = evalOverridesByRunId[run.runId] ?? RUN_EVALUATION_BY_ID[run.runId]
                             if (!ev) {
                               return <span className="text-sm text-muted-foreground/60">—</span>
                             }
@@ -2869,10 +3190,7 @@ export function Analytics({
                                 <DropdownMenuItem
                                   className="gap-2"
                                   onSelect={() => {
-                                    tabContext?.openAnalyticsForkDraft({
-                                      runId: run.runId,
-                                      caseInput: run.input,
-                                    })
+                                    tabContext?.openExperimentVariantBuilderIntro?.()
                                   }}
                                 >
                                   <GitFork className="h-4 w-4" />
@@ -2880,8 +3198,8 @@ export function Analytics({
                                 </DropdownMenuItem>
                               </TooltipTrigger>
                               <TooltipContent side="left" className="max-w-xs text-balance">
-                                Duplicate this run’s workflow so you can change steps and replay without altering the
-                                original.
+                                Open the Experiment variant-builder flow (intro modal, then Workflow in variant mode,
+                                then Create variant)—same as Add variant column on the Experiment tab.
                               </TooltipContent>
                             </Tooltip>
                             <Tooltip>
@@ -2890,14 +3208,9 @@ export function Analytics({
                                   className={cn("gap-2", run.status === "running" && "opacity-50")}
                                   aria-disabled={run.status === "running"}
                                   onSelect={(e) => {
-                                    if (run.status === "running") {
-                                      e.preventDefault()
-                                      return
-                                    }
-                                    toast.message("Evaluate run", {
-                                      description:
-                                        "This prototype would queue an evaluation with your configured evaluators.",
-                                    })
+                                    e.preventDefault()
+                                    if (run.status === "running") return
+                                    openEvaluateRunDialog(run.runId)
                                   }}
                                 >
                                   <ListChecks className="h-4 w-4" />
@@ -2907,7 +3220,7 @@ export function Analytics({
                               <TooltipContent side="left" className="max-w-xs text-balance">
                                 {run.status === "running"
                                   ? "Wait until this run finishes before queuing an evaluation."
-                                  : "Run your configured evaluators against this run to score quality, safety, or policy fit."}
+                                  : "Choose an evaluator and run it; results appear on Run Details and in the sidebar."}
                               </TooltipContent>
                             </Tooltip>
                           </DropdownMenuContent>
@@ -3018,286 +3331,229 @@ export function Analytics({
           </TabsContent>
 
           <TabsContent value="clusters" className="mt-0">
-            <div className="overflow-hidden rounded-xl border border-border/80 bg-background shadow-sm">
-              {/* Header */}
-              <div className="grid grid-cols-[1fr_140px_72px_96px_96px_32px] items-center gap-0 border-b border-border/70 bg-muted/30 px-4 py-2.5">
-                <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Issue</span>
-                <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Graph</span>
-                <span className="text-right text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Events</span>
-                <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground pl-4">First seen</span>
-                <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground pl-2">Last seen</span>
-                <span className="sr-only">Expand</span>
-              </div>
-
-              <div className="divide-y divide-border/70">
-              {OVERVIEW_CLUSTERS.map((c) => {
-                const isOpen = expandedClusterIds.has(c.id)
-                const isHigh = c.severity === "high"
-                const maxBar = Math.max(...c.sparkline, 1)
-                return (
-                  <Collapsible
-                    key={c.id}
-                    open={isOpen}
-                    onOpenChange={(open) => {
-                      setExpandedClusterIds((prev) => {
-                        const next = new Set(prev)
-                        if (open) next.add(c.id)
-                        else next.delete(c.id)
-                        return next
-                      })
-                    }}
-                  >
-                    <CollapsibleTrigger asChild>
-                      <button
-                        type="button"
-                        className="group grid w-full grid-cols-[1fr_140px_72px_96px_96px_32px] items-center gap-0 px-4 py-3.5 text-left transition-colors hover:bg-muted/30"
-                      >
-                        {/* Issue: severity dot + title + description */}
-                        <div className="flex min-w-0 items-start gap-3 pr-4">
+            {selectedClusterId == null ? (
+              <>
+                <ManusTipBanner className="mb-3">
+                  <p className="text-muted-foreground">
+                    <span className="font-semibold text-foreground">Clusters</span>{" "}
+                    are groups of runs that failed in the same way — automatically detected by comparing outputs semantically, so you can spot recurring problems without reviewing every run individually.
+                  </p>
+                </ManusTipBanner>
+                {/* ── Cluster list ── */}
+                <Card className="gap-0 py-0">
+                <CardContent className="p-0">
+                  <Table>
+                    <TableHeader className="bg-muted/60">
+                      <TableRow className="border-b border-border hover:bg-transparent">
+                        <TableHead className="w-8 p-2 pl-3"><span className="sr-only">Severity</span></TableHead>
+                        <TableHead className="text-xs font-medium text-muted-foreground">Issue</TableHead>
+                        <TableHead className="text-xs font-medium text-muted-foreground">Workflow</TableHead>
+                        <TableHead className="w-20 text-xs font-medium text-muted-foreground text-right">Events</TableHead>
+                        <TableHead className="w-32 text-xs font-medium text-muted-foreground">First seen</TableHead>
+                        <TableHead className="w-28 text-xs font-medium text-muted-foreground">Last seen</TableHead>
+                        <TableHead className="w-8 p-2 pr-3"><span className="sr-only">Open</span></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {OVERVIEW_CLUSTERS.map((c) => {
+                        const isHigh = c.severity === "high"
+                        return (
+                          <TableRow
+                            key={c.id}
+                            className="cursor-pointer hover:bg-muted/50"
+                            onClick={() => setSelectedClusterId(c.id)}
+                          >
+                            <TableCell className="w-8 p-2 pl-3">
+                              <span
+                                className={cn("block h-2 w-2 rounded-full", isHigh ? "bg-red-500" : "bg-amber-400")}
+                                aria-label={isHigh ? "High" : "Medium"}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-[13px] font-medium text-foreground">{c.label}</span>
+                                <span className="line-clamp-1 text-xs text-muted-foreground">{c.failureMode}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{c.workflow}</TableCell>
+                            <TableCell className="text-right tabular-nums text-sm font-medium">{c.affectedRuns}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{c.firstSeen}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{c.lastSeen}</TableCell>
+                            <TableCell className="p-2 pr-3 text-right">
+                              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+              </>
+            ) : (() => {
+              /* ── Cluster detail ── */
+              const c = OVERVIEW_CLUSTERS.find((x) => x.id === selectedClusterId)!
+              const isHigh = c.severity === "high"
+              return (
+                <div className="space-y-4">
+                  {/* Header */}
+                  <div className="flex flex-col gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedClusterId(null)}
+                      className="flex w-fit items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <ChevronRight className="h-3.5 w-3.5 rotate-180" />
+                      Clusters
+                    </button>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                          <span className={cn("h-2 w-2 shrink-0 rounded-full", isHigh ? "bg-red-500" : "bg-amber-400")} />
+                          <span className="text-base font-semibold text-foreground">{c.label}</span>
                           <span
                             className={cn(
-                              "mt-1 h-2 w-2 shrink-0 rounded-full",
-                              isHigh ? "bg-red-500" : "bg-amber-400"
-                            )}
-                            aria-label={isHigh ? "High severity" : "Medium severity"}
-                          />
-                          <div className="min-w-0 flex flex-col gap-0.5">
-                            <span className="truncate text-[13px] font-semibold leading-snug text-foreground">
-                              {c.label}
-                            </span>
-                            <span className="line-clamp-1 text-xs leading-snug text-muted-foreground">
-                              {c.workflow} · {c.failureMode.length > 80 ? c.failureMode.slice(0, 80) + "…" : c.failureMode}
-                            </span>
-                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                              <span
-                                className={cn(
-                                  "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-                                  isHigh
-                                    ? "bg-red-50 text-red-600 ring-1 ring-inset ring-red-200 dark:bg-red-950/40 dark:text-red-400 dark:ring-red-800/50"
-                                    : "bg-amber-50 text-amber-600 ring-1 ring-inset ring-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:ring-amber-800/50"
-                                )}
-                              >
-                                {isHigh ? "High" : "Medium"}
-                              </span>
-                              <span
-                                className={cn(
-                                  "text-[11px] font-medium",
-                                  isHigh ? "text-red-500" : "text-amber-500"
-                                )}
-                              >
-                                ↑ {c.trend}
-                              </span>
-                              {c.affectedVariants.map((v) => (
-                                <span
-                                  key={v}
-                                  className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
-                                >
-                                  {v}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Sparkline: 7-bar chart */}
-                        <div className="flex items-end gap-[3px] h-8" aria-hidden>
-                          {c.sparkline.map((v, i) => (
-                            <div
-                              key={i}
-                              className={cn(
-                                "flex-1 rounded-sm min-w-[6px] transition-opacity",
-                                isHigh ? "bg-red-400/70" : "bg-amber-400/70",
-                                i === c.sparkline.length - 1 && (isHigh ? "bg-red-500" : "bg-amber-500")
-                              )}
-                              style={{ height: `${Math.max(15, Math.round((v / maxBar) * 100))}%` }}
-                            />
-                          ))}
-                        </div>
-
-                        {/* Event count */}
-                        <div className="flex flex-col items-end tabular-nums">
-                          <span className="text-[15px] font-semibold leading-none text-foreground">
-                            {c.affectedRuns}
-                          </span>
-                          <span className="mt-0.5 text-[10px] text-muted-foreground">events</span>
-                        </div>
-
-                        {/* First seen */}
-                        <div className="flex flex-col gap-0.5 pl-4">
-                          <span className="text-[11px] leading-snug text-foreground/80">{c.firstSeen}</span>
-                        </div>
-
-                        {/* Last seen */}
-                        <div className="flex flex-col gap-0.5 pl-2">
-                          <span
-                            className={cn(
-                              "text-[11px] font-medium leading-snug",
-                              isHigh ? "text-red-500" : "text-amber-500"
+                              "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                              isHigh
+                                ? "bg-red-50 text-red-600 ring-1 ring-inset ring-red-200"
+                                : "bg-amber-50 text-amber-600 ring-1 ring-inset ring-amber-200"
                             )}
                           >
-                            {c.lastSeen}
+                            {isHigh ? "High" : "Medium"}
                           </span>
                         </div>
+                        <span className="text-xs text-muted-foreground">{c.workflow} · {c.affectedRuns} events</span>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs bg-background">
+                          Promote to eval
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-7 w-7 shrink-0 bg-background"
+                              aria-label="More cluster actions"
+                            >
+                              <MoreVertical className="h-3.5 w-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-52">
+                            <DropdownMenuItem
+                              className="gap-2 text-xs"
+                              onSelect={() => setSelectedRunId(c.anchorRunId)}
+                            >
+                              <ArrowRight className="h-3 w-3" />
+                              View anchor run
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="gap-2 text-xs"
+                              onSelect={() => setSaveToDatasetOpen(true)}
+                            >
+                              <Database className="h-3 w-3" />
+                              Save to dataset
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+                  </div>
 
-                        {/* Expand chevron */}
-                        <div className="flex justify-end">
-                          <ChevronRight
-                            className={cn(
-                              "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
-                              isOpen && "rotate-90"
-                            )}
-                            aria-hidden
-                          />
-                        </div>
-                      </button>
-                    </CollapsibleTrigger>
+                  {/* Cause + Fix */}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-lg border border-border bg-white p-3 dark:bg-card">
+                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">Suspected cause</p>
+                      <p className="text-xs leading-relaxed text-foreground/85">{c.suspectedCause}</p>
+                    </div>
+                    <div className="flex flex-col gap-3 rounded-lg border border-border bg-white p-3 dark:bg-card">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                          Suggested fix
+                        </p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 shrink-0 border-border bg-white px-3 text-xs shadow-none hover:bg-muted/40 dark:bg-card dark:hover:bg-muted/30"
+                          onClick={() =>
+                            toast.success("Fix started", {
+                              description: "We’ll apply this suggestion as a draft workflow change you can review.",
+                            })
+                          }
+                        >
+                          Fix
+                        </Button>
+                      </div>
+                      <p className="text-xs leading-relaxed text-foreground/85">{c.suggestion}</p>
+                    </div>
+                  </div>
 
-                      <CollapsibleContent>
-                        <div className="space-y-4 border-t border-border bg-muted/20 px-4 py-4">
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div className="min-w-0 flex-1 space-y-3">
-                              <div className="grid gap-3 sm:grid-cols-2">
-                                <div>
-                                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-                                    Suspected cause
-                                  </p>
-                                  <p className="text-xs leading-relaxed text-foreground/85">{c.suspectedCause}</p>
-                                </div>
-                                <div>
-                                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-                                    Suggested fix
-                                  </p>
-                                  <p className="text-xs leading-relaxed text-foreground/85">{c.suggestion}</p>
-                                </div>
-                              </div>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-                                  Affected variants
-                                </p>
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  {c.affectedVariants.map((v) => (
-                                    <span
-                                      key={v}
-                                      className="rounded-md border border-border bg-muted px-2 py-0.5 text-xs text-foreground/70"
-                                    >
-                                      {v}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 gap-1.5 px-2.5 text-xs"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setSelectedRunId(c.anchorRunId)
-                                }}
-                              >
-                                <ArrowRight className="h-3 w-3" />
-                                View anchor run
-                              </Button>
-                              <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs">
-                                Save Run to dataset
-                              </Button>
-                              <Button size="sm" className="h-7 bg-foreground px-2.5 text-xs text-background hover:bg-foreground/90">
-                                Promote to eval
-                              </Button>
-                            </div>
-                          </div>
+                  {/* Runs table */}
+                  <Card className="gap-0 py-0">
+                    <CardContent className="p-0">
+                      <Table>
+                        <TableHeader className="bg-muted/60">
+                          <TableRow className="border-b border-border hover:bg-transparent">
+                            <TableHead className="text-xs font-medium text-muted-foreground">Run ID</TableHead>
+                            <TableHead className="text-xs font-medium text-muted-foreground">Status</TableHead>
+                            <TableHead className="text-xs font-medium text-muted-foreground">User</TableHead>
+                            <TableHead className="text-xs font-medium text-muted-foreground">Created</TableHead>
+                            <TableHead className="text-xs font-medium text-muted-foreground">Latency</TableHead>
+                            <TableHead className="text-xs font-medium text-muted-foreground">Tokens</TableHead>
+                            <TableHead className="text-xs font-medium text-muted-foreground max-w-[200px]">Input</TableHead>
+                            <TableHead className="text-xs font-medium text-muted-foreground max-w-[200px]">Actual output</TableHead>
+                            <TableHead className="text-xs font-medium text-muted-foreground max-w-[200px]">Expected</TableHead>
+                            <TableHead className="sticky right-0 z-20 w-12 border-l border-border/80 bg-white p-2 pr-3 shadow-[-8px_0_16px_-8px_rgba(0,0,0,0.12)] dark:bg-card"><span className="sr-only">Actions</span></TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {c.examples.map((ex, i) => {
+                            const run = runs.find((r) => r.runId === ex.runId)
+                            return (
+                              <TableRow key={`${c.id}-ex-${i}`} className="group cursor-pointer hover:bg-muted/50" onClick={() => setSelectedRunId(ex.runId)}>
+                                <TableCell className="font-mono text-xs text-muted-foreground">{ex.runId.slice(0, 8)}…</TableCell>
+                                <TableCell>
+                                  {run && (
+                                    <span className={cn(
+                                      "rounded px-1.5 py-0.5 text-[10px] font-medium uppercase",
+                                      run.status === "error" ? "bg-red-100 text-red-700" : run.status === "running" ? "bg-blue-100 text-blue-700" : "bg-emerald-100 text-emerald-800"
+                                    )}>{run.status}</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground">{run?.user ?? "—"}</TableCell>
+                                <TableCell className="text-xs text-muted-foreground">{run?.created ?? "—"}</TableCell>
+                                <TableCell className="text-xs text-muted-foreground">{run?.latency ?? "—"}</TableCell>
+                                <TableCell className="text-xs text-muted-foreground">{run?.tokens ?? "—"}</TableCell>
+                                <TableCell className="max-w-[200px] text-xs text-foreground/80 truncate">{ex.input}</TableCell>
+                                <TableCell className="max-w-[200px] font-mono text-xs text-red-600/90 truncate">{ex.output}</TableCell>
+                                <TableCell className="max-w-[200px] font-mono text-xs text-green-700/90 truncate">{ex.expected}</TableCell>
+                                <TableCell className="sticky right-0 z-20 border-l border-border/80 bg-white p-2 pr-3 shadow-[-8px_0_16px_-8px_rgba(0,0,0,0.12)] dark:bg-card">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 gap-1 px-2 text-xs opacity-0 group-hover:opacity-100"
+                                    onClick={(e) => { e.stopPropagation(); setSelectedRunId(ex.runId) }}
+                                  >
+                                    <Workflow className="h-3 w-3" />
+                                    Open
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                </div>
+              )
+            })()}
+          </TabsContent>
 
-                          <div>
-                            <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-                              Runs in this cluster
-                            </p>
-                            <div className="flex flex-col gap-2">
-                              {c.examples.map((ex, i) => {
-                                const run = runs.find((r) => r.runId === ex.runId)
-                                return (
-                                  <Card key={`${c.id}-run-${i}`} className="gap-0 overflow-hidden bg-background py-0">
-                                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
-                                      <div className="flex min-w-0 flex-wrap items-center gap-2">
-                                        <span className="font-mono text-[11px] text-muted-foreground">
-                                          {run ? run.runId.slice(0, 8) + "…" : ex.runId.slice(0, 8) + "…"}
-                                        </span>
-                                        {run && (
-                                          <>
-                                            <span
-                                              className={cn(
-                                                "rounded px-1.5 py-0.5 text-[10px] font-medium uppercase",
-                                                run.status === "error"
-                                                  ? "bg-red-100 text-red-700"
-                                                  : run.status === "running"
-                                                    ? "bg-blue-100 text-blue-700"
-                                                    : "bg-emerald-100 text-emerald-800"
-                                              )}
-                                            >
-                                              {run.status}
-                                            </span>
-                                            <span className="text-xs text-muted-foreground">{run.user}</span>
-                                            <span className="text-[11px] text-muted-foreground/80">{run.created}</span>
-                                            <span className="text-[11px] text-muted-foreground/80">{run.latency}</span>
-                                            <span className="text-[11px] text-muted-foreground/80">{run.tokens} tok</span>
-                                          </>
-                                        )}
-                                      </div>
-                                      <Button
-                                        size="sm"
-                                        variant="secondary"
-                                        className="h-7 gap-1 px-2 text-xs"
-                                        onClick={() => {
-                                          setSelectedRunId(ex.runId)
-                                        }}
-                                      >
-                                        <Workflow className="h-3 w-3" />
-                                        Open in run details
-                                      </Button>
-                                    </div>
-                                    <div className="grid gap-0 divide-y divide-border md:grid-cols-3 md:divide-x md:divide-y-0">
-                                      <div className="p-3">
-                                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
-                                          Input (cluster example)
-                                        </p>
-                                        <p className="text-xs leading-snug text-foreground/85">{ex.input}</p>
-                                        {run && (
-                                          <p className="mt-2 text-[10px] text-muted-foreground">
-                                            Run input: <span className="text-foreground/80">{run.input}</span>
-                                          </p>
-                                        )}
-                                      </div>
-                                      <div className="p-3">
-                                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
-                                          Actual output
-                                        </p>
-                                        <p className="break-all font-mono text-xs leading-snug text-red-600/90">{ex.output}</p>
-                                        {run && (
-                                          <p className="mt-2 text-[10px] text-muted-foreground">
-                                            Run output:{" "}
-                                            <span className="font-mono text-foreground/80">{run.output}</span>
-                                          </p>
-                                        )}
-                                      </div>
-                                      <div className="p-3">
-                                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
-                                          Expected
-                                        </p>
-                                        <p className="break-all font-mono text-xs leading-snug text-green-700/90">{ex.expected}</p>
-                                      </div>
-                                    </div>
-                                  </Card>
-                                )
-                              })}
-                            </div>
-                          </div>
-                        </div>
-                      </CollapsibleContent>
-                  </Collapsible>
-                )
-              })}
-              </div>
-            </div>
+          <TabsContent value="guardrails" className="mt-0">
+            <Guardrails />
           </TabsContent>
 
         </Tabs>
@@ -3311,5 +3567,7 @@ export function Analytics({
         setDatasets={setSaveDatasets}
       />
     </div>
+    {evaluateRunDialog}
+    </>
   )
 }

@@ -11,11 +11,11 @@ import {
   BarChart3,
   MoreVertical,
   GitCompare,
+  ListChecks,
 } from "lucide-react"
 import type { Node, Edge } from "@xyflow/react"
 import { getNodeIconBg, AppIcon } from "./workflow-node"
 import { NodeDetailModal } from "./node-detail-modal"
-import { WorkflowGantt, type GanttNode } from "./workflow-gantt"
 import { TabContext } from "./dashboard-layout"
 import { Button } from "@/components/ui/button"
 import {
@@ -27,6 +27,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { SaveRunToDatabaseModal } from "./save-run-to-database-modal"
 import type { WorkflowNodeData } from "@/lib/types"
+import { cn } from "@/lib/utils"
 
 const DEFAULT_WORKFLOW_INPUT_FALLBACK =
   "I was charged twice for my Pro subscription this month. This is the third time I've reached out with no response."
@@ -85,17 +86,10 @@ export function RunProgress({
 
   const [isExpanded, setIsExpanded] = useState(true)
   const [selectedNode, setSelectedNode] = useState<Node | null>(null)
-  const [selectedGanttNodeId, setSelectedGanttNodeId] = useState<string | null>(null)
-  const [runStartTime, setRunStartTime] = useState<number | null>(null)
   const [saveToDatabaseOpen, setSaveToDatabaseOpen] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const tabContext = React.useContext(TabContext)
-
-  React.useEffect(() => {
-    if (isRunning) setRunStartTime((t) => t ?? Date.now())
-    else setRunStartTime(null)
-  }, [isRunning])
 
   // Sync with external shouldExpand prop
   useEffect(() => {
@@ -109,70 +103,6 @@ export function RunProgress({
   const handleExpandChange = (expanded: boolean) => {
     setIsExpanded(expanded)
     onExpandChange?.(expanded)
-  }
-
-  // Find the full node object by id
-  const findNodeById = (nodeId: string): Node | undefined => {
-    return nodes.find(n => n.id === nodeId)
-  }
-
-  // Handle node click to open modal (from list)
-  const handleNodeClick = (nodeProgressItem: NodeProgress) => {
-    const node = findNodeById(nodeProgressItem.id)
-    if (node) {
-      const nodeWithIdentifier = {
-        ...node,
-        data: {
-          ...node.data,
-          _identifier: nodeProgressItem.identifier,
-          _duration: nodeProgressItem.duration,
-        }
-      }
-      setSelectedNode(nodeWithIdentifier)
-    }
-  }
-
-  // Handle Gantt node click (compact panel) – open modal for that node
-  const handleGanttNodeSelect = (ganttNode: GanttNode | null) => {
-    if (!ganttNode) {
-      setSelectedNode(null)
-      setSelectedGanttNodeId(null)
-      return
-    }
-    setSelectedGanttNodeId(ganttNode.id)
-    const duration = ganttNode.endSec - ganttNode.startSec
-    const isError = ganttNode.status === "error"
-    const errorOutput = isError
-      ? `Error: ${ganttNode.label} failed to complete.\n\nThis node did not run successfully. Check configuration, credentials, or inputs and try again.`
-      : undefined
-    const match = nodes.find(
-      (n) =>
-        (n.data as any)?.actionName === ganttNode.label ||
-        (n.data as any)?.appName === ganttNode.label
-    )
-    if (match) {
-      setSelectedNode({
-        ...match,
-        data: {
-          ...match.data,
-          _duration: duration,
-          ...(errorOutput != null && { output: errorOutput }),
-        },
-      } as Node)
-    } else {
-      const syntheticNode: Node = {
-        id: ganttNode.id,
-        position: { x: 0, y: 0 },
-        data: {
-          appName: ganttNode.label,
-          actionName: ganttNode.label,
-          type: "action",
-          _duration: duration,
-          ...(errorOutput != null && { output: errorOutput }),
-        },
-      } as Node
-      setSelectedNode(syntheticNode)
-    }
   }
 
   // Generate node progress data from nodes
@@ -415,10 +345,11 @@ export function RunProgress({
                         <DropdownMenuItem
                           className="cursor-pointer"
                           onSelect={() => {
-                            tabContext.openExperimentWithRun({
-                              runId: effectiveRunId,
-                              caseInput: getWorkflowCaseInput(nodes),
-                              openWorkflowVariantDrawer: true,
+                            tabContext.openExperimentVariantBuilderIntro?.({
+                              seedFromRun: {
+                                runId: effectiveRunId,
+                                caseInput: getWorkflowCaseInput(nodes),
+                              },
                             })
                             handleExpandChange(false)
                           }}
@@ -428,8 +359,8 @@ export function RunProgress({
                         </DropdownMenuItem>
                       </TooltipTrigger>
                       <TooltipContent side="left" className="max-w-xs">
-                        Open the Evaluator tab with this run and add a workflow variation column to compare outputs side
-                        by side.
+                        Open the Experiment tab with this run in the matrix, then the same variant-builder intro as Add
+                        variant column (Workflow → Create variant).
                       </TooltipContent>
                     </Tooltip>
                     <Tooltip>
@@ -448,6 +379,28 @@ export function RunProgress({
                       </TooltipTrigger>
                       <TooltipContent side="left" className="max-w-xs">
                         Open the Analytics tab with run detail focused for a deeper breakdown of this run.
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <DropdownMenuItem
+                          className={cn("cursor-pointer gap-2", runStatus === "running" && "opacity-50")}
+                          aria-disabled={runStatus === "running"}
+                          onSelect={(e) => {
+                            e.preventDefault()
+                            if (runStatus === "running") return
+                            tabContext.openEvaluateRunFromWorkflow(effectiveRunId)
+                            handleExpandChange(false)
+                          }}
+                        >
+                          <ListChecks className="h-4 w-4" />
+                          Evaluate Run
+                        </DropdownMenuItem>
+                      </TooltipTrigger>
+                      <TooltipContent side="left" className="max-w-xs">
+                        {runStatus === "running"
+                          ? "Wait until this run finishes before running an evaluation."
+                          : "Pick an evaluator and score this run in Analytics (same as Run Details ⋯ menu)."}
                       </TooltipContent>
                     </Tooltip>
                   </DropdownMenuContent>
@@ -531,7 +484,6 @@ export function RunProgress({
           node={selectedNode}
           onClose={() => {
             setSelectedNode(null)
-            setSelectedGanttNodeId(null)
             // Also close the RunProgress panel when modal closes
             handleExpandChange(false)
           }}

@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback, Suspense } from "react"
 import { ReactFlow, Background, ReactFlowProvider, useNodesState, useEdgesState, useReactFlow } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
-import { DashboardLayout } from "@/components/dashboard-layout"
+import { DashboardLayout, TabContext } from "@/components/dashboard-layout"
 import WorkflowNode from "@/components/workflow-node"
 import { NodeSettingsSidebar } from "@/components/node-settings-sidebar"
 import { RunProgress } from "@/components/run-progress"
@@ -53,6 +53,8 @@ function FlowCanvas({
   const [runErrorDismissed, setRunErrorDismissed] = useState(false)
   const [runErrorMessage] = useState("Error in Node Send Reply (send-reply-node): Email delivery failed. Check SMTP configuration, recipient address, or rate limits and try again.")
   const { screenToFlowPosition } = useReactFlow()
+  const tabContext = React.useContext(TabContext)
+  const workflowVariantSession = tabContext?.workflowVariantEditSessionActive ?? false
 
   const handleActionSelect = (action: SelectedAction, sourceNodeId?: string, side?: "left" | "right") => {
     // Check if we're replacing a node
@@ -614,7 +616,8 @@ function FlowCanvas({
 
   useEffect(() => {
     if (!isInitialized) {
-      const dx = 260
+      // Node cards are w-[380px]; dx must exceed width plus a small gap or nodes overlap.
+      const dx = 450
       const x0 = 60
       const yTop = 40
       const yEmail = 220
@@ -852,15 +855,30 @@ function FlowCanvas({
           // Replace node functionality removed
         }}
       />
-      <RunProgress 
-        nodes={nodes}
-        edges={edges}
-        isRunning={isRunning}
-        runStatus={isRunning ? "running" : runStatusResult}
-        shouldExpand={shouldExpandRunProgress}
-        onExpandChange={(expanded) => setShouldExpandRunProgress(expanded)}
-        runId={activeRunId}
-      />
+      {!workflowVariantSession ? (
+        <RunProgress
+          nodes={nodes}
+          edges={edges}
+          isRunning={isRunning}
+          runStatus={isRunning ? "running" : runStatusResult}
+          shouldExpand={shouldExpandRunProgress}
+          onExpandChange={(expanded) => setShouldExpandRunProgress(expanded)}
+          runId={activeRunId}
+        />
+      ) : null}
+      {workflowVariantSession ? (
+        <div className="pointer-events-none fixed left-0 right-0 top-14 z-40 px-4 py-2">
+          <Alert className="pointer-events-auto border-violet-200 bg-violet-50/95 text-violet-950 shadow-sm dark:border-violet-800 dark:bg-violet-950/80 dark:text-violet-50">
+            <AlertCircle className="h-4 w-4 text-violet-600 dark:text-violet-300" aria-hidden />
+            <div className="col-start-2 min-w-0 flex-1">
+              <div className="font-semibold text-violet-950 dark:text-violet-50">Editing a workflow variant for an experiment</div>
+              <p className="mt-0.5 text-sm leading-snug text-violet-900/90 dark:text-violet-100/85">
+                Run progress is hidden in this mode. Change the graph on the canvas, then click <span className="font-medium text-violet-950 dark:text-violet-50">Create variant</span> in the top bar to add a column to your experiment and return to the Evaluator.
+              </p>
+            </div>
+          </Alert>
+        </div>
+      ) : null}
       {/* Run error banner - fixed below top bar (h-14 = 56px) */}
       {runStatusResult === "error" && !runErrorDismissed && (
         <div className="fixed left-0 right-0 top-14 z-50 px-4 py-2">

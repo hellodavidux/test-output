@@ -8,17 +8,32 @@ export type RunOrigin =
   | "Experiment"
   | "Fork"
 
+export type NodeScore = {
+  nodeId: string
+  nodeLabel: string
+  /** 0–100 internal scale (display as score/10). */
+  score: number
+  /** True on the first node in execution order where score drops below threshold. */
+  rootCause?: boolean
+}
+
 export interface RunData {
   runId: string
   conversationId: string
   created: string
   origin: RunOrigin
+  /** Workflow / agent release label shown in Analytics overview (e.g. v8). */
+  version: string
   status: "success" | "error" | "running"
   input: string
   output: string
   latency: string
   tokens: number
   user: string
+  /** Per-node eval scores. Populated for runs with quality signals. */
+  nodeScores?: NodeScore[]
+  /** Guardrail triggered on this run, if any. */
+  guardrailTriggered?: { policyName: string; action: "block" | "flag" | "redact" }
 }
 
 /** Matches existing Analytics mock table (oldest → newest). */
@@ -28,6 +43,7 @@ export const INITIAL_ANALYTICS_RUNS: RunData[] = [
     conversationId: "conv-billing-1",
     created: "15/04/26 10:12 AM",
     origin: "Interface",
+    version: "v2",
     status: "success",
     input: "I cancelled my account 3 weeks ago but was just charged $299.",
     output:
@@ -35,12 +51,14 @@ export const INITIAL_ANALYTICS_RUNS: RunData[] = [
     latency: "2.31s",
     tokens: 184,
     user: "sarah.chen@example.com",
+    guardrailTriggered: { policyName: "Flag refunds over $500", action: "flag" },
   },
   {
     runId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     conversationId: "conv-cancel-2",
     created: "17/04/26 02:44 PM",
     origin: "Interface",
+    version: "v5",
     status: "success",
     input: "The cancel button on the billing page just spins and never completes.",
     output:
@@ -54,6 +72,7 @@ export const INITIAL_ANALYTICS_RUNS: RunData[] = [
     conversationId: "N/A",
     created: "16/04/26 09:05 AM",
     origin: "Sandbox",
+    version: "v3",
     status: "success",
     input: "How do I cancel my subscription?",
     output:
@@ -67,6 +86,7 @@ export const INITIAL_ANALYTICS_RUNS: RunData[] = [
     conversationId: "N/A",
     created: "16/04/26 11:30 AM",
     origin: "API",
+    version: "v4",
     status: "success",
     input: "I want a refund for the last 3 months — I barely used the product.",
     output:
@@ -74,12 +94,21 @@ export const INITIAL_ANALYTICS_RUNS: RunData[] = [
     latency: "1.22s",
     tokens: 98,
     user: "r.kim@startup.io",
+    guardrailTriggered: { policyName: "Block PII in output", action: "block" },
+    nodeScores: [
+      { nodeId: "2", nodeLabel: "Intent Classifier", score: 84 },
+      { nodeId: "3", nodeLabel: "Knowledge Base Lookup", score: 28, rootCause: true },
+      { nodeId: "4", nodeLabel: "Draft Response", score: 41 },
+      { nodeId: "5", nodeLabel: "Escalation Router", score: 79 },
+      { nodeId: "6", nodeLabel: "Send Reply", score: 70 },
+    ],
   },
   {
     runId: "e5f6a7b8-c9d0-1234-ef01-345678901234",
     conversationId: "N/A",
     created: "17/04/26 08:50 AM",
     origin: "API",
+    version: "v5",
     status: "success",
     input: "My team plan was downgraded last month but we're still being charged the Business rate.",
     output:
@@ -93,6 +122,7 @@ export const INITIAL_ANALYTICS_RUNS: RunData[] = [
     conversationId: "N/A",
     created: "17/04/26 09:14 AM",
     origin: "Sandbox",
+    version: "v6",
     status: "error",
     input: "Cancel my account right now.",
     output: "Error: account lookup timeout — unable to retrieve subscription status",
@@ -105,6 +135,7 @@ export const INITIAL_ANALYTICS_RUNS: RunData[] = [
     conversationId: "N/A",
     created: "17/04/26 10:02 AM",
     origin: "Webhook",
+    version: "v6",
     status: "success",
     input: "I've been trying to cancel for 2 weeks but keep getting a server error.",
     output:
@@ -112,12 +143,14 @@ export const INITIAL_ANALYTICS_RUNS: RunData[] = [
     latency: "1.55s",
     tokens: 112,
     user: "l.wang@enterprise.co",
+    guardrailTriggered: { policyName: "Block prompt injection", action: "block" },
   },
   {
     runId: "b8c9d0e1-f2a3-4567-1234-678901234567",
     conversationId: "N/A",
     created: "17/04/26 10:41 AM",
     origin: "Interface",
+    version: "v7",
     status: "success",
     input: "What's your refund policy?",
     output:
@@ -131,6 +164,7 @@ export const INITIAL_ANALYTICS_RUNS: RunData[] = [
     conversationId: "N/A",
     created: "17/04/26 11:18 AM",
     origin: "API",
+    version: "v7",
     status: "success",
     input: "I was charged twice this month for my Pro subscription.",
     output:
@@ -144,6 +178,7 @@ export const INITIAL_ANALYTICS_RUNS: RunData[] = [
     conversationId: "N/A",
     created: "17/04/26 12:05 PM",
     origin: "Scheduled",
+    version: "v8",
     status: "success",
     input: "I was charged 3 months ago for a plan I never activated. I want a full refund.",
     output:
@@ -151,12 +186,20 @@ export const INITIAL_ANALYTICS_RUNS: RunData[] = [
     latency: "1.88s",
     tokens: 144,
     user: "support-lead@acme.io",
+    nodeScores: [
+      { nodeId: "2", nodeLabel: "Intent Classifier", score: 42, rootCause: true },
+      { nodeId: "3", nodeLabel: "Knowledge Base Lookup", score: 77 },
+      { nodeId: "4", nodeLabel: "Draft Response", score: 61 },
+      { nodeId: "5", nodeLabel: "Escalation Router", score: 38 },
+      { nodeId: "6", nodeLabel: "Send Reply", score: 66 },
+    ],
   },
   {
     runId: "e1f2a3b4-c5d6-7890-4567-901234567890",
     conversationId: "N/A",
     created: "17/04/26 01:20 PM",
     origin: "Sandbox",
+    version: "v8",
     status: "success",
     input: "Can I pause my subscription instead of cancelling?",
     output:
@@ -170,6 +213,7 @@ export const INITIAL_ANALYTICS_RUNS: RunData[] = [
     conversationId: "N/A",
     created: "17/04/26 02:37 PM",
     origin: "Interface",
+    version: "v8",
     status: "success",
     input: "I want to cancel but I'm worried about losing my project data.",
     output:
@@ -183,6 +227,7 @@ export const INITIAL_ANALYTICS_RUNS: RunData[] = [
     conversationId: "N/A",
     created: "17/04/26 04:50 PM",
     origin: "Interface",
+    version: "v8",
     status: "running",
     input: "Cancel my account — I'm switching to a competitor.",
     output: "",

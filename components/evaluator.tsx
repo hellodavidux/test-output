@@ -1,12 +1,13 @@
 "use client"
 
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react"
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import type { ExperimentRunSeed } from "@/lib/experiment-run-seed"
 import type { RunData } from "@/lib/analytics-runs"
 import { formatAnalyticsRunTimestamp } from "@/lib/analytics-runs"
 import { TabContext } from "@/components/dashboard-layout"
 import { cn } from "@/lib/utils"
+import { AgentInstructionsCard, AgentPromptCard, AgentPlaceholderSections } from "@/components/agent-node-config-cards"
 import {
   AlertCircle,
   BarChart3,
@@ -14,35 +15,36 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
+  CloudDownload,
+  CloudUpload,
+  Copy,
+  Maximize2,
   Database,
   EyeOff,
   FileOutput,
-  FilePenLine,
+  FileText,
   FlaskConical,
   Frown,
   History,
   Info,
   Lock,
   Mail,
+  MessageSquare,
   MoreHorizontal,
   Pencil,
   Play,
   Plus,
-  List,
-  Mic,
-  Rocket,
-  Settings,
   Settings2,
   Shield,
   Target,
   TextCursorInput,
   Trash2,
-  Wand2,
-  Wrench,
   Workflow,
   X,
   Zap,
 } from "lucide-react"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -63,6 +65,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -72,7 +82,9 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectSeparator,
   SelectTrigger,
   SelectValue,
@@ -85,14 +97,6 @@ import {
   DrawerFooter,
   DrawerTitle,
 } from "@/components/ui/drawer"
-import {
-  Sheet,
-  SheetContent,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { GANTT_NODES, GanttNodeIcon } from "@/components/workflow-gantt"
 import { SaveRunToDatabaseModal } from "@/components/save-run-to-database-modal"
 
@@ -237,15 +241,22 @@ export const WORKFLOW_NODES: WorkflowNodeDef[] = [
   },
 ]
 
-type WorkflowEvalSource = "output-1" | "output-2" | (typeof WORKFLOW_NODES)[number]["id"]
+type WorkflowEvalSource =
+  | "output-1"
+  | "output-2"
+  | (typeof WORKFLOW_NODES)[number]["id"]
+  | (typeof GANTT_NODES)[number]["id"]
 
 type GanttWorkflowOutputId = (typeof GANTT_NODES)[number]["id"]
 
 /** Which workflow output terminal feeds an experiment column (mock-backed). */
 type ExperimentColumnOutput = WorkflowEvalSource | GanttWorkflowOutputId
 
-/** Must match a workflow node `id` present in the column header `Select` — invalid ids leave Radix `SelectValue` empty. */
-const DEFAULT_EXPERIMENT_COLUMN_OUTPUT: (typeof WORKFLOW_NODES)[number]["id"] = "send-email"
+/** Gantt node id — Output — default terminal for new / unset experiment columns. */
+const DEFAULT_EXPERIMENT_COLUMN_OUTPUT: ExperimentColumnOutput = "10"
+
+/** Workflow node rows hidden from the column output picker (prototype UX). */
+const WORKFLOW_NODE_IDS_HIDDEN_IN_EXPERIMENT_COLUMN_OUTPUT = new Set<string>(["ai-agent", "knowledge-base", "send-email"])
 
 function getExperimentColumnOutputLabel(columnOutput: string): string {
   if (columnOutput === "output-1") return "Output 1"
@@ -267,19 +278,33 @@ function parseOutputForForm(output: string): { evalSource: WorkflowEvalSource } 
   if (/^workflow output$/i.test(o) || /^full workflow/i.test(o)) {
     return { evalSource: "output-1" }
   }
-  for (const n of WORKFLOW_NODES) {
-    if (o === `${n.label} output` || (o.startsWith(n.label) && o.length < n.label.length + 16)) {
-      return { evalSource: n.id }
-    }
-  }
+  const ganttById = GANTT_NODES.find((n) => o === n.id)
+  if (ganttById) return { evalSource: ganttById.id as WorkflowEvalSource }
   const arrow = o.match(/^(.+?)\s*(?:→|->)\s*output\s*$/i)
   if (arrow) {
     const left = arrow[1].trim()
+    const gantt = GANTT_NODES.find(
+      (n) => left === n.label || left.includes(n.label) || n.label.includes(left),
+    )
+    if (gantt) return { evalSource: gantt.id as WorkflowEvalSource }
     const found = WORKFLOW_NODES.find(
       (n) => left === n.label || left.includes(n.label) || n.label.includes(left),
     )
     if (found) return { evalSource: found.id }
     return { evalSource: "output-1" }
+  }
+  for (const n of GANTT_NODES) {
+    if (o === `${n.label} output` || o === n.label) {
+      return { evalSource: n.id as WorkflowEvalSource }
+    }
+    if (o.startsWith(n.label) && o.length < n.label.length + 24) {
+      return { evalSource: n.id as WorkflowEvalSource }
+    }
+  }
+  for (const n of WORKFLOW_NODES) {
+    if (o === `${n.label} output` || (o.startsWith(n.label) && o.length < n.label.length + 16)) {
+      return { evalSource: n.id }
+    }
   }
   if (/\boutput\b/i.test(o) && !/workflow/i.test(o)) {
     return { evalSource: "output-1" }
@@ -302,6 +327,14 @@ function EvaluatedSourceIcon({
   if (evalSource === "output-1" || evalSource === "output-2") {
     return <FileOutput className={iconClass} aria-hidden />
   }
+  const g = GANTT_NODES.find((x) => x.id === evalSource)
+  if (g) {
+    return (
+      <span className={cn("inline-flex shrink-0 items-center justify-center", className)} aria-hidden>
+        <GanttNodeIcon type={g.icon} />
+      </span>
+    )
+  }
   const n = WORKFLOW_NODES.find((x) => x.id === evalSource)
   if (n) return <WorkflowNodeLucideIcon kind={n.iconKind} className={iconClass} />
   return <FileOutput className={iconClass} aria-hidden />
@@ -310,6 +343,8 @@ function EvaluatedSourceIcon({
 function outputLabelFromEvalSource(evalSource: WorkflowEvalSource): string {
   if (evalSource === "output-1") return "Output 1"
   if (evalSource === "output-2") return "Output 2"
+  const g = GANTT_NODES.find((x) => x.id === evalSource)
+  if (g) return `${g.label} → output`
   const n = WORKFLOW_NODES.find((x) => x.id === evalSource)
   return n ? `${n.label} output` : "Output 1"
 }
@@ -321,6 +356,8 @@ function evaluatedSelectLabelFromOutput(output: string): string {
   const { evalSource } = parseOutputForForm(o)
   if (evalSource === "output-1") return "Output 1"
   if (evalSource === "output-2") return "Output 2"
+  const g = GANTT_NODES.find((x) => x.id === evalSource)
+  if (g) return g.label
   const n = WORKFLOW_NODES.find((x) => x.id === evalSource)
   return n?.label ?? o
 }
@@ -362,7 +399,7 @@ type EvaluatorDef = {
   id: string
   label: string
   type: "score" | "reference"
-  /** "3. Evaluation type" from the evaluator dialog (e.g. LLM judge, Compare to expected output). */
+  /** "Evaluation type" from the evaluator dialog (e.g. LLM judge, Expected Output). */
   evaluationType: string
   /** Pass/fail threshold as raw 0–100. Scores below this are shown red. */
   passThreshold?: number
@@ -390,10 +427,9 @@ type TestCase = {
 // ─── Mock data ─────────────────────────────────────────────────────────────────
 
 const INITIAL_EVALUATORS_DEF: EvaluatorDef[] = [
-  { id: "ev-1", label: "Response accuracy", type: "reference", evaluationType: "Compare to expected output" },
   { id: "ev-2", label: "Tone & empathy", type: "score", evaluationType: "LLM judge", passThreshold: 60 },
   { id: "ev-3", label: "Resolution completeness", type: "score", evaluationType: "LLM judge", passThreshold: 70 },
-  { id: "ev-4", label: "Escalation detection", type: "score", evaluationType: "LLM judge", passThreshold: 75 },
+  { id: "ev-1", label: "Response accuracy", type: "reference", evaluationType: "Expected Output" },
 ]
 
 /** Same strings as the Evaluators tab list — use for cross-tab mocks (e.g. Analytics run rows). */
@@ -543,9 +579,7 @@ function getVariantDiffTooltipLines(
   const bOut = baseline.columnOutput ?? DEFAULT_EXPERIMENT_COLUMN_OUTPUT
   const vOut = variant.columnOutput ?? DEFAULT_EXPERIMENT_COLUMN_OUTPUT
   if (bOut !== vOut) {
-    const bl = WORKFLOW_NODES.find((n) => n.id === bOut)?.label ?? bOut
-    const vl = WORKFLOW_NODES.find((n) => n.id === vOut)?.label ?? vOut
-    lines.push(`Output terminal: ${bl} → ${vl}`)
+    lines.push(`Output terminal: ${getExperimentColumnOutputLabel(bOut)} → ${getExperimentColumnOutputLabel(vOut)}`)
   }
 
   const snapDefault = WORKFLOW_VERSION_CHOICES[0]?.id ?? ""
@@ -636,32 +670,32 @@ const MOCK_LOGGED_RUNS: LoggedRunRow[] = [
   },
 ]
 
-/** Default matrix rows — ids align with MOCK_CELL_OUTPUTS / MOCK_CELL_SCORES / MOCK_CELL_MATCH. */
-const INITIAL_CASES: TestCase[] = [
+/** Receive Email trigger: sample payloads (label is UI only; `payload` is stored on the case). */
+const EXPERIMENT_TRIGGER_PAYLOAD_SAMPLES: { label: string; description: string; payload: string }[] = [
   {
-    id: "c-1",
-    input:
-      "I was charged twice for my Business plan last month — please refund the duplicate charge.",
-    expected:
-      '{"intent":"billing_dispute","priority":"high","action":"escalate_to_billing","sentiment":"frustrated"}',
+    label: "New Slack message",
+    description: "User message in #general",
+    payload: `{\n  "event": "message",\n  "channel": "#general",\n  "user": "U012AB3CD",\n  "text": "Hello team!",\n  "ts": "1734000000.000100"\n}`,
   },
   {
-    id: "c-2",
-    input: "The chatbot widget isn't loading on our website after the latest update.",
-    expected: "Escalated to engineering with ETA 24h; include browser version and console errors.",
+    label: "Form submission",
+    description: "Contact form via webhook",
+    payload: `{\n  "event": "form_submit",\n  "name": "Jane Doe",\n  "email": "jane@example.com",\n  "message": "I'd like a demo.",\n  "submitted_at": "2025-12-04T11:25:00Z"\n}`,
   },
   {
-    id: "c-3",
-    input: "I can't log in — the password reset email never arrived. I've checked spam.",
-    expected:
-      "I'm sorry you're having trouble. I've manually triggered a new reset email — it should arrive within a few minutes. If you still don't receive it, please reply and I'll set a temporary password so you can get back in right away.",
-  },
-  {
-    id: "c-4",
-    input: "If I downgrade mid-cycle, do I get a refund for the unused time?",
-    expected: "Refunds are returned to your original card within 5–10 business days after downgrade.",
+    label: "Scheduled run",
+    description: "Cron trigger, no payload",
+    payload: `{\n  "event": "schedule",\n  "cron": "0 9 * * 1-5",\n  "triggered_at": "2025-12-04T09:00:00Z"\n}`,
   },
 ]
+
+function experimentTriggerPayloadForDisplay(stored: string): string {
+  const row = EXPERIMENT_TRIGGER_PAYLOAD_SAMPLES.find((p) => p.label === stored || p.payload === stored)
+  return row?.payload ?? stored
+}
+
+/** Default matrix: one empty row; mock run output still maps via `experimentMockBackingCaseId` → demo row c-1. */
+const INITIAL_CASES: TestCase[] = [{ id: "c-default", input: "", expected: "" }]
 
 /** Prototype: default experiment rows → existing Analytics mock runs (Gantt / Run Details). */
 const DEMO_ANALYTICS_RUN_ID_BY_CASE_ID: Record<string, string> = {
@@ -726,24 +760,24 @@ const MOCK_CELL_OUTPUTS: Record<string, Record<string, string>> = {
 // Mock scores: [caseId][variantId][evalId]
 const MOCK_CELL_SCORES: Record<string, Record<string, Record<string, number>>> = {
   "c-1": {
-    "v-1": { "ev-1": 48, "ev-2": 46, "ev-3": 52, "ev-4": 61 },
-    "v-2": { "ev-1": 96, "ev-2": 94, "ev-3": 88, "ev-4": 98 },
-    "v-3": { "ev-1": 94, "ev-2": 92, "ev-3": 85, "ev-4": 97 },
+    "v-1": { "ev-1": 48, "ev-2": 46, "ev-3": 52 },
+    "v-2": { "ev-1": 96, "ev-2": 94, "ev-3": 88 },
+    "v-3": { "ev-1": 94, "ev-2": 92, "ev-3": 85 },
   },
   "c-2": {
-    "v-1": { "ev-1": 62, "ev-2": 58, "ev-3": 58, "ev-4": 55 },
-    "v-2": { "ev-1": 91, "ev-2": 93, "ev-3": 94, "ev-4": 92 },
-    "v-3": { "ev-1": 95, "ev-2": 96, "ev-3": 97, "ev-4": 93 },
+    "v-1": { "ev-1": 62, "ev-2": 58, "ev-3": 58 },
+    "v-2": { "ev-1": 91, "ev-2": 93, "ev-3": 94 },
+    "v-3": { "ev-1": 95, "ev-2": 96, "ev-3": 97 },
   },
   "c-3": {
-    "v-1": { "ev-1": 55, "ev-2": 52, "ev-3": 49, "ev-4": 72 },
-    "v-2": { "ev-1": 93, "ev-2": 94, "ev-3": 96, "ev-4": 95 },
-    "v-3": { "ev-1": 97, "ev-2": 98, "ev-3": 98, "ev-4": 96 },
+    "v-1": { "ev-1": 55, "ev-2": 52, "ev-3": 49 },
+    "v-2": { "ev-1": 93, "ev-2": 94, "ev-3": 96 },
+    "v-3": { "ev-1": 97, "ev-2": 98, "ev-3": 98 },
   },
   "c-4": {
-    "v-1": { "ev-1": 70, "ev-2": 68, "ev-3": 65, "ev-4": 80 },
-    "v-2": { "ev-1": 88, "ev-2": 90, "ev-3": 92, "ev-4": 85 },
-    "v-3": { "ev-1": 91, "ev-2": 93, "ev-3": 94, "ev-4": 87 },
+    "v-1": { "ev-1": 70, "ev-2": 68, "ev-3": 65 },
+    "v-2": { "ev-1": 88, "ev-2": 90, "ev-3": 92 },
+    "v-3": { "ev-1": 91, "ev-2": 93, "ev-3": 94 },
   },
 }
 
@@ -827,6 +861,11 @@ const MOCK_CELL_MATCH: Record<string, Record<string, boolean>> = {
   "c-4": { "v-1": false, "v-2": false, "v-3": false },
 }
 
+/** Run-progress / Compare seeds use ad-hoc case ids (e.g. `c-run-…`) with no mock row; map those onto the first demo matrix row so cells stay populated after a run. */
+function experimentMockBackingCaseId(caseId: string): string {
+  return MOCK_CELL_OUTPUTS[caseId] ? caseId : "c-1"
+}
+
 const EXPERIMENT_COLUMN_OUTPUT_ALT_SUFFIX = "__output-2"
 
 const KNOWN_MOCK_EXPERIMENT_VARIANT_IDS = new Set<string>(["v-1", "v-2", "v-3"])
@@ -840,7 +879,7 @@ function resolveExperimentMockVariantKey(variantId: string, columnIndex: number)
 
 /** Resolves mock cell text for the chosen workflow output terminal (`columnOutput`). */
 function getExperimentMockOutput(caseId: string, variant: Variant, mockVariantKey: string): string | undefined {
-  const row = MOCK_CELL_OUTPUTS[caseId]
+  const row = MOCK_CELL_OUTPUTS[experimentMockBackingCaseId(caseId)]
   if (!row) return undefined
   const columnOutput = variant.columnOutput ?? DEFAULT_EXPERIMENT_COLUMN_OUTPUT
   const useAlt = columnOutput !== DEFAULT_EXPERIMENT_COLUMN_OUTPUT
@@ -856,6 +895,55 @@ function getExperimentMockOutput(caseId: string, variant: Variant, mockVariantKe
 /** Raw scores are 0–100; display as 0–10 with one decimal (e.g. 7.0, 8.1). */
 function formatScoreTenPoint(score: number) {
   return (score / 10).toFixed(1)
+}
+
+function hashStringToSeed(s: string): number {
+  let h = 0
+  for (let i = 0; i < s.length; i++) {
+    h = (Math.imul(31, h) + s.charCodeAt(i)) | 0
+  }
+  return Math.abs(h)
+}
+
+/**
+ * Experiment table scores are seeded in MOCK_CELL_SCORES for built-in eval ids only.
+ * User-created evaluators get stable preview scores derived from the same demo row.
+ */
+function resolveExperimentCellScore(
+  mockCaseId: string,
+  variantId: string,
+  mockVKey: string,
+  evalId: string,
+): number | null {
+  const row = MOCK_CELL_SCORES[mockCaseId]
+  if (!row) return null
+  const direct = row[variantId]?.[evalId] ?? row[mockVKey]?.[evalId]
+  if (direct != null) return direct
+  const variantScores = row[variantId] ?? row[mockVKey]
+  if (!variantScores) return null
+  const anchor =
+    variantScores["ev-2"] ??
+    variantScores["ev-1"] ??
+    variantScores["ev-3"] ??
+    (Object.values(variantScores).find((x) => typeof x === "number") as number | undefined) ??
+    72
+  const jitter = (hashStringToSeed(`${mockCaseId}:${mockVKey}:${evalId}`) % 19) - 9
+  return Math.min(100, Math.max(28, anchor + jitter))
+}
+
+function resolveExperimentCellExplanation(
+  mockCaseId: string,
+  variantId: string,
+  mockVKey: string,
+  evalId: string,
+  evalLabel: string,
+): string | null {
+  const explRow = MOCK_CELL_EXPLANATIONS[mockCaseId]
+  const curated = explRow?.[variantId]?.[evalId] ?? explRow?.[mockVKey]?.[evalId]
+  if (curated) return curated
+  const score = resolveExperimentCellScore(mockCaseId, variantId, mockVKey, evalId)
+  if (score == null) return null
+  return `Score ${formatScoreTenPoint(score)}/10 — Preview for "${evalLabel}". Detailed judge rationale will follow your rubric once this evaluator runs on the table.`
 }
 
 function scorePassFail(score: number, threshold: number | undefined): "pass" | "fail" | "neutral" {
@@ -949,167 +1037,6 @@ export function defaultValuesForNode(nodeId: string): Record<string, string> {
   return values
 }
 
-function AgentInstructionsCard({
-  value,
-  onChange,
-  placeholder,
-}: {
-  value: string
-  onChange: (v: string) => void
-  placeholder: string
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <span className="w-fit border-b border-dashed border-gray-400 pb-0.5 text-xs font-medium text-gray-700">
-        Instructions
-      </span>
-      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-        <textarea
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          rows={6}
-          className="min-h-[132px] w-full resize-none border-0 bg-white px-3 py-3 text-sm leading-relaxed text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-0"
-        />
-        <div className="flex items-center justify-between gap-2 border-t border-gray-100 bg-gray-50/90 px-2 py-1.5">
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              className="inline-flex size-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-600 shadow-xs hover:bg-gray-50"
-              aria-label="Add"
-            >
-              <Plus className="size-3.5" aria-hidden />
-            </button>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 shadow-xs hover:bg-gray-50"
-            >
-              <Wrench className="size-3.5" aria-hidden />
-              Tools
-            </button>
-          </div>
-          <div className="flex items-center text-gray-500">
-            <button type="button" className="rounded-md p-2 hover:bg-gray-200/60" aria-label="List layout">
-              <List className="size-3.5" aria-hidden />
-            </button>
-            <button type="button" className="rounded-md p-2 hover:bg-gray-200/60" aria-label="Assist">
-              <Wand2 className="size-3.5" aria-hidden />
-            </button>
-            <button type="button" className="rounded-md p-2 hover:bg-gray-200/60" aria-label="Voice">
-              <Mic className="size-3.5" aria-hidden />
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function AgentPromptCard({
-  value,
-  onChange,
-  placeholder,
-}: {
-  value: string
-  onChange: (v: string) => void
-  placeholder: string
-}) {
-  const [view, setView] = React.useState<"edit" | "formatted">("edit")
-  const trimmed = value.trim()
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-end justify-between gap-2">
-        <span className="w-fit border-b border-dashed border-gray-400 pb-0.5 text-xs font-medium text-gray-700">
-          Prompt
-        </span>
-        <div className="flex shrink-0 rounded-lg bg-gray-100/95 p-0.5 text-[11px] font-medium text-gray-500">
-          <button
-            type="button"
-            onClick={() => setView("edit")}
-            className={cn(
-              "rounded-md px-2.5 py-1 transition-colors",
-              view === "edit" ? "bg-white text-gray-900 shadow-sm" : "hover:text-gray-700",
-            )}
-          >
-            Edit
-          </button>
-          <button
-            type="button"
-            onClick={() => setView("formatted")}
-            className={cn(
-              "rounded-md px-2.5 py-1 transition-colors",
-              view === "formatted" ? "bg-white text-gray-900 shadow-sm" : "hover:text-gray-700",
-            )}
-          >
-            Formatted
-          </button>
-        </div>
-      </div>
-      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-        {view === "edit" ? (
-          <>
-            <div className="flex min-h-[92px] flex-col gap-1.5 px-3 py-3">
-              <p className="m-0 flex flex-wrap items-center gap-2 leading-none">
-                <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-gray-200 bg-gray-100/95 px-2 py-1 text-xs font-medium text-gray-800">
-                  <Pencil className="size-3 shrink-0 text-gray-600" aria-hidden />
-                  Input
-                </span>
-              </p>
-              <textarea
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
-                placeholder={placeholder}
-                rows={4}
-                className="min-h-[72px] w-full min-w-0 flex-1 resize-none border-0 bg-transparent p-0 text-sm leading-relaxed text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-0"
-              />
-            </div>
-            <div className="flex items-center justify-end gap-0.5 border-t border-gray-100 bg-gray-50/90 px-2 py-1.5 text-gray-500">
-              <button type="button" className="rounded-md p-2 hover:bg-gray-200/60" aria-label="List layout">
-                <List className="size-3.5" aria-hidden />
-              </button>
-              <button type="button" className="rounded-md p-2 hover:bg-gray-200/60" aria-label="Assist">
-                <Wand2 className="size-3.5" aria-hidden />
-              </button>
-              <button type="button" className="rounded-md p-2 hover:bg-gray-200/60" aria-label="Voice">
-                <Mic className="size-3.5" aria-hidden />
-              </button>
-            </div>
-          </>
-        ) : (
-          <div className="min-h-[92px] space-y-2 border-b border-gray-100 px-3 py-3 text-sm leading-relaxed text-gray-700">
-            <p className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-gray-100/95 px-2 py-1 text-xs font-medium text-gray-800">
-                <Pencil className="size-3 shrink-0 text-gray-600" aria-hidden />
-                Input
-              </span>
-              <span className="text-gray-400">·</span>
-              <span className="text-xs text-gray-500">referenced in prompt</span>
-            </p>
-            {trimmed ? (
-              <p className="whitespace-pre-wrap rounded-md bg-gray-50/90 px-2.5 py-2 text-xs text-gray-800">{trimmed}</p>
-            ) : (
-              <p className="text-xs italic text-gray-400">No additional prompt text after the Input reference.</p>
-            )}
-          </div>
-        )}
-        {view === "formatted" ? (
-          <div className="flex items-center justify-end gap-0.5 bg-gray-50/90 px-2 py-1.5 text-gray-500">
-            <button type="button" className="rounded-md p-2 hover:bg-gray-200/60" aria-label="List layout">
-              <List className="size-3.5" aria-hidden />
-            </button>
-            <button type="button" className="rounded-md p-2 hover:bg-gray-200/60" aria-label="Assist">
-              <Wand2 className="size-3.5" aria-hidden />
-            </button>
-            <button type="button" className="rounded-md p-2 hover:bg-gray-200/60" aria-label="Voice">
-              <Mic className="size-3.5" aria-hidden />
-            </button>
-          </div>
-        ) : null}
-      </div>
-    </div>
-  )
-}
-
 function AgentSettingsCard({
   modelField,
   values,
@@ -1142,33 +1069,6 @@ function AgentSettingsCard({
           ))}
         </select>
       </div>
-    </div>
-  )
-}
-
-const AGENT_PLACEHOLDER_SECTIONS: { label: string; Icon: React.ComponentType<{ className?: string }> }[] = [
-  { label: "Knowledge Sources", Icon: Database },
-  { label: "Tools", Icon: Wrench },
-  { label: "Subflow Tools", Icon: Workflow },
-  { label: "Main Settings", Icon: Settings },
-  { label: "Advanced Settings", Icon: Rocket },
-]
-
-function AgentPlaceholderSections() {
-  return (
-    <div className="flex flex-col gap-2">
-      {AGENT_PLACEHOLDER_SECTIONS.map(({ label, Icon }) => (
-        <div
-          key={label}
-          className="flex items-center justify-between rounded-lg bg-gray-50/80 px-3 py-2.5 text-sm text-gray-600"
-        >
-          <span className="flex min-w-0 items-center gap-2.5">
-            <Icon className="size-4 shrink-0 text-gray-500" aria-hidden />
-            <span className="truncate">{label}</span>
-          </span>
-          <ChevronDown className="size-4 shrink-0 text-gray-400" aria-hidden />
-        </div>
-      ))}
     </div>
   )
 }
@@ -1304,7 +1204,6 @@ export function WorkflowNodePicker({
   open?: boolean
   onOpenChange?: (open: boolean) => void
 }) {
-  const selected = WORKFLOW_NODES.find((n) => n.id === selectedId)
   const controlled = open !== undefined && onOpenChange !== undefined
   return (
     <Select
@@ -1314,9 +1213,6 @@ export function WorkflowNodePicker({
     >
       <SelectTrigger id={id} className="h-9 w-full min-w-0 gap-2 shadow-xs">
         <span className="flex min-w-0 flex-1 items-center gap-2">
-          {selected ? (
-            <WorkflowNodeLucideIcon kind={selected.iconKind} className="size-4 shrink-0 text-muted-foreground" />
-          ) : null}
           <SelectValue className="min-w-0 truncate" placeholder={placeholder} />
         </span>
       </SelectTrigger>
@@ -1355,17 +1251,146 @@ function emptyNewVariantDraft(): { nodeId: string; values: Record<string, string
   return { nodeId: "", values: {} }
 }
 
+/** Cell detail sheet — output block styled like structured output viewer (tabs, copy, expand). */
+function CellSheetOutputPanel({ output, sourceLabel }: { output: string; sourceLabel: string }) {
+  const [collapsed, setCollapsed] = useState(false)
+  const [view, setView] = useState<"formatted" | "text">("formatted")
+  const [expandOpen, setExpandOpen] = useState(false)
+
+  const prettyPrinted = useMemo(() => {
+    const t = output.trim()
+    if (!t) return null
+    try {
+      return JSON.stringify(JSON.parse(t), null, 2)
+    } catch {
+      return null
+    }
+  }, [output])
+
+  const formattedDisplay = prettyPrinted ?? output
+  const displayContent = view === "formatted" ? formattedDisplay : output
+
+  const copyOutput = () => {
+    void navigator.clipboard.writeText(output).then(
+      () => toast.success("Copied to clipboard"),
+      () => toast.error("Could not copy"),
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-0 px-5 py-4">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2 text-gray-600">
+          <FileOutput className="h-4 w-4 shrink-0 text-gray-500" aria-hidden />
+          <span className="text-sm font-medium text-gray-700">Output</span>
+          <span className="truncate text-xs font-normal text-gray-400">· {sourceLabel}</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setCollapsed((c) => !c)}
+          className="shrink-0 rounded-md p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? "Expand output section" : "Collapse output section"}
+        >
+          <ChevronUp className={cn("h-4 w-4 transition-transform", collapsed && "rotate-180")} aria-hidden />
+        </button>
+      </div>
+
+      {!collapsed && (
+        <>
+          <p className="mt-3 text-xs text-gray-400">Output</p>
+          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+            <div className="inline-flex rounded-lg bg-gray-100/90 p-0.5">
+              <button
+                type="button"
+                onClick={() => setView("formatted")}
+                className={cn(
+                  "rounded-md px-3 py-1.5 text-xs font-medium transition-all",
+                  view === "formatted"
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-500 hover:text-gray-700",
+                )}
+              >
+                Formatted
+              </button>
+              <button
+                type="button"
+                onClick={() => setView("text")}
+                className={cn(
+                  "rounded-md px-3 py-1.5 text-xs font-medium transition-all",
+                  view === "text" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700",
+                )}
+              >
+                Text
+              </button>
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-8 w-8 shrink-0 rounded-md border-gray-200 bg-white text-gray-600 shadow-none hover:bg-gray-50"
+                onClick={() => setExpandOpen(true)}
+                aria-label="Expand output"
+              >
+                <Maximize2 className="h-3.5 w-3.5" aria-hidden />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-8 w-8 shrink-0 rounded-md border-gray-200 bg-white text-gray-600 shadow-none hover:bg-gray-50"
+                onClick={copyOutput}
+                aria-label="Copy output"
+              >
+                <Copy className="h-3.5 w-3.5" aria-hidden />
+              </Button>
+            </div>
+          </div>
+
+          <div className="relative mt-3 min-h-[120px] max-h-[min(42vh,300px)] resize-y overflow-y-auto rounded-lg border border-gray-200 bg-[#f5f5f6] p-3 [scrollbar-width:thin]">
+            <pre className="m-0 whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-gray-700">
+              {displayContent || "—"}
+            </pre>
+          </div>
+        </>
+      )}
+
+      <Dialog open={expandOpen} onOpenChange={setExpandOpen}>
+        <DialogContent className="flex max-h-[min(90vh,720px)] max-w-3xl flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+          <DialogHeader className="border-b border-gray-100 px-6 py-4 text-left">
+            <DialogTitle className="text-base">Output</DialogTitle>
+            <DialogDescription className="text-xs text-gray-500">{sourceLabel}</DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto p-6 pt-4">
+            <pre className="whitespace-pre-wrap break-words rounded-lg border border-gray-200 bg-[#f5f5f6] p-4 font-mono text-[13px] leading-relaxed text-gray-800">
+              {displayContent || "—"}
+            </pre>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
 // ─── ExperimentTab ─────────────────────────────────────────────────────────────
 
 function ExperimentTab({
   evalDefs,
+  evaluators,
   selectedEvalIds,
   setSelectedEvalIds,
   onOpenCreateEvaluator,
   onNavigateToWorkflow,
   seedCase,
+  variantAppendToken = null,
+  onVariantAppendConsumed,
+  variantBuilderIntroToken = null,
+  onVariantBuilderIntroConsumed,
 }: {
   evalDefs: EvaluatorDef[]
+  /** Parallel to `evalDefs` — used to show which workflow node each evaluator targets in the picker. */
+  evaluators: EvaluatorConfig[]
   selectedEvalIds: string[]
   setSelectedEvalIds: React.Dispatch<React.SetStateAction<string[]>>
   onOpenCreateEvaluator: () => void
@@ -1373,6 +1398,12 @@ function ExperimentTab({
   onNavigateToWorkflow?: () => void
   /** When set, the experiment table starts with one row (Run progress → Evaluate / Compare / Analytics Compare). */
   seedCase?: ExperimentRunSeed | null
+  /** Set when user finishes “Create variant” on Workflow; cleared after Experiment consumes it. */
+  variantAppendToken?: string | null
+  onVariantAppendConsumed?: () => void
+  /** One-shot from layout (Run progress, Analytics, …) to open the same intro modal as “Add variant column”. */
+  variantBuilderIntroToken?: string | null
+  onVariantBuilderIntroConsumed?: () => void
 }) {
   const tabContext = React.useContext(TabContext)
   const [variants, setVariants] = useState<Variant[]>(INITIAL_VARIANTS)
@@ -1397,10 +1428,11 @@ function ExperimentTab({
   // Sheets
   const [inputSheet, setInputSheet]     = useState<{ caseId: string; field: "input" | "expected" } | null>(null)
   const [inputDraft, setInputDraft]     = useState("")
-  const [sheetDatasetId, setSheetDatasetId] = useState<string | null>(null)
   const [sheetRunId, setSheetRunId] = useState<string | null>(null)
   /** Side sheet: manual typing/samples vs dataset vs logged run (mutually exclusive). */
   const [inputSheetSource, setInputSheetSource] = useState<"manual" | "dataset" | "run">("manual")
+  /** Dataset tab: which mock dataset is selected (submenus are unreliable inside the portaled sheet). */
+  const [inputSheetDatasetId, setInputSheetDatasetId] = useState(() => MOCK_DATASETS[0]?.id ?? "")
   const [nodeSheet, setNodeSheet]       = useState<{ variantId: string; variantLabel: string } | null>(null)
   /** Side sheet: first pick whether to bind a saved workflow version or edit node overrides. */
   const [nodeSheetMode, setNodeSheetMode] = useState<"workflow-version" | "node-config">("node-config")
@@ -1420,6 +1452,10 @@ function ExperimentTab({
 
   const [addEvalMenuOpen, setAddEvalMenuOpen]         = useState(false)
 
+  const [variantWorkflowIntroOpen, setVariantWorkflowIntroOpen] = useState(false)
+  const lastVariantAppendTokenRef = React.useRef<string | null>(null)
+  const lastVariantBuilderIntroTokenRef = React.useRef<string | null>(null)
+
   const [draftConfirmVariant, setDraftConfirmVariant] = useState<{ id: string; label: string } | null>(null)
 
   const [nodeConfigs, setNodeConfigs] = useState<Record<string, NodeConfig>>({})
@@ -1427,6 +1463,53 @@ function ExperimentTab({
   useEffect(() => {
     if (nodeSheet) setNodeSheetMode("node-config")
   }, [nodeSheet])
+
+  useEffect(() => {
+    if (!inputSheet) return
+    setInputSheetDatasetId(MOCK_DATASETS[0]?.id ?? "")
+  }, [inputSheet])
+
+  useEffect(() => {
+    if (!variantAppendToken) return
+    if (variantAppendToken === lastVariantAppendTokenRef.current) {
+      queueMicrotask(() => onVariantAppendConsumed?.())
+      return
+    }
+    lastVariantAppendTokenRef.current = variantAppendToken
+    setVariants((prev) => {
+      const baseline = prev.find((v) => v.id === BASELINE_VARIANT_ID) ?? prev[0]
+      if (!baseline) return prev
+      const nextLen = prev.length + 1
+      const label = nextLen === 2 ? "Variant Output" : `Variant ${nextLen}`
+      const id =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? `v-${crypto.randomUUID()}`
+          : `v-${Date.now()}-${Math.random().toString(16).slice(2)}`
+      return [
+        ...prev,
+        {
+          id,
+          label,
+          workflow: {
+            nodeId: baseline.workflow.nodeId,
+            values: { ...baseline.workflow.values },
+          },
+        },
+      ]
+    })
+    queueMicrotask(() => onVariantAppendConsumed?.())
+  }, [variantAppendToken, onVariantAppendConsumed])
+
+  useEffect(() => {
+    if (!variantBuilderIntroToken) return
+    if (variantBuilderIntroToken === lastVariantBuilderIntroTokenRef.current) {
+      queueMicrotask(() => onVariantBuilderIntroConsumed?.())
+      return
+    }
+    lastVariantBuilderIntroTokenRef.current = variantBuilderIntroToken
+    setVariantWorkflowIntroOpen(true)
+    queueMicrotask(() => onVariantBuilderIntroConsumed?.())
+  }, [variantBuilderIntroToken, onVariantBuilderIntroConsumed])
 
   const selectedEvalSummary = useMemo(() => {
     const labels = selectedEvalIds
@@ -1440,6 +1523,11 @@ function ExperimentTab({
   const singleSelectedEvalLabel = useMemo(() => {
     if (selectedEvalIds.length !== 1) return null
     return evalDefs.find((e) => e.id === selectedEvalIds[0])?.label ?? null
+  }, [selectedEvalIds, evalDefs])
+
+  const singleSelectedEvaluationType = useMemo(() => {
+    if (selectedEvalIds.length !== 1) return null
+    return evalDefs.find((e) => e.id === selectedEvalIds[0])?.evaluationType ?? null
   }, [selectedEvalIds, evalDefs])
 
   /** Second column: expected ground truth when any selected evaluator compares to expected output. */
@@ -1480,7 +1568,7 @@ function ExperimentTab({
     setVariants((prev) => [
       ...prev,
       {
-        id: `v-${Date.now()}`,
+        id: typeof crypto !== "undefined" && crypto.randomUUID ? `v-${crypto.randomUUID()}` : `v-${Date.now()}-${Math.random().toString(16).slice(2)}`,
         label,
         workflow: {
           nodeId: newVariantDraft.nodeId,
@@ -1516,43 +1604,84 @@ function ExperimentTab({
     const id = `c-${Date.now()}`
     setCases((prev) => [...prev, { id, input: "", expected: "" }])
     setInputDraft("")
-    setSheetDatasetId(null)
     setSheetRunId(null)
     setInputSheetSource("manual")
     setInputSheet({ caseId: id, field: "input" })
   }
   const removeCase = (id: string) => setCases(prev => prev.filter(c => c.id !== id))
 
-  /** Single grid template so header, body, and footer columns share exact tracks (fixes flex row misalignment). Leading column: row actions; last column: Compare. */
+  /** Single grid template so header, body, and footer columns share exact tracks (fixes flex row misalignment). Leading column: row actions. */
   const experimentTableGridTemplate = useMemo(
     () =>
-      `max-content ${showExpectedOutputColumn ? "minmax(120px, 1fr) minmax(96px, 1fr)" : "minmax(120px, 1fr)"} ${variants.map(() => "minmax(160px, 1fr)").join(" ")} max-content`,
+      `max-content ${showExpectedOutputColumn ? "minmax(120px, 1fr) minmax(96px, 1fr)" : "minmax(120px, 1fr)"} ${variants.map(() => "minmax(17rem, 1fr)").join(" ")}`,
     [variants.length, showExpectedOutputColumn],
   )
 
-  /** Skip the blurred "choose an evaluator" gate when we opened from Run progress → Compare (seeded row). */
-  const showTableSetupOverlay = selectedEvalIds.length === 0 && !seedCase
+  const runEvaluatorDisabled = isRunning || selectedEvalIds.length === 0
+  const runEvaluatorDisabledReason = isRunning
+    ? "A run is already in progress. Wait for it to finish before starting another."
+    : "Select at least one evaluator from the dropdown before running."
+
+  const handleRunEvaluator = useCallback(() => {
+    setIsRunning(true)
+    setHasRun(false)
+    const evalLabels = evalDefs
+      .filter((ev) => selectedEvalIds.includes(ev.id))
+      .map((ev) => ev.label)
+    const inputPieces = cases.map((c) => c.input.trim()).filter(Boolean)
+    const inputSummary = inputPieces.join(" · ").slice(0, 280) || "(empty matrix input)"
+    const variantCount = variants.length
+    setTimeout(() => {
+      setIsRunning(false)
+      setHasRun(true)
+      const row: RunData = {
+        runId: crypto.randomUUID(),
+        conversationId: "N/A",
+        created: formatAnalyticsRunTimestamp(),
+        origin: "Experiment",
+        version: "v8",
+        status: "success",
+        input: inputSummary,
+        output: JSON.stringify({
+          experiment: "evaluator_matrix",
+          variants: variantCount,
+          evaluators: evalLabels,
+        }),
+        latency: `${(1.15 + Math.random() * 1.25).toFixed(2)}s`,
+        tokens: Math.round(60 + Math.random() * 380),
+        user: "—",
+      }
+      tabContext?.appendAnalyticsRun(row)
+    }, 1800)
+  }, [evalDefs, selectedEvalIds, cases, variants, tabContext])
 
   const evaluatorSelectMenuContent = useMemo(
     () => (
       <>
-        {evalDefs.map((ev) => (
-          <DropdownMenuCheckboxItem
-            key={ev.id}
-            indicatorPosition="end"
-            multiline
-            checked={selectedEvalIds.includes(ev.id)}
-            onCheckedChange={(checked) => toggleEvalInTable(ev.id, checked)}
-            onSelect={(e) => e.preventDefault()}
-          >
-            <span className="flex min-w-0 flex-col gap-0.5">
-              <span className="font-medium leading-tight">{ev.label}</span>
-              <span className="text-xs font-normal text-muted-foreground leading-tight">
-                {ev.evaluationType}
+        {evalDefs.map((ev, index) => {
+          const cfg = evaluators[index]
+          const evaluatedNode =
+            cfg != null ? evaluatedSelectLabelFromOutput(cfg.output) : "—"
+          return (
+            <DropdownMenuCheckboxItem
+              key={ev.id}
+              indicatorPosition="end"
+              multiline
+              checked={selectedEvalIds.includes(ev.id)}
+              onCheckedChange={(checked) => toggleEvalInTable(ev.id, checked)}
+              onSelect={(e) => e.preventDefault()}
+            >
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span className="font-medium leading-tight">{ev.label}</span>
+                <span className="inline-flex min-w-0 flex-wrap items-center gap-x-1 text-xs font-normal text-muted-foreground leading-tight">
+                  <span>{ev.evaluationType}</span>
+                  <span className="text-muted-foreground/45"> · </span>
+                  <span className="min-w-0">{evaluatedNode}</span>
+                </span>
               </span>
-            </span>
-          </DropdownMenuCheckboxItem>
-        ))}
+            </DropdownMenuCheckboxItem>
+          )
+        })}
         {evalDefs.length > 0 ? <DropdownMenuSeparator /> : null}
         <DropdownMenuItem
           className="gap-2"
@@ -1566,21 +1695,94 @@ function ExperimentTab({
         </DropdownMenuItem>
       </>
     ),
-    [evalDefs, selectedEvalIds, toggleEvalInTable, onOpenCreateEvaluator],
+    [evalDefs, evaluators, selectedEvalIds, toggleEvalInTable, onOpenCreateEvaluator],
   )
 
   return (
     <div className="flex min-h-0 min-w-0 flex-col p-6 gap-4">
 
-      {/* ── Top bar ─────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between gap-3">
-        <p className="min-w-0 flex-1 pr-2 text-sm leading-snug text-muted-foreground">
-          Build a test matrix, compare workflow variants side by side, and run evals to see which configuration scores best.
-        </p>
-        <div className="flex shrink-0 items-center gap-2">
+      <Dialog open={variantWorkflowIntroOpen} onOpenChange={setVariantWorkflowIntroOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create a variant from workflow draft</DialogTitle>
+            <DialogDescription asChild>
+              <Alert className="border-violet-200 bg-violet-50/90 text-left text-violet-950 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-50 sm:text-left">
+                <Info className="h-4 w-4 text-violet-600 dark:text-violet-300" aria-hidden />
+                <AlertDescription className="text-pretty text-violet-900/90 dark:text-violet-100/90">
+                  You&apos;ll open the Workflow tab to change prompts and settings. Run progress stays hidden in variant mode. When you&apos;re done, click{" "}
+                  <span className="font-medium text-violet-950 dark:text-violet-50">Create variant</span> in the top bar to add a matrix column and return here.
+                </AlertDescription>
+              </Alert>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button type="button" variant="outline" onClick={() => setVariantWorkflowIntroOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-foreground text-background hover:bg-foreground/90"
+              onClick={() => {
+                tabContext?.startWorkflowVariantEditFromExperiment()
+                setVariantWorkflowIntroOpen(false)
+              }}
+            >
+              Continue to Workflow
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-          {/* Evaluator selector — only in top bar once at least one evaluator is selected */}
-          {!showTableSetupOverlay ? (
+      {/* ── Top bar ─────────────────────────────────────────────────── */}
+      <div className="flex flex-col gap-4">
+        <ManusTipBanner>
+          <p>
+            <span className="font-medium text-foreground">Experiments</span> let you evaluate test cases (rows) and score
+            it with evaluators. You can also compare workflow variations by swapping prompts/models (columns).
+          </p>
+        </ManusTipBanner>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <TooltipProvider delayDuration={300}>
+            <div className="flex flex-wrap items-center gap-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1.5 rounded-md px-3 text-xs font-medium text-foreground shadow-none bg-white hover:bg-gray-50"
+                    onClick={addCase}
+                  >
+                    <Plus className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+                    Add input row
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" align="start" className="max-w-xs text-xs">
+                  Add another input row to the matrix with its own input (and expected output when that column is on).
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1.5 rounded-md px-3 text-xs font-medium text-foreground shadow-none bg-white hover:bg-gray-50"
+                    onClick={() => setVariantWorkflowIntroOpen(true)}
+                  >
+                    <Plus className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+                    Add variant column
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" align="start" className="max-w-xs text-xs">
+                  Opens a short setup, then the Workflow tab so you can edit the graph and save it as a new experiment column with Create variant.
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </TooltipProvider>
+
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {/* Evaluator selector — empty state shows placeholder until at least one eval is checked */}
             <DropdownMenu open={addEvalMenuOpen} onOpenChange={setAddEvalMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="gap-1.5 h-8 min-w-[10rem] max-w-[280px] justify-between font-normal">
@@ -1592,9 +1794,14 @@ function ExperimentTab({
                   >
                     {singleSelectedEvalLabel ? (
                       <>
-                        <span className="shrink-0 rounded border border-border bg-muted/60 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                          Eval
-                        </span>
+                        {singleSelectedEvaluationType ? (
+                          <span
+                            title={singleSelectedEvaluationType}
+                            className="max-w-[min(11rem,40vw)] shrink-0 truncate rounded border border-border bg-muted/60 px-1.5 py-px text-left text-[10px] font-semibold leading-tight tracking-wide text-muted-foreground normal-case"
+                          >
+                            {singleSelectedEvaluationType}
+                          </span>
+                        ) : null}
                         <span className="min-w-0 truncate">{singleSelectedEvalLabel}</span>
                       </>
                     ) : (
@@ -1608,49 +1815,108 @@ function ExperimentTab({
                 {evaluatorSelectMenuContent}
               </DropdownMenuContent>
             </DropdownMenu>
-          ) : null}
 
-          {/* Run */}
-          <Button size="sm" className="gap-1.5 h-8 bg-foreground text-background hover:bg-foreground/90 disabled:opacity-60" disabled={isRunning || selectedEvalIds.length === 0}
-            onClick={() => {
-              setIsRunning(true)
-              setHasRun(false)
-              const evalLabels = evalDefs
-                .filter((ev) => selectedEvalIds.includes(ev.id))
-                .map((ev) => ev.label)
-              const inputPieces = cases.map((c) => c.input.trim()).filter(Boolean)
-              const inputSummary = inputPieces.join(" · ").slice(0, 280) || "(empty matrix input)"
-              const variantCount = variants.length
-              setTimeout(() => {
-                setIsRunning(false)
-                setHasRun(true)
-                const row: RunData = {
-                  runId: crypto.randomUUID(),
-                  conversationId: "N/A",
-                  created: formatAnalyticsRunTimestamp(),
-                  origin: "Experiment",
-                  status: "success",
-                  input: inputSummary,
-                  output: JSON.stringify({
-                    experiment: "evaluator_matrix",
-                    variants: variantCount,
-                    evaluators: evalLabels,
-                  }),
-                  latency: `${(1.15 + Math.random() * 1.25).toFixed(2)}s`,
-                  tokens: Math.round(60 + Math.random() * 380),
-                  user: "—",
-                }
-                tabContext?.appendAnalyticsRun(row)
-              }, 1800)
-            }}>
-            <Play className={cn("w-3.5 h-3.5", isRunning && "animate-spin")} />
-            {isRunning ? "running…" : selectedEvalIds.length > 1 ? "Run Evaluators" : "Run Evaluator"}
-          </Button>
+            {/* Run — when disabled, span trigger so hover shows why (disabled buttons don’t receive pointer events) */}
+            {runEvaluatorDisabled ? (
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex shrink-0 rounded-md">
+                      <Button
+                        size="sm"
+                        className="h-8 w-[168px] shrink-0 justify-center gap-1.5 bg-foreground text-background hover:bg-foreground/90 disabled:opacity-60"
+                        disabled
+                        onClick={handleRunEvaluator}
+                      >
+                        <Play className={cn("w-3.5 h-3.5", isRunning && "animate-spin")} />
+                        {isRunning ? "running…" : selectedEvalIds.length > 1 ? "Run Evaluators" : "Run Evaluator"}
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" align="end" className="max-w-xs text-xs text-balance">
+                    {runEvaluatorDisabledReason}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : (
+              <Button
+                size="sm"
+                className="h-8 w-[168px] shrink-0 justify-center gap-1.5 bg-foreground text-background hover:bg-foreground/90 disabled:opacity-60"
+                onClick={handleRunEvaluator}
+              >
+                <Play className={cn("w-3.5 h-3.5", isRunning && "animate-spin")} />
+                {selectedEvalIds.length > 1 ? "Run Evaluators" : "Run Evaluator"}
+              </Button>
+            )}
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="shrink-0 border-0 bg-transparent shadow-none hover:!bg-transparent dark:hover:!bg-transparent hover:text-foreground"
+                  aria-label="Experiment table actions"
+                >
+                  <MoreHorizontal className="h-4 w-4" aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                sideOffset={6}
+                className="w-52 rounded-lg border border-gray-200 bg-white p-1 text-foreground shadow-md"
+              >
+                <DropdownMenuItem
+                  className="gap-2 py-2 text-sm"
+                  onSelect={() => toast.message("Chat with Table")}
+                >
+                  <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                  Chat with Table
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="gap-2 py-2 text-sm"
+                  onSelect={() => toast.message("Download CSV")}
+                >
+                  <CloudDownload className="h-4 w-4 text-muted-foreground" />
+                  Download CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="gap-2 py-2 text-sm"
+                  onSelect={() => toast.message("Download PDF")}
+                >
+                  <CloudDownload className="h-4 w-4 text-muted-foreground" />
+                  Download PDF
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="gap-2 py-2 text-sm"
+                  onSelect={() => toast.message("Import CSV")}
+                >
+                  <CloudUpload className="h-4 w-4 text-muted-foreground" />
+                  Import CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  variant="destructive"
+                  className="gap-2 py-2 text-sm"
+                  onSelect={() => toast.message("Delete all runs")}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete all runs
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="gap-2 py-2 text-sm"
+                  onSelect={() => toast.message("Resume runs")}
+                >
+                  <Play className="h-4 w-4 text-muted-foreground" />
+                  Resume runs
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </div>
 
       {/* ── Main table: card height follows content; page tab area scrolls if needed ── */}
-      <div className="relative w-full max-w-full shrink-0 overflow-hidden rounded-xl border border-border/80 bg-background shadow-sm">
+      <div className="relative w-full max-w-full shrink-0 overflow-hidden rounded-lg border border-border/80 bg-background shadow-[0_1px_1px_rgba(0,0,0,0.035)]">
         <div className="w-full min-w-0">
           <div
             className="grid w-full min-w-0"
@@ -1680,6 +1946,11 @@ function ExperimentTab({
                 v.id === BASELINE_VARIANT_ID
                   ? null
                   : getVariantDiffTooltipLines(baselineVariant, v, nodeConfigs, variantWorkflowSnapshotId)
+              const variantChipIndex = variants
+                .filter((vv) => vv.id !== BASELINE_VARIANT_ID)
+                .findIndex((vv) => vv.id === v.id)
+              const variantChipLabel =
+                variantChipIndex <= 0 ? "Variant" : `Variant ${variantChipIndex + 1}`
               return (
                 <div
                   key={`h-${v.id}`}
@@ -1695,8 +1966,8 @@ function ExperimentTab({
                         <TooltipProvider delayDuration={300}>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <span className="shrink-0 cursor-help border-b border-dotted border-muted-foreground/50 text-[11px] font-bold uppercase tracking-wide text-muted-foreground decoration-transparent hover:border-muted-foreground hover:text-foreground">
-                                {v.label}
+                              <span className="inline-flex shrink-0 cursor-help items-center rounded-md border border-violet-200 bg-violet-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-800 shadow-sm dark:border-violet-700 dark:bg-violet-950/60 dark:text-violet-100">
+                                {variantChipLabel}
                               </span>
                             </TooltipTrigger>
                             <TooltipContent
@@ -1732,19 +2003,6 @@ function ExperimentTab({
                           className="min-w-[14rem]"
                           startAtTop
                         >
-                          <SelectItem value="output-1" textValue="Output 1">
-                            <span className="flex items-center gap-2">
-                              <FileOutput className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                              Output 1
-                            </span>
-                          </SelectItem>
-                          <SelectItem value="output-2" textValue="Output 2">
-                            <span className="flex items-center gap-2">
-                              <FileOutput className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                              Output 2
-                            </span>
-                          </SelectItem>
-                          <SelectSeparator />
                           {GANTT_NODES.map((node) => (
                             <SelectItem key={node.id} value={node.id} textValue={node.label}>
                               <span className="flex items-center gap-2">
@@ -1753,15 +2011,25 @@ function ExperimentTab({
                               </span>
                             </SelectItem>
                           ))}
-                          <SelectSeparator />
-                          {WORKFLOW_NODES.map((n) => (
-                            <SelectItem key={n.id} value={n.id} textValue={n.label}>
-                              <span className="flex items-center gap-2">
-                                <WorkflowNodeLucideIcon kind={n.iconKind} />
-                                {n.label}
-                              </span>
-                            </SelectItem>
-                          ))}
+                          {(() => {
+                            const extraWorkflowOutputs = WORKFLOW_NODES.filter(
+                              (n) => !WORKFLOW_NODE_IDS_HIDDEN_IN_EXPERIMENT_COLUMN_OUTPUT.has(n.id),
+                            )
+                            if (extraWorkflowOutputs.length === 0) return null
+                            return (
+                              <>
+                                <SelectSeparator />
+                                {extraWorkflowOutputs.map((n) => (
+                                  <SelectItem key={n.id} value={n.id} textValue={n.label}>
+                                    <span className="flex items-center gap-2">
+                                      <WorkflowNodeLucideIcon kind={n.iconKind} />
+                                      {n.label}
+                                    </span>
+                                  </SelectItem>
+                                ))}
+                              </>
+                            )
+                          })()}
                         </SelectContent>
                       </Select>
                       {v.id !== BASELINE_VARIANT_ID && (
@@ -1769,16 +2037,20 @@ function ExperimentTab({
                           <TooltipProvider delayDuration={300}>
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <button type="button" onClick={() => setNodeSheet({ variantId: v.id, variantLabel: v.label })}
+                                <button
+                                  type="button"
+                                  onClick={() => tabContext?.startWorkflowVariantEditFromExperiment()}
                                   className={cn("shrink-0 rounded px-1.5 py-0.5 text-[10px] transition-colors",
                                     node ? "text-gray-500 hover:text-gray-700" : "text-gray-300 hover:text-gray-500"
                                   )}
-                                  aria-label="Variant settings"
+                                  aria-label="Edit variant in Workflow"
                                 >
                                   <Settings2 className="w-3 h-3" aria-hidden />
                                 </button>
                               </TooltipTrigger>
-                              <TooltipContent side="top" className="text-xs">{node ? `${node.label} override` : "Variant settings"}</TooltipContent>
+                              <TooltipContent side="top" className="max-w-[14rem] text-xs">
+                                Open the Workflow tab in variant mode to edit the graph for this column. Use Create variant when done, or Cancel to return without changes.
+                              </TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
                           <button
@@ -1817,16 +2089,6 @@ function ExperimentTab({
                 </div>
               )
             })}
-            <div className="flex min-w-0 items-center justify-center self-stretch border-b border-border/70 bg-muted/30 border-l border-border/60 px-2 py-2.5">
-              <button
-                type="button"
-                onClick={() => setAddVariantOpen(true)}
-                className="inline-flex h-8 max-w-none shrink-0 items-center justify-center gap-1.5 rounded-lg px-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-              >
-                <Plus className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
-                Compare
-              </button>
-            </div>
 
             {/* ── Test case rows (subgrid row: same column tracks + reliable row hover) ── */}
             {cases.map((tc) => (
@@ -1862,7 +2124,7 @@ function ExperimentTab({
                         <button
                           type="button"
                           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-                          aria-label="Save to dataset"
+                          aria-label="Save run to dataset"
                           onClick={() => {
                             setSaveToDatasetRunId(tc.sourceRunId ?? tc.id)
                             setSaveToDatasetOpen(true)
@@ -1872,14 +2134,15 @@ function ExperimentTab({
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="text-xs">
-                        Save to dataset
+                        Save run to dataset
                       </TooltipContent>
                     </Tooltip>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <button
                           type="button"
-                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                          disabled={cases.length <= 1}
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:pointer-events-none disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
                           aria-label="Delete row"
                           onClick={() => removeCase(tc.id)}
                         >
@@ -1896,17 +2159,28 @@ function ExperimentTab({
                   <button type="button"
                     onClick={() => {
                       setInputDraft(tc.input)
-                      setSheetDatasetId(null)
                       setSheetRunId(null)
                       setInputSheetSource("manual")
                       setInputSheet({ caseId: tc.id, field: "input" })
                     }}
                     className={cn(
-                      "w-full min-w-0 text-left text-[13px] leading-snug truncate py-0.5 px-0 transition-colors cursor-pointer rounded-sm",
-                      tc.input ? "text-foreground hover:bg-muted/30" : "text-muted-foreground hover:bg-muted/20"
+                      "w-full min-w-0 py-0.5 px-0 text-left transition-colors cursor-pointer rounded-sm",
+                      inputMode === "trigger" && tc.input
+                        ? "font-mono text-[11px] leading-relaxed text-foreground hover:bg-muted/30"
+                        : "text-[13px] leading-snug truncate",
+                      !(inputMode === "trigger" && tc.input) &&
+                        (tc.input ? "text-foreground hover:bg-muted/30" : "text-muted-foreground hover:bg-muted/20"),
                     )}>
-                    {tc.input || (
-                      <span className="opacity-50">
+                    {tc.input ? (
+                      inputMode === "trigger" ? (
+                        <span className="line-clamp-4 w-full min-w-0 whitespace-pre-wrap break-all text-left">
+                          {experimentTriggerPayloadForDisplay(tc.input)}
+                        </span>
+                      ) : (
+                        <span className="truncate">{tc.input}</span>
+                      )
+                    ) : (
+                      <span className="text-[13px] opacity-50">
                         {inputMode === "input" ? "Click to add input" : "add workflow trigger…"}
                       </span>
                     )}
@@ -1931,6 +2205,7 @@ function ExperimentTab({
                 ) : null}
                 {variants.map((v, vIdx) => {
                   const mockVKey = resolveExperimentMockVariantKey(v.id, vIdx)
+                  const mockCaseId = experimentMockBackingCaseId(tc.id)
                   const output = hasRun ? (getExperimentMockOutput(tc.id, v, mockVKey) ?? null) : null
                   const activeEvalDefs = evalDefs.filter(
                     (ev) => ev.type !== "reference" && selectedEvalIds.includes(ev.id),
@@ -1947,8 +2222,8 @@ function ExperimentTab({
                         if (hasRun && output) setCellSheet({ caseId: tc.id, variantId: v.id })
                       }}
                     >
-                      {/* Output (full width, wraps) */}
-                      <div className="w-full min-w-0 shrink-0 px-4 pt-2 pb-0">
+                      {/* Output (full width, wraps) — pt/pb aligned with Input column (py-4) */}
+                      <div className="w-full min-w-0 shrink-0 px-4 pt-4 pb-2">
                         {isRunning ? (
                           <span className="text-[13px] text-muted-foreground/50 animate-pulse">…</span>
                         ) : output ? (
@@ -1963,25 +2238,25 @@ function ExperimentTab({
                       </div>
 
                       {/* Evaluator gradings */}
-                      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1">
+                      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5 pb-4">
                         {isRunning ? (
-                          <div className="px-4 py-2">
+                          <div className="px-4 py-3">
                             <span className="text-[13px] text-muted-foreground/50 animate-pulse">Evaluating…</span>
                           </div>
                         ) : !hasRun ? (
-                          <div className="px-4 py-2">
+                          <div className="px-4 py-3">
                             <span className="text-[13px] text-muted-foreground/30">—</span>
                           </div>
                         ) : (
                           activeEvalDefs.map((ev) => {
-                            const score =
-                              MOCK_CELL_SCORES[tc.id]?.[v.id]?.[ev.id] ??
-                              MOCK_CELL_SCORES[tc.id]?.[mockVKey]?.[ev.id] ??
-                              null
-                            const explanation =
-                              MOCK_CELL_EXPLANATIONS[tc.id]?.[v.id]?.[ev.id] ??
-                              MOCK_CELL_EXPLANATIONS[tc.id]?.[mockVKey]?.[ev.id] ??
-                              null
+                            const score = resolveExperimentCellScore(mockCaseId, v.id, mockVKey, ev.id)
+                            const explanation = resolveExperimentCellExplanation(
+                              mockCaseId,
+                              v.id,
+                              mockVKey,
+                              ev.id,
+                              ev.label,
+                            )
                             if (score === null) return null
                             // truncate to 2 sentences
                             const sentences = explanation ? explanation.split(/(?<=[.!?])\s+/) : []
@@ -2004,13 +2279,6 @@ function ExperimentTab({
                     </div>
                   )
                 })}
-                <div
-                  className={cn(
-                    "min-w-0 border-l border-border/60",
-                    !hasRun && "bg-muted/20"
-                  )}
-                  aria-hidden
-                />
               </div>
             ))}
             {hasRun ? (
@@ -2037,7 +2305,7 @@ function ExperimentTab({
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="h-8 w-full max-w-[11rem] gap-1.5 px-2 font-normal"
+                        className="h-8 w-auto max-w-none shrink-0 whitespace-nowrap px-3 font-normal"
                         onClick={() =>
                           setDraftConfirmVariant({
                             id: v.id,
@@ -2045,52 +2313,16 @@ function ExperimentTab({
                           })
                         }
                       >
-                        <FilePenLine className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
-                        <span className="truncate">Apply to workflow draft</span>
+                        Apply changes to workflow draft
                       </Button>
                     )}
                   </div>
                 ))}
-                <div className="min-w-0 border-l border-border/60 px-2 py-3" aria-hidden />
               </div>
             ) : null}
           </div>
         </div>
-
-        {showTableSetupOverlay ? (
-          <div
-            className="absolute inset-0 z-20 flex items-center justify-center p-6"
-            role="region"
-            aria-label="Set up experiment"
-          >
-            <div
-              className="absolute inset-0 rounded-[inherit] bg-[#f7f7f8] opacity-80 backdrop-blur-md"
-              aria-hidden
-            />
-            <div className="relative flex flex-col items-center gap-3">
-              <DropdownMenu open={addEvalMenuOpen} onOpenChange={setAddEvalMenuOpen}>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-9 gap-2 bg-foreground text-background hover:bg-foreground/90 shadow-sm"
-                  >
-                    choose an eval
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent side="bottom" align="center" className="w-56">
-                  {evaluatorSelectMenuContent}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
-        ) : null}
       </div>
-
-      {/* ── Add test case ────────────────────────────────────────────── */}
-      <Button variant="ghost" size="sm" className="h-auto px-2 py-1 text-muted-foreground hover:text-foreground font-normal gap-1.5 w-fit" onClick={addCase}>
-        <Plus className="w-3.5 h-3.5" /> Add another input
-      </Button>
 
       <Dialog
         open={draftConfirmVariant != null}
@@ -2100,7 +2332,7 @@ function ExperimentTab({
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Apply to workflow draft?</DialogTitle>
+            <DialogTitle>Apply changes to workflow draft?</DialogTitle>
             <DialogDescription>
               Saves the node overrides from{" "}
               <span className="font-medium text-foreground">
@@ -2139,14 +2371,28 @@ function ExperimentTab({
         const tc = cases.find(c => c.id === inputSheet.caseId)!
         const isExpected = inputSheet.field === "expected"
         const isTrigger  = !isExpected && inputMode === "trigger"
-        const activeDataset = sheetDatasetId ? MOCK_DATASETS.find(d => d.id === sheetDatasetId) ?? null : null
         const activeLoggedRun = sheetRunId ? MOCK_LOGGED_RUNS.find(r => r.id === sheetRunId) ?? null : null
 
-        const TRIGGER_PAYLOADS = [
-          { label: "New Slack message",  description: "User message in #general",     payload: `{\n  "event": "message",\n  "channel": "#general",\n  "user": "U012AB3CD",\n  "text": "Hello team!",\n  "ts": "1734000000.000100"\n}` },
-          { label: "Form submission",    description: "Contact form via webhook",      payload: `{\n  "event": "form_submit",\n  "name": "Jane Doe",\n  "email": "jane@example.com",\n  "message": "I'd like a demo.",\n  "submitted_at": "2025-12-04T11:25:00Z"\n}` },
-          { label: "Scheduled run",      description: "Cron trigger, no payload",      payload: `{\n  "event": "schedule",\n  "cron": "0 9 * * 1-5",\n  "triggered_at": "2025-12-04T09:00:00Z"\n}` },
-        ]
+        const TRIGGER_PAYLOADS = EXPERIMENT_TRIGGER_PAYLOAD_SAMPLES
+        const selectedTriggerPayload = TRIGGER_PAYLOADS.find(
+          (p) => p.payload === tc.input || p.label === tc.input,
+        )
+
+        const closeDatasetSheet = () => {
+          setInputSheet(null)
+          setSheetRunId(null)
+          setInputSheetSource("manual")
+        }
+
+        const applyDatasetRowToCurrentCase = (row: DatasetRow) => {
+          setCases((prev) =>
+            prev.map((c) => (c.id === inputSheet.caseId ? { ...c, input: row.input, expected: row.expected } : c)),
+          )
+          closeDatasetSheet()
+        }
+
+        const selectedDataset =
+          MOCK_DATASETS.find((d) => d.id === inputSheetDatasetId) ?? MOCK_DATASETS[0] ?? null
 
         const datasetPanelJsx = (
           <div className="mt-1 flex flex-col gap-3">
@@ -2156,83 +2402,77 @@ function ExperimentTab({
                   ? "Each row replaces this case’s trigger payload (and expected if present)."
                   : "Each row replaces this case’s workflow input (and expected if present)."}
               </p>
-              {activeDataset ? (
-                <button type="button" onClick={() => setSheetDatasetId(null)} className="shrink-0 text-[11px] text-gray-400 transition-colors hover:text-gray-600">clear</button>
-              ) : null}
             </div>
-            <div className="relative">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button type="button" className={cn(
-                    "flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition-colors",
-                    activeDataset ? "border-gray-900 bg-gray-50 text-gray-900 ring-1 ring-gray-900" : "border-gray-200 bg-gray-50/50 text-gray-400 hover:border-gray-300"
-                  )}>
-                    <span className="flex items-center gap-2">
+            {selectedDataset ? (
+              <div className="flex flex-col gap-2">
+                <p className="text-xs font-medium text-gray-500">Dataset</p>
+                <Select value={selectedDataset.id} onValueChange={setInputSheetDatasetId}>
+                  <SelectTrigger
+                    aria-label="Choose dataset"
+                    className="h-auto min-h-10 w-full border-gray-200 bg-gray-50/50 py-2.5 text-left text-sm text-gray-900 shadow-none hover:bg-gray-50/80 [&_svg]:shrink-0"
+                  >
+                    <span className="flex min-w-0 flex-1 items-center gap-2">
                       <Database className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
-                      {activeDataset ? activeDataset.name : "Select a dataset…"}
+                      <SelectValue placeholder="Select a dataset…" />
                     </span>
-                    <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-64">
-                  <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Available datasets</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  {MOCK_DATASETS.map(ds => (
-                    <DropdownMenuItem key={ds.id} onClick={() => { setSheetDatasetId(ds.id); setSheetRunId(null) }} className="flex items-center justify-between gap-2">
-                      <span>{ds.name}</span>
-                      <span className="text-xs text-muted-foreground">{ds.rows.length} cases</span>
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-            {activeDataset && (
-              <>
-                <div className="flex max-h-52 flex-col gap-1 overflow-y-auto">
-                  {activeDataset.rows.map((row, ri) => (
-                    <button
-                      key={ri}
-                      type="button"
-                      onClick={() => {
-                        setCases(prev => prev.map(c => c.id === inputSheet.caseId ? { ...c, input: row.input, expected: row.expected } : c))
-                        setInputSheet(null)
-                        setSheetDatasetId(null)
-                        setSheetRunId(null)
-                        setInputSheetSource("manual")
-                      }}
-                      className={cn(
-                        "w-full rounded-md border px-3 py-2 text-left transition-colors",
-                        tc.input === row.input ? "border-gray-900 bg-gray-50 ring-1 ring-gray-900" : "border-gray-100 hover:border-gray-200 hover:bg-gray-50/60"
-                      )}
-                    >
-                      <p className="line-clamp-2 text-xs leading-snug text-gray-700">{row.input}</p>
-                      {row.expected ? (
-                        <p className="mt-0.5 truncate font-mono text-[10px] text-gray-400">{row.expected}</p>
-                      ) : null}
-                    </button>
-                  ))}
-                </div>
-                <button
+                  </SelectTrigger>
+                  <SelectContent
+                    side="left"
+                    align="start"
+                    position="popper"
+                    className="z-[100] w-[var(--radix-select-trigger-width)] max-w-[min(100vw-2rem,var(--radix-select-trigger-width))]"
+                  >
+                    {MOCK_DATASETS.map((ds) => (
+                      <SelectItem key={ds.id} value={ds.id} textValue={ds.name} className="cursor-pointer py-2.5">
+                        <span className="flex w-full min-w-0 items-center justify-between gap-2">
+                          <span className="font-medium text-gray-800">{ds.name}</span>
+                          <span className="shrink-0 text-xs text-muted-foreground">{ds.rows.length} cases</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
                   type="button"
+                  variant="outline"
+                  className="h-auto min-h-10 w-full justify-start gap-2 border-gray-200 bg-white py-2.5 text-left text-sm font-normal hover:bg-gray-50"
                   onClick={() => {
-                    const newCases: TestCase[] = activeDataset.rows.map(row => ({
+                    const newCases: TestCase[] = selectedDataset.rows.map((row) => ({
                       id: `c-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
                       input: row.input,
                       expected: row.expected,
                     }))
-                    setCases(prev => [...prev, ...newCases])
-                    setInputSheet(null)
-                    setSheetDatasetId(null)
-                    setSheetRunId(null)
-                    setInputSheetSource("manual")
+                    setCases((prev) => [...prev, ...newCases])
+                    closeDatasetSheet()
                   }}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-gray-300 bg-gray-50/50 py-2 text-xs font-medium text-gray-500 transition-colors hover:border-gray-400 hover:bg-gray-50 hover:text-gray-700"
                 >
-                  <Plus className="h-3.5 w-3.5" aria-hidden />
-                  Load all {activeDataset.rows.length} cases as new rows
-                </button>
-              </>
-            )}
+                  <Plus className="h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden />
+                  <span className="font-medium text-gray-800">
+                    Add all {selectedDataset.rows.length} cases as new rows
+                  </span>
+                </Button>
+                <div className="rounded-md border border-gray-200 bg-gray-50/30">
+                  <p className="border-b border-gray-100 px-2.5 py-1.5 text-[11px] font-medium text-gray-500">
+                    Or pick one row to replace this case
+                  </p>
+                  <div className="max-h-52 space-y-0.5 overflow-y-auto p-1">
+                    {selectedDataset.rows.map((row, ri) => (
+                      <button
+                        key={ri}
+                        type="button"
+                        onClick={() => applyDatasetRowToCurrentCase(row)}
+                        className="flex w-full cursor-pointer flex-col items-start gap-0.5 rounded-sm px-2 py-2.5 text-left transition-colors hover:bg-accent"
+                      >
+                        <span className="line-clamp-2 w-full text-xs leading-snug text-gray-700">{row.input}</span>
+                        {row.expected ? (
+                          <span className="w-full truncate font-mono text-[10px] text-gray-400">{row.expected}</span>
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         )
 
@@ -2268,7 +2508,7 @@ function ExperimentTab({
                   {MOCK_LOGGED_RUNS.map((run) => (
                     <DropdownMenuItem
                       key={run.id}
-                      onClick={() => { setSheetRunId(run.id); setSheetDatasetId(null) }}
+                      onClick={() => { setSheetRunId(run.id) }}
                       className="flex flex-col items-start gap-0.5 py-2"
                     >
                       <span className="text-sm font-medium">{run.label}</span>
@@ -2300,7 +2540,6 @@ function ExperimentTab({
                     )
                     setInputDraft(activeLoggedRun.input)
                     setInputSheet(null)
-                    setSheetDatasetId(null)
                     setSheetRunId(null)
                     setInputSheetSource("manual")
                   }}
@@ -2315,21 +2554,35 @@ function ExperimentTab({
 
         return (
           <>
-            <div className="fixed inset-0 z-40" onClick={() => { setInputSheet(null); setSheetDatasetId(null); setSheetRunId(null); setInputSheetSource("manual") }} />
+            <div
+              className="fixed inset-0 z-40"
+              onClick={(e) => {
+                const t = e.target as HTMLElement
+                if (
+                  t.closest('[data-slot="dropdown-menu-content"]') ||
+                  t.closest('[data-slot="dropdown-menu-sub-content"]') ||
+                  t.closest('[data-slot="select-content"]')
+                ) {
+                  return
+                }
+                setInputSheet(null)
+                setSheetRunId(null)
+                setInputSheetSource("manual")
+              }}
+            />
             <div className="fixed right-0 top-0 bottom-0 z-50 flex flex-col w-[420px] bg-white border-l border-gray-200 shadow-xl">
 
               {/* Header */}
               <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
                 <div>
                   <p className="text-sm font-semibold text-gray-900">
-                    {isExpected ? "Expected output" : isTrigger ? "Trigger payload" : "Input"}
-                    {!isExpected && <span className="ml-1.5 text-xs font-normal text-gray-400">· Case {cases.indexOf(tc) + 1}</span>}
+                    {isExpected ? "Expected output" : "Input"}
                   </p>
                   <p className="text-xs text-gray-400 mt-0.5">
                     {isExpected ? "What the workflow should produce for this test case" : "What to send as the workflow input"}
                   </p>
                 </div>
-                <button type="button" onClick={() => { setInputSheet(null); setSheetDatasetId(null); setSheetRunId(null); setInputSheetSource("manual") }} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+                <button type="button" onClick={() => { setInputSheet(null); setSheetRunId(null); setInputSheetSource("manual") }} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
               </div>
 
               <div className="flex-1 flex flex-col overflow-auto min-h-0">
@@ -2339,7 +2592,7 @@ function ExperimentTab({
                   {!isExpected ? (
                     <>
                       <div className="flex w-full shrink-0 flex-col gap-2">
-                        <p className="text-xs font-medium text-gray-500">Select Input/Trigger node</p>
+                        <p className="text-xs font-medium text-gray-500">Select a Node from your workflow</p>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <button
@@ -2352,7 +2605,7 @@ function ExperimentTab({
                                 ) : (
                                   <Zap className="h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden />
                                 )}
-                                <span className="truncate">{inputMode === "input" ? "Input node" : "Trigger node"}</span>
+                                <span className="truncate">{inputMode === "input" ? "Chatbot Input" : "Receive Email"}</span>
                               </span>
                               <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
                             </button>
@@ -2363,35 +2616,33 @@ function ExperimentTab({
                               onClick={() => setInputMode("input")}
                             >
                               <TextCursorInput className="h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden />
-                              Input node
+                              Chatbot Input
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className={cn("gap-2", inputMode === "trigger" && "font-medium")}
                               onClick={() => setInputMode("trigger")}
                             >
                               <Zap className="h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden />
-                              Trigger node
+                              Receive Email
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
 
                       <div className="flex w-full shrink-0 flex-col gap-2">
-                        <p className="text-xs font-medium text-gray-500">Input source</p>
+                        <p className="text-xs font-medium text-gray-500">Choose the content to be evaluated</p>
                         <Tabs
                           value={inputSheetSource}
                           onValueChange={(v) => {
                             const next = v as "manual" | "dataset" | "run"
                             if (next === "manual") {
                               setInputSheetSource("manual")
-                              setSheetDatasetId(null)
                               setSheetRunId(null)
                             } else if (next === "dataset") {
                               setInputSheetSource("dataset")
                               setSheetRunId(null)
                             } else {
                               setInputSheetSource("run")
-                              setSheetDatasetId(null)
                             }
                           }}
                           className="gap-2"
@@ -2426,27 +2677,48 @@ function ExperimentTab({
                         isTrigger ? (
                           <>
                             <p className="text-xs text-gray-400">Choose a sample payload</p>
-                            {TRIGGER_PAYLOADS.map((option) => (
-                              <button
-                                key={option.label}
-                                type="button"
-                                onClick={() => {
-                                  setCases(prev => prev.map(c => c.id === inputSheet.caseId ? { ...c, input: option.label } : c))
-                                  setInputSheet(null)
-                                  setSheetDatasetId(null)
-                                  setSheetRunId(null)
-                                  setInputSheetSource("manual")
-                                }}
-                                className={cn(
-                                  "w-full rounded-lg border px-3.5 py-3 text-left transition-colors",
-                                  tc.input === option.label ? "border-gray-900 bg-gray-50 ring-1 ring-gray-900" : "border-gray-200 hover:border-gray-300 hover:bg-gray-50/60"
-                                )}
+                            <Select
+                              value={selectedTriggerPayload?.payload}
+                              onValueChange={(payload) => {
+                                const option = TRIGGER_PAYLOADS.find((p) => p.payload === payload)
+                                if (!option) return
+                                setCases((prev) =>
+                                  prev.map((c) => (c.id === inputSheet.caseId ? { ...c, input: option.payload } : c)),
+                                )
+                                setInputSheet(null)
+                                setSheetRunId(null)
+                                setInputSheetSource("manual")
+                              }}
+                            >
+                              <SelectTrigger className="h-auto min-h-10 w-full border-gray-200 bg-gray-50/50 py-2.5 text-left text-sm text-gray-900 shadow-none hover:bg-gray-50/80 [&_svg]:shrink-0">
+                                <SelectValue placeholder="Select sample payload…" />
+                              </SelectTrigger>
+                              <SelectContent
+                                side="left"
+                                align="start"
+                                position="popper"
+                                className="z-[100] w-[var(--radix-select-trigger-width)] max-w-[min(100vw-2rem,var(--radix-select-trigger-width))]"
                               >
-                                <p className="text-sm font-medium text-gray-800">{option.label}</p>
-                                <p className="mt-0.5 text-xs text-gray-400">{option.description}</p>
-                                <pre className="mt-2 overflow-x-auto rounded-md bg-gray-50 px-2 py-1.5 text-[10px] leading-relaxed text-gray-400">{option.payload}</pre>
-                              </button>
-                            ))}
+                                {TRIGGER_PAYLOADS.map((option) => (
+                                  <SelectItem
+                                    key={option.label}
+                                    value={option.payload}
+                                    textValue={`${option.label} ${option.description}`}
+                                    className="h-auto min-h-0 cursor-pointer items-start py-2.5"
+                                  >
+                                    <span className="flex w-full flex-col gap-0.5 text-left">
+                                      <span className="text-sm font-medium text-gray-800">{option.label}</span>
+                                      <span className="text-xs font-normal text-gray-400">{option.description}</span>
+                                    </span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {selectedTriggerPayload ? (
+                              <pre className="mt-1 overflow-x-auto rounded-md border border-gray-100 bg-gray-50/60 px-2 py-1.5 text-[10px] leading-relaxed text-gray-500">
+                                {selectedTriggerPayload.payload}
+                              </pre>
+                            ) : null}
                           </>
                         ) : (
                           <textarea
@@ -2493,10 +2765,12 @@ function ExperimentTab({
         const v  = variants.find(v => v.id === cellSheet.variantId)!
         const vIdx = Math.max(0, variants.findIndex((x) => x.id === v.id))
         const mockVKey = resolveExperimentMockVariantKey(v.id, vIdx)
+        const mockCaseId = experimentMockBackingCaseId(tc.id)
         const output = getExperimentMockOutput(tc.id, v, mockVKey) ?? ""
         const outSrc = v.columnOutput ?? DEFAULT_EXPERIMENT_COLUMN_OUTPUT
         const sheetEvalDefs = evalDefs.filter((ev) => selectedEvalIds.includes(ev.id))
         const linkedAnalyticsRunId = analyticsRunIdForExperimentCase(tc)
+        const cellSheetInputResolved = experimentTriggerPayloadForDisplay(tc.input)
         return (
           <>
             <div className="fixed inset-0 z-40" onClick={() => setCellSheet(null)} />
@@ -2509,7 +2783,9 @@ function ExperimentTab({
                       Case {cases.indexOf(tc) + 1}
                     </span>
                   </div>
-                  <p className="text-xs text-gray-400 mt-0.5 truncate">{tc.input.length > 60 ? tc.input.slice(0, 60) + "…" : tc.input}</p>
+                  <p className="text-xs text-gray-400 mt-0.5 truncate">
+                    {cellSheetInputResolved.length > 60 ? cellSheetInputResolved.slice(0, 60) + "…" : cellSheetInputResolved}
+                  </p>
                 </div>
                 <button type="button" onClick={() => setCellSheet(null)} className="shrink-0 text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
               </div>
@@ -2533,7 +2809,13 @@ function ExperimentTab({
               <div className="flex-1 flex flex-col gap-0 overflow-auto divide-y divide-gray-100">
                 <div className="flex flex-col gap-1.5 px-5 py-4">
                   <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Input</p>
-                  <p className="text-sm text-gray-700 leading-relaxed">{tc.input}</p>
+                  {cellSheetInputResolved.trimStart().startsWith("{") ? (
+                    <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 text-[12px] font-mono text-gray-700 leading-relaxed">
+                      {cellSheetInputResolved}
+                    </pre>
+                  ) : (
+                    <p className="text-sm text-gray-700 leading-relaxed">{cellSheetInputResolved}</p>
+                  )}
                 </div>
                 {tc.expected && (
                   <div className="flex flex-col gap-1.5 px-5 py-4">
@@ -2541,21 +2823,22 @@ function ExperimentTab({
                     <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 text-[12px] font-mono text-gray-600 leading-relaxed">{tc.expected}</pre>
                   </div>
                 )}
-                <div className="flex flex-col gap-1.5 px-5 py-4">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                    {outSrc === "output-2" ? "Output · terminal 2" : outSrc !== "output-1" ? `Output · ${getExperimentColumnOutputLabel(outSrc)}` : "Output"}
-                  </p>
-                  <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 text-[12px] font-mono text-gray-600 leading-relaxed">{output}</pre>
-                </div>
+                <CellSheetOutputPanel output={output} sourceLabel={getExperimentColumnOutputLabel(outSrc)} />
                 <div className="flex flex-col gap-3 px-5 py-4">
                   <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Scores</p>
                   {sheetEvalDefs.length === 0 ? (
                     <p className="text-[12px] text-gray-400 leading-snug">No evals selected for this experiment.</p>
                   ) : (
                     sheetEvalDefs.map((ev) => {
-                      const score = MOCK_CELL_SCORES[tc.id]?.[v.id]?.[ev.id] ?? MOCK_CELL_SCORES[tc.id]?.[mockVKey]?.[ev.id] ?? null
-                      const match = MOCK_CELL_MATCH[tc.id]?.[v.id] ?? MOCK_CELL_MATCH[tc.id]?.[mockVKey] ?? null
-                      const explanation = MOCK_CELL_EXPLANATIONS[tc.id]?.[v.id]?.[ev.id] ?? MOCK_CELL_EXPLANATIONS[tc.id]?.[mockVKey]?.[ev.id] ?? null
+                      const score = resolveExperimentCellScore(mockCaseId, v.id, mockVKey, ev.id)
+                      const match = MOCK_CELL_MATCH[mockCaseId]?.[v.id] ?? MOCK_CELL_MATCH[mockCaseId]?.[mockVKey] ?? null
+                      const explanation = resolveExperimentCellExplanation(
+                        mockCaseId,
+                        v.id,
+                        mockVKey,
+                        ev.id,
+                        ev.label,
+                      )
                       const state = ev.type !== "reference" && score !== null ? scorePassFail(score, ev.passThreshold) : "neutral"
                       return (
                         <div
@@ -2802,17 +3085,47 @@ function ExperimentTab({
   )
 }
 
-const DIALOG_EVAL_TYPES = ["LLM judge", "Compare to expected output", "Contains", "Regex"] as const
+const DIALOG_EVAL_TYPES = ["LLM judge", "Expected Output", "Contains", "Regex"] as const
 
 function mapStoredEvalTypeToDialog(stored: string): string {
-  if (DIALOG_EVAL_TYPES.includes(stored as (typeof DIALOG_EVAL_TYPES)[number])) return stored
+  const trimmed = stored.trim()
+  if (trimmed === "Compare to expected output") return "Expected Output"
+  if (DIALOG_EVAL_TYPES.includes(trimmed as (typeof DIALOG_EVAL_TYPES)[number])) return trimmed
   const lower = stored.toLowerCase()
   if (lower.includes("regex")) return "Regex"
   if (lower.includes("contain")) return "Contains"
   if (lower.includes("reference") || lower.includes("match") || lower.includes("expected output"))
-    return "Compare to expected output"
+    return "Expected Output"
   return "LLM judge"
 }
+
+const EVAL_TYPE_DIALOG_OPTIONS: { value: string; label: string; description: string }[] = [
+  {
+    value: "LLM judge",
+    label: "LLM judge",
+    description: "Uses a model with your rubric to score each output, instead of matching a fixed reference string.",
+  },
+  {
+    value: "Expected Output",
+    label: "Expected Output",
+    description: "Compares the node output to the expected answer you set per row in the experiment table.",
+  },
+  {
+    value: "Rule validator",
+    label: "Rule validator",
+    description: "Treats each line as a rule and passes only when every rule matches the output.",
+  },
+  {
+    value: "Contains",
+    label: "Contains",
+    description: "Passes when the output includes the phrase or substring you configure (case-sensitive by default).",
+  },
+  {
+    value: "Regex",
+    label: "Regex",
+    description: "Passes when your regular expression matches the output or a substring, depending on how you configure the eval.",
+  },
+]
 
 function parseAutoRunFromStored(runWhen: string): boolean {
   const s = runWhen.toLowerCase()
@@ -2820,13 +3133,51 @@ function parseAutoRunFromStored(runWhen: string): boolean {
   return true
 }
 
+/** Human-readable schedule for tooltips; strips redundant "— auto" suffix from stored labels. */
+function autoRunScheduleSummary(runWhen: string): string {
+  const trimmed = runWhen.trim()
+  return trimmed.replace(/\s*[—–-]\s*auto\s*$/i, "").trim() || trimmed
+}
+
 function parseSamplePctFromStored(runScope: string): string {
   const m = runScope.match(/(\d+)\s*%/)
   if (m) return m[1]
-  return "100"
+  return "10"
+}
+
+const SAMPLE_RATE_MIN = 1
+const SAMPLE_RATE_MAX = 10
+
+/** Who production autorun applies to (prototype). Keys stored in runScope prefix. */
+const RUN_AUDIENCE_OPTIONS: { value: string; label: string; group: "all" | "groups" | "roles" }[] = [
+  { value: "all", label: "All users & roles", group: "all" },
+  { value: "group-eng", label: "Engineering", group: "groups" },
+  { value: "group-support", label: "Support", group: "groups" },
+  { value: "group-sales", label: "Sales", group: "groups" },
+  { value: "group-success", label: "Customer success", group: "groups" },
+  { value: "role-admin", label: "Admin", group: "roles" },
+  { value: "role-agent", label: "Agent", group: "roles" },
+  { value: "role-viewer", label: "Viewer", group: "roles" },
+]
+
+const runAudienceLabels: Record<string, string> = Object.fromEntries(
+  RUN_AUDIENCE_OPTIONS.map((o) => [o.value, o.label]),
+)
+
+function clampSampleRatePct(raw: string): string {
+  const n = parseInt(raw, 10)
+  if (Number.isNaN(n)) return String(SAMPLE_RATE_MAX)
+  return String(Math.min(SAMPLE_RATE_MAX, Math.max(SAMPLE_RATE_MIN, n)))
 }
 
 const DEFAULT_LLM_JUDGE_MODEL = "gpt-4o"
+
+/** Starter rubric shown when creating or switching to an LLM judge eval; user can edit freely. */
+const DEFAULT_LLM_JUDGE_RUBRIC = `Accuracy (0–10): Does the reply correctly address the user's issue?
+Tone (0–10): Is the reply empathetic and professional?
+Format compliance: pass / fail
+
+Even lightweight structure like this improves consistency and debuggability.`
 
 const LLM_JUDGE_MODEL_OPTIONS: { value: string; label: string }[] = [
   { value: "gpt-4o", label: "GPT-4o" },
@@ -2852,16 +3203,33 @@ function CreateEvaluatorDialog({
   editingEvaluator: EvaluatorConfig | null
 }) {
   const [name, setName] = useState("")
-  const [evalSource, setEvalSource] = useState<WorkflowEvalSource>("output-1")
-  const [evalType, setEvalType] = useState("LLM judge")
+  const [evalSource, setEvalSource] = useState<WorkflowEvalSource | undefined>(undefined)
+  const [evalType, setEvalType] = useState<string | undefined>(undefined)
   const [expected, setExpected] = useState("")
   const [judgeModel, setJudgeModel] = useState(DEFAULT_LLM_JUDGE_MODEL)
   const [autoRun, setAutoRun] = useState(false)
-  const [trigger, setTrigger] = useState("after-each")
-  const [environment, setEnvironment] = useState("all")
-  const [sampleRate, setSampleRate] = useState("100")
+  const [runAudience, setRunAudience] = useState("all")
+  const [sampleRate, setSampleRate] = useState("10")
   const [alertEnabled, setAlertEnabled] = useState(false)
   const [alertThreshold, setAlertThreshold] = useState("6")
+  const prevEvalTypeForRubricRef = useRef<string | undefined>(undefined)
+
+  useEffect(() => {
+    if (!open) {
+      prevEvalTypeForRubricRef.current = undefined
+      return
+    }
+    if (editingEvaluator) return
+    if (evalType === "LLM judge") {
+      const prev = prevEvalTypeForRubricRef.current
+      if (prev !== "LLM judge") {
+        setExpected((cur) => (cur.trim() === "" ? DEFAULT_LLM_JUDGE_RUBRIC : cur))
+      }
+      prevEvalTypeForRubricRef.current = evalType
+    } else {
+      prevEvalTypeForRubricRef.current = evalType
+    }
+  }, [open, evalType, editingEvaluator])
 
   useEffect(() => {
     if (!open) return
@@ -2869,75 +3237,66 @@ function CreateEvaluatorDialog({
       setName(editingEvaluator.name)
       const { evalSource: src } = parseOutputForForm(editingEvaluator.output)
       setEvalSource(src)
-      setEvalType(mapStoredEvalTypeToDialog(editingEvaluator.type))
-      setExpected(editingEvaluator.expected === "—" ? "" : editingEvaluator.expected)
+      const dialogEvalType = mapStoredEvalTypeToDialog(editingEvaluator.type)
+      setEvalType(dialogEvalType)
+      const storedExpected = editingEvaluator.expected === "—" ? "" : editingEvaluator.expected
+      setExpected(
+        dialogEvalType === "LLM judge" && storedExpected.trim() === ""
+          ? DEFAULT_LLM_JUDGE_RUBRIC
+          : storedExpected,
+      )
+      prevEvalTypeForRubricRef.current = dialogEvalType
       setJudgeModel(editingEvaluator.judgeModel ?? DEFAULT_LLM_JUDGE_MODEL)
       setAutoRun(parseAutoRunFromStored(editingEvaluator.runWhen))
-      setTrigger("after-each")
-      setEnvironment("all")
-      setSampleRate("100")
+      setRunAudience("all")
+      setSampleRate(clampSampleRatePct(parseSamplePctFromStored(editingEvaluator.runScope)))
       const hasThreshold = editingEvaluator.passThreshold != null
       setAlertEnabled(hasThreshold)
       setAlertThreshold(hasThreshold ? String(Math.round((editingEvaluator.passThreshold ?? 60) / 10)) : "6")
     } else {
       setName("")
-      setEvalSource("output-1")
-      setEvalType("LLM judge")
+      setEvalSource(undefined)
+      setEvalType(undefined)
       setExpected("")
+      prevEvalTypeForRubricRef.current = undefined
       setJudgeModel(DEFAULT_LLM_JUDGE_MODEL)
       setAutoRun(false)
-      setTrigger("after-each")
-      setEnvironment("all")
-      setSampleRate("100")
+      setRunAudience("all")
+      setSampleRate("10")
       setAlertEnabled(false)
       setAlertThreshold("6")
     }
   }, [open, editingEvaluator])
 
-  const outputLabel = outputLabelFromEvalSource(evalSource)
-
-  const triggerLabels: Record<string, string> = {
-    "after-each": "After each execution",
-    "nightly": "Nightly — 02:00 UTC",
-    "batch-finish": "On batch complete",
-  }
-  const environmentLabels: Record<string, string> = {
-    "all": "Production + staging",
-    "production": "Production only",
-    "staging": "Staging only",
-    "sandbox": "Sandbox only",
-  }
   const runWhenLabel = autoRun
-    ? (triggerLabels[trigger] ?? trigger) + " — auto"
+    ? "After each execution — auto"
     : "Manual only — run from Experiment when you choose"
+  const audienceSummary = runAudienceLabels[runAudience] ?? runAudience
   const runScopeLabel = autoRun
-    ? (environmentLabels[environment] ?? environment) + " / " + sampleRate + "% sample" + (alertEnabled ? " / alert < " + alertThreshold : "")
+    ? audienceSummary + " / " + sampleRate + "% sample" + (alertEnabled ? " / alert < " + alertThreshold : "")
     : "Manual scope"
 
   type Step4Config =
     | { kind: "hidden" }
-    | { kind: "llm-judge"; placeholder: string; hint: string }
+    | { kind: "llm-judge"; hint: string }
     | { kind: "textarea"; title: string; placeholder: string; hint: string; mono?: boolean }
     | { kind: "rule"; title: string; placeholder: string; hint: string }
 
   const step4ForEvalType: Record<string, Step4Config> = {
     "LLM judge": {
       kind: "llm-judge",
-      placeholder: `e.g.
-
-Accuracy (0–10): Does the reply correctly address the user's issue?
-Tone (0–10): Is the reply empathetic and professional?
-Format compliance: pass / fail
-
-Even lightweight structure like this improves consistency and debuggability.`,
       hint: "The judge uses this rubric to score each run — not a fixed reference string. Clear sections make scores easier to interpret and compare across variants.",
     },
+    "Expected Output": {
+      kind: "hidden",
+    },
+    /** Legacy stored dialog value — still resolves step 4 if present in state. */
     "Compare to expected output": {
       kind: "hidden",
     },
     "Rule validator": {
       kind: "rule",
-      title: "4. Rule definition",
+      title: "Rule definition",
       placeholder: `e.g.
 
 charge_age > 30d  →  escalate: true
@@ -2947,22 +3306,26 @@ sentiment: frustrated  →  tone_score >= 4`,
     },
     Contains: {
       kind: "textarea",
-      title: "4. Text that must appear",
+      title: "Text that must appear",
       placeholder: "Enter the phrase or substring that must be present in the output…",
       hint: "Match is successful if this text appears anywhere in the evaluated output. Case-sensitive by default.",
     },
     Regex: {
       kind: "textarea",
-      title: "4. Regular expression pattern",
+      title: "Regular expression pattern",
       placeholder: 'e.g. ^\\s*\\{[\\s\\S]*"category"\\s*:\\s*"billing"[\\s\\S]*\\}\\s*$',
       hint: "The run passes if the pattern matches the full output or a substring (depending on your eval settings).",
       mono: true,
     },
   }
 
-  const step4 = step4ForEvalType[evalType] ?? step4ForEvalType["LLM judge"]
+  const step4 =
+    evalType != null ? (step4ForEvalType[evalType] ?? step4ForEvalType["LLM judge"]) : null
 
   const buildRow = (): Omit<EvaluatorConfig, "id" | "ran"> => {
+    if (evalSource == null) throw new Error("evalSource is required to save")
+    if (evalType == null) throw new Error("evalType is required to save")
+    const outputLabel = outputLabelFromEvalSource(evalSource)
     const threshold = alertEnabled ? parseInt(alertThreshold, 10) * 10 : undefined
     const base: Omit<EvaluatorConfig, "id" | "ran"> = {
       name: name.trim() || "Untitled eval",
@@ -2986,7 +3349,7 @@ sentiment: frustrated  →  tone_score >= 4`,
         </SheetHeader>
         <div className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-6">
           <section className="space-y-2">
-            <Label htmlFor="eval-name">1. Name</Label>
+            <Label htmlFor="eval-name">Eval name</Label>
             <Input
               id="eval-name"
               placeholder="e.g. Ticket categorization quality"
@@ -3003,28 +3366,35 @@ sentiment: frustrated  →  tone_score >= 4`,
               onValueChange={(v) => setEvalSource(v as WorkflowEvalSource)}
             >
               <SelectTrigger className="w-full h-9">
-                {/* One flex group so default justify-between does not push the label away from the icon */}
                 <span className="flex min-w-0 flex-1 items-center gap-2">
-                  <EvaluatedSourceIcon evalSource={evalSource} />
-                  <SelectValue placeholder="Choose source" />
+                  <SelectValue placeholder="Select Node" />
                 </span>
               </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="output-1">
+              <SelectContent className="max-h-[min(70vh,28rem)]">
+                <SelectItem value="output-1" textValue="Output 1">
                   <span className="flex items-center gap-2">
                     <EvaluatedSourceIcon evalSource="output-1" />
                     Output 1
                   </span>
                 </SelectItem>
-                <SelectItem value="output-2">
+                <SelectItem value="output-2" textValue="Output 2">
                   <span className="flex items-center gap-2">
                     <EvaluatedSourceIcon evalSource="output-2" />
                     Output 2
                   </span>
                 </SelectItem>
                 <SelectSeparator />
+                {GANTT_NODES.map((node) => (
+                  <SelectItem key={node.id} value={node.id} textValue={node.label}>
+                    <span className="flex items-center gap-2 min-w-0">
+                      <GanttNodeIcon type={node.icon} />
+                      <span className="truncate">{node.label}</span>
+                    </span>
+                  </SelectItem>
+                ))}
+                <SelectSeparator />
                 {WORKFLOW_NODES.map((n) => (
-                  <SelectItem key={n.id} value={n.id}>
+                  <SelectItem key={n.id} value={n.id} textValue={n.label}>
                     <span className="flex items-center gap-2">
                       <WorkflowNodeLucideIcon kind={n.iconKind} />
                       {n.label}
@@ -3033,41 +3403,71 @@ sentiment: frustrated  →  tone_score >= 4`,
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">Scores apply to {outputLabel.toLowerCase()}.</p>
           </section>
 
           <Separator />
 
           <section className="space-y-2">
-            <Label>3. Evaluation type</Label>
+            <Label>Evaluation type</Label>
             <Select value={evalType} onValueChange={setEvalType}>
               <SelectTrigger className="w-full h-9">
-                <SelectValue />
+                <SelectValue placeholder="Choose evaluation type" />
               </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="LLM judge">LLM judge</SelectItem>
-                <SelectItem value="Compare to expected output">Compare to expected output</SelectItem>
-                <SelectItem value="Rule validator">Rule validator</SelectItem>
-                <SelectItem value="Contains">Contains</SelectItem>
-                <SelectItem value="Regex">Regex</SelectItem>
+              <SelectContent
+                align="end"
+                side="bottom"
+                position="popper"
+                collisionPadding={12}
+                className="z-[110] max-h-[min(70vh,28rem)] min-w-[var(--radix-select-trigger-width)] max-w-[min(28rem,calc(100vw-1.5rem))]"
+              >
+                {EVAL_TYPE_DIALOG_OPTIONS.map((option) => (
+                  <SelectItem
+                    key={option.value}
+                    value={option.value}
+                    itemText={option.label}
+                    textValue={`${option.label} ${option.description}`}
+                    className="h-auto min-h-0 cursor-pointer flex-col items-stretch gap-0.5 py-2.5"
+                  >
+                    <span className="text-xs font-normal leading-snug text-muted-foreground text-left">
+                      {option.description}
+                    </span>
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </section>
 
-          {step4.kind === "hidden" ? (
+          {step4 == null ? null : step4.kind === "hidden" ? (
             <section className="space-y-2">
-              <Label>4. Ground truth (expected output)</Label>
-              <div className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-3 flex gap-3 items-start">
-                <span className="mt-0.5 text-muted-foreground">
-                  <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7.5 1C3.91015 1 1 3.91015 1 7.5C1 11.0899 3.91015 14 7.5 14C11.0899 14 14 11.0899 14 7.5C14 3.91015 11.0899 1 7.5 1ZM6.8 4.5C6.8 4.11340 7.11340 3.8 7.5 3.8C7.88660 3.8 8.2 4.11340 8.2 4.5C8.2 4.88660 7.88660 5.2 7.5 5.2C7.11340 5.2 6.8 4.88660 6.8 4.5ZM8 11H7V6.5H8V11Z" fill="currentColor" fillRule="evenodd" clipRule="evenodd" /></svg>
-                </span>
-                <div className="space-y-0.5">
-                  <p className="text-sm font-medium text-foreground">Comes from each test case row</p>
+              <Label>Ground truth (expected output)</Label>
+              {autoRun ? (
+                <>
+                  <Textarea
+                    id="eval-expected-fixed"
+                    aria-label="Fixed expected output"
+                    placeholder="Enter the exact output you expect the model to produce on live runs…"
+                    value={expected}
+                    onChange={(e) => setExpected(e.target.value)}
+                    rows={4}
+                    className="min-h-[100px] resize-y text-sm"
+                  />
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    This eval compares the model output against the expected output you set per row in the experiment table — not a single fixed reference. Each test case can have its own gold answer.
+                    Used as the reference for every live run scored by this eval. Unlike experiments, production runs have no per-row gold answer, so this fixed string is compared against each output.
                   </p>
+                </>
+              ) : (
+                <div className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-3 flex gap-3 items-start">
+                  <span className="mt-0.5 text-muted-foreground">
+                    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7.5 1C3.91015 1 1 3.91015 1 7.5C1 11.0899 3.91015 14 7.5 14C11.0899 14 14 11.0899 14 7.5C14 3.91015 11.0899 1 7.5 1ZM6.8 4.5C6.8 4.11340 7.11340 3.8 7.5 3.8C7.88660 3.8 8.2 4.11340 8.2 4.5C8.2 4.88660 7.88660 5.2 7.5 5.2C7.11340 5.2 6.8 4.88660 6.8 4.5ZM8 11H7V6.5H8V11Z" fill="currentColor" fillRule="evenodd" clipRule="evenodd" /></svg>
+                  </span>
+                  <div className="space-y-0.5">
+                    <p className="text-sm font-medium text-foreground">Comes from each test case row</p>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      This eval compares the model output against the expected output you set per row in the experiment table — not a single fixed reference. Each test case can have its own gold answer.
+                    </p>
+                  </div>
                 </div>
-              </div>
+              )}
             </section>
           ) : step4.kind === "llm-judge" ? (
             <section className="space-y-2">
@@ -3091,10 +3491,9 @@ sentiment: frustrated  →  tone_score >= 4`,
               <Textarea
                 id="eval-expected"
                 aria-label="Scoring rubric"
-                placeholder={step4.placeholder}
                 value={expected}
                 onChange={(e) => setExpected(e.target.value)}
-                rows={4}
+                rows={6}
                 className="min-h-[100px] resize-y text-sm"
               />
               <p className="text-xs text-muted-foreground leading-relaxed">{step4.hint}</p>
@@ -3130,10 +3529,12 @@ sentiment: frustrated  →  tone_score >= 4`,
             </section>
           )}
 
-          <section className="space-y-4 rounded-lg border border-border/80 bg-muted/20 px-4 py-4">
+          <Separator />
+
+          <section className="space-y-4">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1 pr-2">
-                <p className="text-sm font-medium">Auto Run</p>
+                <p className="text-sm font-medium">Run automatically in production</p>
                 <p className="text-xs text-muted-foreground mt-0.5">Score real runs automatically and emit a signal when quality drops.</p>
               </div>
               <Switch checked={autoRun} onCheckedChange={setAutoRun} />
@@ -3141,35 +3542,45 @@ sentiment: frustrated  →  tone_score >= 4`,
 
             {autoRun && (
               <div className="space-y-4 pt-1">
-                {/* Trigger */}
+                {/* Audience: groups & roles */}
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground font-normal">Evaluate</Label>
-                  <Select value={trigger} onValueChange={setTrigger}>
+                  <Label className="text-xs text-muted-foreground font-normal">Groups & roles</Label>
+                  <Select value={runAudience} onValueChange={setRunAudience}>
                     <SelectTrigger className="h-9 w-full bg-background">
-                      <SelectValue />
+                      <SelectValue placeholder="Who this run applies to" />
                     </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="after-each">After each execution</SelectItem>
-                      <SelectItem value="batch-finish">On batch complete</SelectItem>
-                      <SelectItem value="nightly">Nightly — 02:00 UTC</SelectItem>
+                    <SelectContent className="max-h-[min(70vh,22rem)]">
+                      <SelectGroup>
+                        <SelectLabel className="text-[11px]">Everyone</SelectLabel>
+                        {RUN_AUDIENCE_OPTIONS.filter((o) => o.group === "all").map((o) => (
+                          <SelectItem key={o.value} value={o.value}>
+                            {o.label}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                      <SelectSeparator />
+                      <SelectGroup>
+                        <SelectLabel className="text-[11px]">Groups</SelectLabel>
+                        {RUN_AUDIENCE_OPTIONS.filter((o) => o.group === "groups").map((o) => (
+                          <SelectItem key={o.value} value={o.value}>
+                            {o.label}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                      <SelectSeparator />
+                      <SelectGroup>
+                        <SelectLabel className="text-[11px]">Roles</SelectLabel>
+                        {RUN_AUDIENCE_OPTIONS.filter((o) => o.group === "roles").map((o) => (
+                          <SelectItem key={o.value} value={o.value}>
+                            {o.label}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
-                </div>
-
-                {/* Environment */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground font-normal">Environment</Label>
-                  <Select value={environment} onValueChange={setEnvironment}>
-                    <SelectTrigger className="h-9 w-full bg-background">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Production + staging</SelectItem>
-                      <SelectItem value="production">Production only</SelectItem>
-                      <SelectItem value="staging">Staging only</SelectItem>
-                      <SelectItem value="sandbox">Sandbox only</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Only runs initiated by users in this audience are scored automatically.
+                  </p>
                 </div>
 
                 {/* Sample rate */}
@@ -3180,51 +3591,90 @@ sentiment: frustrated  →  tone_score >= 4`,
                   </div>
                   <input
                     type="range"
-                    min={5}
-                    max={100}
-                    step={5}
+                    min={SAMPLE_RATE_MIN}
+                    max={SAMPLE_RATE_MAX}
+                    step={1}
                     value={sampleRate}
-                    onChange={(e) => setSampleRate(e.target.value)}
+                    onChange={(e) => setSampleRate(clampSampleRatePct(e.target.value))}
                     className="w-full accent-primary h-1.5 cursor-pointer"
                   />
                   <p className="text-xs text-muted-foreground">
-                    {sampleRate === "100" ? "Scores every live run." : `Scores roughly ${sampleRate}% of live runs at random.`}
+                    Scores roughly {sampleRate}% of live runs at random.
                   </p>
                 </div>
 
-                {/* Signal threshold */}
-                <div className={cn("space-y-3 rounded-md border px-3 py-3 transition-colors", alertEnabled ? "border-amber-200 bg-amber-50/40 dark:border-amber-800/40 dark:bg-amber-950/20" : "border-border/60 bg-background")}>
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Target className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-500" aria-hidden />
-                      <div>
-                        <p className="text-xs font-medium">Emit signal when score drops below</p>
-                        <p className="text-xs text-muted-foreground">Creates an entry in the Signals tab for any failing run.</p>
+                {/* Signal threshold — standalone section (not a loose bordered div) */}
+                <section
+                  aria-labelledby="eval-signal-threshold-title"
+                  className={cn(
+                    "overflow-hidden rounded-lg border transition-colors",
+                    alertEnabled
+                      ? "border-border/80 bg-muted/25 shadow-sm dark:border-border/60 dark:bg-muted/20"
+                      : "border-border/70 bg-muted/20",
+                  )}
+                >
+                  <header
+                    className={cn(
+                      "flex items-start justify-between gap-3 px-4 py-3.5",
+                      alertEnabled && "border-b border-border/60 dark:border-border/50",
+                    )}
+                  >
+                    <div className="flex min-w-0 flex-1 gap-3">
+                      <div
+                        className={cn(
+                          "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md border",
+                          alertEnabled
+                            ? "border-border/60 bg-muted/50 text-foreground dark:border-border/50 dark:bg-muted/40 dark:text-foreground"
+                            : "border-border/60 bg-background text-muted-foreground",
+                        )}
+                        aria-hidden
+                      >
+                        <Target className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 pt-0.5">
+                        <h3 id="eval-signal-threshold-title" className="text-sm font-semibold leading-tight tracking-tight">
+                          Emit signal when score drops below
+                        </h3>
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          Creates an entry in the Signals tab for any failing run.
+                        </p>
                       </div>
                     </div>
-                    <Switch checked={alertEnabled} onCheckedChange={setAlertEnabled} />
-                  </div>
+                    <Switch
+                      checked={alertEnabled}
+                      onCheckedChange={setAlertEnabled}
+                      className="shrink-0"
+                      aria-labelledby="eval-signal-threshold-title"
+                    />
+                  </header>
                   {alertEnabled && (
-                    <div className="space-y-2 border-t border-amber-200/60 pt-3 dark:border-amber-800/30">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-xs text-muted-foreground font-normal">Fail threshold</Label>
-                        <span className="text-xs font-semibold tabular-nums text-amber-700 dark:text-amber-400">{alertThreshold}.0 / 10</span>
+                    <div className="space-y-3 bg-muted/30 px-4 py-3.5 dark:bg-muted/15">
+                      <div className="flex items-center justify-between gap-2">
+                        <Label htmlFor="eval-signal-threshold-slider" className="text-xs font-medium text-foreground/80">
+                          Fail threshold
+                        </Label>
+                        <span className="text-xs font-semibold tabular-nums text-foreground">
+                          {alertThreshold}.0 / 10
+                        </span>
                       </div>
                       <input
+                        id="eval-signal-threshold-slider"
                         type="range"
                         min={1}
                         max={9}
                         step={1}
                         value={alertThreshold}
                         onChange={(e) => setAlertThreshold(e.target.value)}
-                        className="w-full accent-amber-500 h-1.5 cursor-pointer"
+                        className="w-full accent-primary h-1.5 cursor-pointer"
                       />
-                      <p className="text-[11px] text-muted-foreground leading-snug">
-                        Runs scoring below <span className="font-medium text-amber-700 dark:text-amber-400">{alertThreshold}.0</span> will appear in Signals with the run ID, score, and evaluator explanation attached.
+                      <p className="text-xs leading-relaxed text-muted-foreground">
+                        Runs scoring below{" "}
+                        <span className="font-medium text-foreground">{alertThreshold}.0</span> will
+                        appear in Signals with the run ID, score, and evaluator explanation attached.
                       </p>
                     </div>
                   )}
-                </div>
+                </section>
               </div>
             )}
           </section>
@@ -3235,7 +3685,9 @@ sentiment: frustrated  →  tone_score >= 4`,
           </Button>
           <Button
             type="button"
+            disabled={evalSource == null || evalType == null}
             onClick={() => {
+              if (evalSource == null || evalType == null) return
               onSave(buildRow(), editingEvaluator?.id)
               onOpenChange(false)
             }}
@@ -3251,16 +3703,6 @@ sentiment: frustrated  →  tone_score >= 4`,
 // ─── Evaluators Tab ────────────────────────────────────────────────────────────
 
 const INITIAL_EVALUATORS: EvaluatorConfig[] = [
-  {
-    id: 1,
-    name: "Response accuracy",
-    output: "Draft Response → output",
-    type: "Reference match",
-    expected: 'Match against gold reply — normalize whitespace, ignore greeting',
-    runWhen: "After each cell completes — auto",
-    runScope: "Full table · all variants · every user_id",
-    ran: "531 runs",
-  },
   {
     id: 2,
     name: "Tone & empathy",
@@ -3286,15 +3728,14 @@ const INITIAL_EVALUATORS: EvaluatorConfig[] = [
     passThreshold: 70,
   },
   {
-    id: 4,
-    name: "Escalation detection",
-    output: "Escalation Router → output",
-    type: "Rule validator",
-    expected: "charge_age > 30d → escalate:true · priority:high → escalate:true",
-    runWhen: "Before Send Reply — blocking gate",
-    runScope: "Production runs · staging excluded",
+    id: 1,
+    name: "Response accuracy",
+    output: "Draft Response → output",
+    type: "Expected Output",
+    expected: 'Match against gold reply — normalize whitespace, ignore greeting',
+    runWhen: "After each cell completes — auto",
+    runScope: "Full table · all variants · every user_id",
     ran: "531 runs",
-    passThreshold: 75,
   },
 ]
 
@@ -3302,9 +3743,9 @@ const INITIAL_EVALUATORS: EvaluatorConfig[] = [
 const EVALUATOR_TABLE_COL =
   "grid w-full grid-cols-[minmax(176px,1.25fr)_minmax(104px,0.78fr)_minmax(100px,0.72fr)_minmax(200px,2.35fr)_minmax(80px,0.52fr)_minmax(84px,0.62fr)_44px] gap-4 items-center"
 
-/** Signals tab — separate grid so Evaluator column changes do not affect this table */
+/** Signals tab — linked evaluator sits under signal name (no separate Evaluator column) */
 const SIGNAL_TABLE_COL =
-  "grid grid-cols-[minmax(220px,1.75fr)_minmax(128px,0.95fr)_minmax(220px,1.45fr)_minmax(220px,1.35fr)_minmax(96px,0.6fr)_40px] gap-4 items-center"
+  "grid grid-cols-[minmax(200px,1.55fr)_minmax(100px,0.7fr)_minmax(128px,0.85fr)_minmax(100px,0.65fr)_minmax(60px,0.5fr)_40px] gap-4 items-start"
 
 function datasetFormatAccent(format: string): string {
   const f = format.toLowerCase()
@@ -3319,6 +3760,43 @@ function signalKindAccent(kind: string): string {
   if (k.includes("score") || k.includes("accuracy")) return "bg-emerald-500"
   if (k.includes("latency")) return "bg-sky-500"
   return "bg-neutral-400"
+}
+
+/** Slim tip row: soft contrast fill, doc icon + short copy (text column fills banner width). */
+export function ManusTipBanner({
+  children,
+  className,
+}: {
+  children: React.ReactNode
+  className?: string
+}) {
+  const [dismissed, setDismissed] = useState(false)
+  if (dismissed) return null
+  return (
+    <div
+      className={cn(
+        "w-full min-w-0 rounded-xl bg-[#e8e9ed] px-4 py-3 dark:bg-neutral-800/90",
+        className,
+      )}
+    >
+      <div className="flex w-full min-w-0 items-center gap-3">
+        <FileText className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+        <div className="min-w-0 flex-1 text-sm leading-snug text-foreground [&_p]:m-0 [&_p]:w-full [&_p]:max-w-none">
+          {children}
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-7 shrink-0 text-muted-foreground hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10 [&_svg]:size-4"
+          onClick={() => setDismissed(true)}
+          aria-label="Dismiss tip"
+        >
+          <X />
+        </Button>
+      </div>
+    </div>
+  )
 }
 
 function EvaluatorsTab({
@@ -3336,13 +3814,17 @@ function EvaluatorsTab({
   onCreateSignalFromEvaluator: (ev: EvaluatorConfig) => void
   onTestInExperiment: (rowIndex: number) => void
 }) {
-  const tabCtx = React.useContext(TabContext)
   return (
+    <TooltipProvider delayDuration={250}>
     <div className="flex flex-col h-full p-6 gap-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="min-w-0 flex-1 pr-2 text-sm leading-snug text-muted-foreground">
-          Evaluators are reusable scoring functions—LLM judges, rules, and validators—that only answer: given this output, what&apos;s the score? They live in your library; attach them to sandbox experiments or live traffic to measure quality. They don&apos;t define alerts or the unified inbox—that&apos;s Signals.
+      <ManusTipBanner>
+        <p>
+          <span className="font-medium text-foreground">Evaluators</span> score runs with criteria you set. Attach them
+          to production runs or test them in the <span className="font-medium">Experiments</span> tab, then open that
+          run&apos;s <span className="font-medium">Analytics</span> tab to see scores.
         </p>
+      </ManusTipBanner>
+      <div className="flex justify-end">
         <Button variant="outline" size="sm" className="h-8 shrink-0" onClick={onOpenCreateEvaluator}>
           + New Eval
         </Button>
@@ -3442,16 +3924,23 @@ function EvaluatorsTab({
                 )}
               </div>
 
-              {/* Mode badge: Live (green pulsing dot) vs Manual (muted) */}
+              {/* Mode badge: Autorun (green pulsing dot) vs Manual (muted) */}
               <div className="min-w-0">
                 {parseAutoRunFromStored(ev.runWhen) ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:border-emerald-800/50 dark:bg-emerald-950/40 dark:text-emerald-400">
-                    <span className="relative flex h-1.5 w-1.5 shrink-0">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                      <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                    </span>
-                    Live
-                  </span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:border-emerald-800/50 dark:bg-emerald-950/40 dark:text-emerald-400 cursor-default">
+                        <span className="relative flex h-1.5 w-1.5 shrink-0">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        </span>
+                        Autorun
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[280px] text-xs leading-relaxed">
+                      Runs {autoRunScheduleSummary(ev.runWhen).replace(/^./, (c) => c.toLowerCase())}
+                    </TooltipContent>
+                  </Tooltip>
                 ) : (
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/40" />
@@ -3542,6 +4031,7 @@ function EvaluatorsTab({
         </div>
       </div>
     </div>
+    </TooltipProvider>
   )
 }
 
@@ -3599,6 +4089,9 @@ const INITIAL_DATASET_ITEMS: DatasetItem[] = [
   },
 ]
 
+type AddCasesSource = "manual" | "csv" | "knowledge_base" | "run_logs"
+type AddCasesSourceSelection = AddCasesSource | ""
+
 function NewDatasetModal({ open, onOpenChange, onSave }: {
   open: boolean
   onOpenChange: (v: boolean) => void
@@ -3606,26 +4099,135 @@ function NewDatasetModal({ open, onOpenChange, onSave }: {
 }) {
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
+  const [cases, setCases] = useState<DatasetCase[]>([{ id: "nd-1", input: "", expected: "" }])
+  const [source, setSource] = useState<AddCasesSourceSelection>("")
+  const [knowledgeBaseId, setKnowledgeBaseId] = useState("")
+  const csvInputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    if (!open) return
+  useLayoutEffect(() => {
+    if (!open) {
+      setSource("")
+      setKnowledgeBaseId("")
+      return
+    }
     setName("")
     setDescription("")
+    setCases([{ id: "nd-1", input: "", expected: "" }])
+    setSource("")
+    setKnowledgeBaseId("")
   }, [open])
 
+  function updateCaseRow(id: string, field: "input" | "expected", value: string) {
+    setCases(prev => prev.map(c => c.id === id ? { ...c, [field]: value } : c))
+  }
+  function addCaseRow() {
+    setCases(prev => [...prev, { id: `nd-${Date.now()}`, input: "", expected: "" }])
+  }
+  function removeCaseRow(id: string) {
+    setCases(prev => prev.filter(c => c.id !== id))
+  }
+
   function handleSave() {
-    onSave({ id: `ds-${Date.now()}`, name: name.trim() || "Untitled dataset", description: description.trim(), cases: [], updated: "Apr 22, 2026" })
+    const datasetId = `ds-${Date.now()}`
+    const filled = cases
+      .filter(c => c.input.trim())
+      .map((c, i) => ({ ...c, id: `dc-${datasetId}-${i}` }))
+    onSave({
+      id: datasetId,
+      name: name.trim() || "Untitled dataset",
+      description: description.trim(),
+      cases: filled,
+      updated: "Apr 22, 2026",
+    })
     onOpenChange(false)
   }
 
+  function parseSimpleCsv(text: string): DatasetCase[] {
+    const lines = text.trim().split(/\r?\n/).filter(l => l.trim().length > 0)
+    if (lines.length === 0) return []
+    let start = 0
+    const first = lines[0].toLowerCase()
+    if (first.includes("input") && first.includes("expected")) start = 1
+    const out: DatasetCase[] = []
+    for (let i = start; i < lines.length; i++) {
+      const line = lines[i]
+      const comma = line.indexOf(",")
+      if (comma === -1) {
+        const t = line.trim()
+        if (t) out.push({ id: `nd-csv-${i}`, input: t, expected: "" })
+        continue
+      }
+      const input = line.slice(0, comma).trim().replace(/^"|"$/g, "")
+      const expected = line.slice(comma + 1).trim().replace(/^"|"$/g, "")
+      if (!input && !expected) continue
+      out.push({ id: `nd-csv-${i}`, input, expected })
+    }
+    return out
+  }
+
+  async function handleCsvFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ""
+    if (!file) return
+    const text = await file.text()
+    const parsed = parseSimpleCsv(text)
+    if (parsed.length === 0) {
+      toast.error("No rows found", { description: "Use two columns: input, expected (comma-separated)." })
+      return
+    }
+    setCases(parsed)
+    setSource("manual")
+    toast.success("Imported from CSV", { description: `${parsed.length} row${parsed.length !== 1 ? "s" : ""} loaded. Review and save.` })
+  }
+
+  function importFromKnowledgeBase() {
+    if (!knowledgeBaseId) {
+      toast.message("Pick a knowledge base first")
+      return
+    }
+    const samples: Record<string, Omit<DatasetCase, "id">[]> = {
+      support: [
+        { input: "How do I reset my password?", expected: "Open Settings → Security → Reset password and follow the email link." },
+        { input: "Where is my invoice?", expected: "Billing → Invoices lists PDFs for the last 12 months." },
+      ],
+      product: [
+        { input: "What APIs are rate limited?", expected: "Search and embeddings are limited to 60 RPM on the free tier." },
+        { input: "Supported file types for upload?", expected: "PDF, DOCX, TXT, and CSV up to 25 MB per file." },
+      ],
+      internal: [
+        { input: "On-call escalation path", expected: "P1 → #incidents Slack → page infra-oncall; include customer impact." },
+      ],
+    }
+    const base = samples[knowledgeBaseId] ?? samples.support
+    const ts = Date.now()
+    const rows: DatasetCase[] = base.map((row, i) => ({ ...row, id: `nd-kb-${ts}-${i}` }))
+    setCases(rows)
+    setSource("manual")
+    toast.success("Imported from knowledge base", { description: `${rows.length} suggested row${rows.length !== 1 ? "s" : ""} — edit if needed, then save.` })
+  }
+
+  function importFromRunLogs() {
+    const ts = Date.now()
+    const rows: DatasetCase[] = [
+      { id: `nd-rl-${ts}-0`, input: "[Run 4f2a · Agent] User: Can you summarize the last thread?", expected: "Here is a concise summary of the conversation: the user asked about billing, then API limits." },
+      { id: `nd-rl-${ts}-1`, input: "[Run 4f2a · Tool: search_docs] query: rate limits free tier", expected: '{"hits":3,"top":"Search and embeddings: 60 RPM on free tier."}' },
+      { id: `nd-rl-${ts}-2`, input: "[Run 9c11 · Agent] User: Draft a polite decline for out-of-scope legal advice", expected: "I cannot provide legal advice. I can share our policy docs or connect you with the legal team if you tell me your region." },
+    ]
+    setCases(rows)
+    setSource("manual")
+    toast.success("Imported from run logs", { description: `${rows.length} row${rows.length !== 1 ? "s" : ""} from recent runs — edit if needed, then save.` })
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md flex flex-col gap-0 p-0 overflow-hidden">
-        <DialogHeader className="px-6 pt-6 pb-4 border-b border-border/60 space-y-1">
-          <DialogTitle>New dataset</DialogTitle>
-          <DialogDescription>Give it a name and description. You can add test cases after.</DialogDescription>
-        </DialogHeader>
-        <div className="px-6 py-5 flex flex-col gap-4">
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="w-full sm:max-w-xl flex flex-col gap-0 p-0 overflow-hidden h-full max-h-[100dvh]">
+        <SheetHeader className="px-6 pt-2 pb-4 border-b border-border/60 space-y-1 text-left shrink-0">
+          <SheetTitle>New dataset</SheetTitle>
+          <SheetDescription>
+            Give it a name and description. Optionally add test cases below, or use &quot;Add test cases&quot; on the dataset later.
+          </SheetDescription>
+        </SheetHeader>
+        <div className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-4 min-h-0">
           <div className="space-y-1.5">
             <Label htmlFor="ds-name">Name</Label>
             <Input id="ds-name" placeholder="e.g. Billing disputes" value={name} onChange={e => setName(e.target.value)} className="h-9" />
@@ -3634,13 +4236,104 @@ function NewDatasetModal({ open, onOpenChange, onSave }: {
             <Label htmlFor="ds-desc">Description <span className="text-muted-foreground font-normal">(optional)</span></Label>
             <Input id="ds-desc" placeholder="Short description of this dataset" value={description} onChange={e => setDescription(e.target.value)} className="h-9" />
           </div>
+          <div className="space-y-4 pt-1">
+            <Label>Test cases <span className="text-muted-foreground font-normal">(optional)</span></Label>
+            <Select value={source === "" ? undefined : source} onValueChange={v => setSource(v as AddCasesSource)}>
+              <SelectTrigger id="new-ds-cases-source" className="w-full h-9" aria-label="How to add test cases">
+                <SelectValue placeholder="Select a way to add test cases" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="manual">Manual entry</SelectItem>
+                <SelectItem value="csv">Upload CSV document</SelectItem>
+                <SelectItem value="knowledge_base">Knowledge base</SelectItem>
+                <SelectItem value="run_logs">From Run logs</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {source === "manual" && (
+              <div className="rounded-lg border border-border/80 overflow-hidden">
+                <div className="grid grid-cols-[1fr_1fr_1.5rem] gap-3 px-3 py-2 bg-muted/30 border-b border-border/70 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <span>Input</span><span>Expected output</span><span />
+                </div>
+                <div className="divide-y divide-border/60">
+                  {cases.map((c, i) => (
+                    <div key={c.id} className="grid grid-cols-[1fr_1fr_1.5rem] gap-3 px-3 py-2.5 items-start">
+                      <Textarea placeholder={`Input ${i + 1}...`} value={c.input} onChange={e => updateCaseRow(c.id, "input", e.target.value)} rows={2} className="text-xs resize-none min-h-[56px]" />
+                      <Textarea placeholder="Expected output..." value={c.expected} onChange={e => updateCaseRow(c.id, "expected", e.target.value)} rows={2} className="text-xs resize-none min-h-[56px]" />
+                      <button type="button" onClick={() => removeCaseRow(c.id)} disabled={cases.length === 1} className="mt-1 flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button type="button" onClick={addCaseRow} className="flex w-full items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 border-t border-border/60 transition-colors">
+                  <Plus className="h-3.5 w-3.5" /> Add another row
+                </button>
+              </div>
+            )}
+
+            {source === "csv" && (
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  First column is treated as input, second as expected output. Optional header row: <span className="font-mono text-[11px]">input, expected</span>
+                </p>
+                <input ref={csvInputRef} type="file" accept=".csv,text/csv" className="sr-only" onChange={handleCsvFile} />
+                <button
+                  type="button"
+                  onClick={() => csvInputRef.current?.click()}
+                  className="flex w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border/80 bg-muted/20 px-6 py-10 text-center transition-colors hover:bg-muted/35 hover:border-border"
+                >
+                  <CloudUpload className="h-8 w-8 text-muted-foreground" />
+                  <span className="text-sm font-medium text-foreground">Upload CSV</span>
+                  <span className="text-xs text-muted-foreground">Click to choose a file from your computer</span>
+                </button>
+              </div>
+            )}
+
+            {source === "knowledge_base" && (
+              <div className="space-y-4">
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Pull suggested question–answer pairs from a connected knowledge base (prototype: sample rows per base).
+                </p>
+                <div className="space-y-2">
+                  <Label htmlFor="new-ds-cases-kb">Knowledge base</Label>
+                  <Select value={knowledgeBaseId || undefined} onValueChange={setKnowledgeBaseId}>
+                    <SelectTrigger id="new-ds-cases-kb" className="w-full h-9">
+                      <SelectValue placeholder="Select a knowledge base" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="support">Support documentation</SelectItem>
+                      <SelectItem value="product">Product FAQs</SelectItem>
+                      <SelectItem value="internal">Internal wiki</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button type="button" variant="secondary" className="w-full gap-2" onClick={importFromKnowledgeBase}>
+                  <Database className="h-3.5 w-3.5" />
+                  Import suggested cases
+                </Button>
+              </div>
+            )}
+
+            {source === "run_logs" && (
+              <div className="space-y-4">
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Turn recent workflow run traces into test rows: each row uses the logged prompt or user turn as input and the model or tool output as expected (prototype: sample rows).
+                </p>
+                <Button type="button" variant="secondary" className="w-full gap-2" onClick={importFromRunLogs}>
+                  <History className="h-3.5 w-3.5" />
+                  Import from run logs
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
-        <DialogFooter className="px-6 py-4 border-t border-border/60 bg-muted/10 gap-2 sm:gap-2 flex-col sm:flex-row sm:justify-end">
+        <SheetFooter className="shrink-0 px-6 py-4 border-t border-border/60 bg-muted/10 gap-2 sm:flex-row sm:justify-end sm:space-x-0">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={handleSave} disabled={!name.trim()}>Save dataset</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   )
 }
 
@@ -3651,10 +4344,19 @@ function AddCasesModal({ open, onOpenChange, dataset, onSave }: {
   onSave: (datasetId: string, newCases: DatasetCase[]) => void
 }) {
   const [cases, setCases] = useState<DatasetCase[]>([{ id: "ac-1", input: "", expected: "" }])
+  const [source, setSource] = useState<AddCasesSourceSelection>("")
+  const [knowledgeBaseId, setKnowledgeBaseId] = useState<string>("")
+  const csvInputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    if (!open) return
+  useLayoutEffect(() => {
+    if (!open) {
+      setSource("")
+      setKnowledgeBaseId("")
+      return
+    }
     setCases([{ id: "ac-1", input: "", expected: "" }])
+    setSource("")
+    setKnowledgeBaseId("")
   }, [open])
 
   function updateCase(id: string, field: "input" | "expected", value: string) {
@@ -3673,6 +4375,82 @@ function AddCasesModal({ open, onOpenChange, dataset, onSave }: {
     onOpenChange(false)
   }
 
+  function parseSimpleCsv(text: string): DatasetCase[] {
+    const lines = text.trim().split(/\r?\n/).filter(l => l.trim().length > 0)
+    if (lines.length === 0) return []
+    let start = 0
+    const first = lines[0].toLowerCase()
+    if (first.includes("input") && first.includes("expected")) start = 1
+    const out: DatasetCase[] = []
+    for (let i = start; i < lines.length; i++) {
+      const line = lines[i]
+      const comma = line.indexOf(",")
+      if (comma === -1) {
+        const t = line.trim()
+        if (t) out.push({ id: `ac-csv-${i}`, input: t, expected: "" })
+        continue
+      }
+      const input = line.slice(0, comma).trim().replace(/^"|"$/g, "")
+      const expected = line.slice(comma + 1).trim().replace(/^"|"$/g, "")
+      if (!input && !expected) continue
+      out.push({ id: `ac-csv-${i}`, input, expected })
+    }
+    return out
+  }
+
+  async function handleCsvFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ""
+    if (!file) return
+    const text = await file.text()
+    const parsed = parseSimpleCsv(text)
+    if (parsed.length === 0) {
+      toast.error("No rows found", { description: "Use two columns: input, expected (comma-separated)." })
+      return
+    }
+    setCases(parsed)
+    setSource("manual")
+    toast.success("Imported from CSV", { description: `${parsed.length} row${parsed.length !== 1 ? "s" : ""} loaded. Review and save.` })
+  }
+
+  function importFromKnowledgeBase() {
+    if (!knowledgeBaseId) {
+      toast.message("Pick a knowledge base first")
+      return
+    }
+    const samples: Record<string, Omit<DatasetCase, "id">[]> = {
+      support: [
+        { input: "How do I reset my password?", expected: "Open Settings → Security → Reset password and follow the email link." },
+        { input: "Where is my invoice?", expected: "Billing → Invoices lists PDFs for the last 12 months." },
+      ],
+      product: [
+        { input: "What APIs are rate limited?", expected: "Search and embeddings are limited to 60 RPM on the free tier." },
+        { input: "Supported file types for upload?", expected: "PDF, DOCX, TXT, and CSV up to 25 MB per file." },
+      ],
+      internal: [
+        { input: "On-call escalation path", expected: "P1 → #incidents Slack → page infra-oncall; include customer impact." },
+      ],
+    }
+    const base = samples[knowledgeBaseId] ?? samples.support
+    const ts = Date.now()
+    const rows: DatasetCase[] = base.map((row, i) => ({ ...row, id: `ac-kb-${ts}-${i}` }))
+    setCases(rows)
+    setSource("manual")
+    toast.success("Imported from knowledge base", { description: `${rows.length} suggested row${rows.length !== 1 ? "s" : ""} — edit if needed, then save.` })
+  }
+
+  function importFromRunLogs() {
+    const ts = Date.now()
+    const rows: DatasetCase[] = [
+      { id: `ac-rl-${ts}-0`, input: "[Run 4f2a · Agent] User: Can you summarize the last thread?", expected: "Here is a concise summary of the conversation: the user asked about billing, then API limits." },
+      { id: `ac-rl-${ts}-1`, input: "[Run 4f2a · Tool: search_docs] query: rate limits free tier", expected: '{"hits":3,"top":"Search and embeddings: 60 RPM on free tier."}' },
+      { id: `ac-rl-${ts}-2`, input: "[Run 9c11 · Agent] User: Draft a polite decline for out-of-scope legal advice", expected: "I cannot provide legal advice. I can share our policy docs or connect you with the legal team if you tell me your region." },
+    ]
+    setCases(rows)
+    setSource("manual")
+    toast.success("Imported from run logs", { description: `${rows.length} row${rows.length !== 1 ? "s" : ""} from recent runs — edit if needed, then save.` })
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
@@ -3682,26 +4460,98 @@ function AddCasesModal({ open, onOpenChange, dataset, onSave }: {
             Adding to <span className="font-medium text-foreground">{dataset?.name}</span> — {dataset?.cases.length ?? 0} existing row{(dataset?.cases.length ?? 0) !== 1 ? "s" : ""}
           </DialogDescription>
         </DialogHeader>
-        <div className="flex-1 overflow-y-auto px-6 py-5">
-          <div className="rounded-lg border border-border/80 overflow-hidden">
-            <div className="grid grid-cols-[1fr_1fr_1.5rem] gap-3 px-3 py-2 bg-muted/30 border-b border-border/70 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              <span>Input</span><span>Expected output</span><span />
-            </div>
-            <div className="divide-y divide-border/60">
-              {cases.map((c, i) => (
-                <div key={c.id} className="grid grid-cols-[1fr_1fr_1.5rem] gap-3 px-3 py-2.5 items-start">
-                  <Textarea placeholder={`Input ${i + 1}...`} value={c.input} onChange={e => updateCase(c.id, "input", e.target.value)} rows={2} className="text-xs resize-none min-h-[56px]" />
-                  <Textarea placeholder="Expected output..." value={c.expected} onChange={e => updateCase(c.id, "expected", e.target.value)} rows={2} className="text-xs resize-none min-h-[56px]" />
-                  <button type="button" onClick={() => removeCase(c.id)} disabled={cases.length === 1} className="mt-1 flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-            <button type="button" onClick={addCase} className="flex w-full items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 border-t border-border/60 transition-colors">
-              <Plus className="h-3.5 w-3.5" /> Add another row
-            </button>
+        <div className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="add-cases-source">Add cases from</Label>
+            <Select value={source === "" ? undefined : source} onValueChange={v => setSource(v as AddCasesSource)}>
+              <SelectTrigger id="add-cases-source" className="w-full h-9">
+                <SelectValue placeholder="Select a way to add test cases" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="manual">Manual entry</SelectItem>
+                <SelectItem value="csv">Upload CSV document</SelectItem>
+                <SelectItem value="knowledge_base">Knowledge base</SelectItem>
+                <SelectItem value="run_logs">From Run logs</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
+
+          {source === "manual" && (
+            <div className="rounded-lg border border-border/80 overflow-hidden">
+              <div className="grid grid-cols-[1fr_1fr_1.5rem] gap-3 px-3 py-2 bg-muted/30 border-b border-border/70 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                <span>Input</span><span>Expected output</span><span />
+              </div>
+              <div className="divide-y divide-border/60">
+                {cases.map((c, i) => (
+                  <div key={c.id} className="grid grid-cols-[1fr_1fr_1.5rem] gap-3 px-3 py-2.5 items-start">
+                    <Textarea placeholder={`Input ${i + 1}...`} value={c.input} onChange={e => updateCase(c.id, "input", e.target.value)} rows={2} className="text-xs resize-none min-h-[56px]" />
+                    <Textarea placeholder="Expected output..." value={c.expected} onChange={e => updateCase(c.id, "expected", e.target.value)} rows={2} className="text-xs resize-none min-h-[56px]" />
+                    <button type="button" onClick={() => removeCase(c.id)} disabled={cases.length === 1} className="mt-1 flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={addCase} className="flex w-full items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 border-t border-border/60 transition-colors">
+                <Plus className="h-3.5 w-3.5" /> Add another row
+              </button>
+            </div>
+          )}
+
+          {source === "csv" && (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                First column is treated as input, second as expected output. Optional header row: <span className="font-mono text-[11px]">input, expected</span>
+              </p>
+              <input ref={csvInputRef} type="file" accept=".csv,text/csv" className="sr-only" onChange={handleCsvFile} />
+              <button
+                type="button"
+                onClick={() => csvInputRef.current?.click()}
+                className="flex w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border/80 bg-muted/20 px-6 py-10 text-center transition-colors hover:bg-muted/35 hover:border-border"
+              >
+                <CloudUpload className="h-8 w-8 text-muted-foreground" />
+                <span className="text-sm font-medium text-foreground">Upload CSV</span>
+                <span className="text-xs text-muted-foreground">Click to choose a file from your computer</span>
+              </button>
+            </div>
+          )}
+
+          {source === "knowledge_base" && (
+            <div className="space-y-4">
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Pull suggested question–answer pairs from a connected knowledge base (prototype: sample rows per base).
+              </p>
+              <div className="space-y-2">
+                <Label htmlFor="add-cases-kb">Knowledge base</Label>
+                <Select value={knowledgeBaseId || undefined} onValueChange={setKnowledgeBaseId}>
+                  <SelectTrigger id="add-cases-kb" className="w-full h-9">
+                    <SelectValue placeholder="Select a knowledge base" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="support">Support documentation</SelectItem>
+                    <SelectItem value="product">Product FAQs</SelectItem>
+                    <SelectItem value="internal">Internal wiki</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button type="button" variant="secondary" className="w-full gap-2" onClick={importFromKnowledgeBase}>
+                <Database className="h-3.5 w-3.5" />
+                Import suggested cases
+              </Button>
+            </div>
+          )}
+
+          {source === "run_logs" && (
+            <div className="space-y-4">
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Turn recent workflow run traces into test rows: each row uses the logged prompt or user turn as input and the model or tool output as expected (prototype: sample rows).
+              </p>
+              <Button type="button" variant="secondary" className="w-full gap-2" onClick={importFromRunLogs}>
+                <History className="h-3.5 w-3.5" />
+                Import from run logs
+              </Button>
+            </div>
+          )}
         </div>
         <DialogFooter className="px-6 py-4 border-t border-border/60 bg-muted/10 gap-2 sm:gap-2 flex-col sm:flex-row sm:justify-end">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
@@ -3809,11 +4659,15 @@ function DatasetTab() {
   // ── List view ────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-full p-6 gap-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="min-w-0 flex-1 text-sm leading-snug text-muted-foreground">
-          A dataset is a named bundle of test cases—each row pairs a sample input with an expected answer—so you can run evaluations on the same scenarios together and compare results over time.
+      <ManusTipBanner>
+        <p>
+          <span className="font-medium text-foreground">Datasets</span> are sets of test cases that will let you evaluate
+          workflow changes (Experiments Tab). You can add manual test cases to a dataset, or import from existing runs or
+          files.
         </p>
-        <Button size="sm" className="h-8 shrink-0 gap-1.5" onClick={() => setNewDatasetOpen(true)}>
+      </ManusTipBanner>
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" className="h-8 shrink-0 gap-1.5" onClick={() => setNewDatasetOpen(true)}>
           <Plus className="h-3.5 w-3.5" /> New dataset
         </Button>
       </div>
@@ -3896,49 +4750,9 @@ function DatasetTab() {
 
 // ─── Signals Tab ───────────────────────────────────────────────────────────────
 
-type SignalListItem = {
-  id: string
-  name: string
-  kind: string
-  description: string
-  scope: string
-  updated: string
-  subtitle?: string
-  badge?: string
-}
+type SignalDetectionType = "llm-judge" | "regex" | "code" | "semantic"
 
-const INITIAL_SIGNAL_ITEMS: SignalListItem[] = [
-  {
-    id: "sig-accuracy",
-    name: "Response accuracy",
-    kind: "Score",
-    description: "Mean exact-match against gold replies on billing dispute cases, normalized for whitespace and greeting variation.",
-    scope: "All experiments · Billing disputes gold",
-    updated: "Apr 16, 2026",
-    subtitle: "Aggregated · mean · 0–1",
-    badge: "Primary",
-  },
-  {
-    id: "sig-latency",
-    name: "Latency",
-    kind: "Latency",
-    description: "p95 end-to-end response time from trigger to Send Reply, covering intent classification and KB lookup.",
-    scope: "Production · email + chatbot channels",
-    updated: "Apr 17, 2026",
-    subtitle: "Aggregated · p95 · ms",
-  },
-  {
-    id: "sig-escalation",
-    name: "Escalation detection rate",
-    kind: "Score",
-    description: "Fraction of runs where Escalation Router correctly flagged high-priority or >30-day-old charges for human review.",
-    scope: "Production runs · billing dispute subset",
-    updated: "Apr 17, 2026",
-    subtitle: "Aggregated · rate · 0–1",
-  },
-]
-
-type SignalTemplateId =
+type SignalCategoryId =
   | "failure"
   | "logic"
   | "task"
@@ -3946,114 +4760,271 @@ type SignalTemplateId =
   | "safety"
   | "hallucination"
   | "intent"
-  | "blank"
+  | "custom"
 
-const SIGNAL_TEMPLATES: {
-  id: SignalTemplateId
+/** `"full-trace"` or a `GANTT_NODES` id — where the signal runs in the workflow. */
+type SignalScopeValue = "full-trace" | (typeof GANTT_NODES)[number]["id"]
+
+type SignalListItem = {
+  id: string
+  name: string
+  detectionType: SignalDetectionType
+  category?: SignalCategoryId
+  /** If set, this signal is driven by an evaluator's score rather than standalone detection logic. */
+  linkedEvaluatorId?: number
+  linkedEvaluatorName?: string
+  description: string
+  lastFired?: string
+  updated: string
+  badge?: string
+  enabled: boolean
+  alertsEnabled: boolean
+  /** Defaults to full trace when unset. */
+  scope?: SignalScopeValue
+}
+
+const SIGNAL_DETECTION_TYPES: {
+  id: SignalDetectionType
   label: string
   icon: React.ReactNode
-  kindLabel: string
+  description: string
+}[] = [
+  {
+    id: "llm-judge",
+    label: "LLM Judge",
+    icon: <MessageSquare className="h-4 w-4" />,
+    description: "Write a prompt — an LLM scores every trace",
+  },
+  {
+    id: "regex",
+    label: "Regex / Keyword",
+    icon: <TextCursorInput className="h-4 w-4" />,
+    description: "Match a pattern against trace output or fields",
+  },
+  {
+    id: "code",
+    label: "Code",
+    icon: <Calculator className="h-4 w-4" />,
+    description: "Python snippet that returns a score or bool",
+  },
+  {
+    id: "semantic",
+    label: "Semantic Similarity",
+    icon: <Target className="h-4 w-4" />,
+    description: "Embedding distance vs. a reference string",
+  },
+]
+
+const SIGNAL_CATEGORIES: {
+  id: SignalCategoryId
+  label: string
+  icon: React.ReactNode
   placeholder: string
 }[] = [
   {
     id: "failure",
     label: "Failure",
-    icon: <AlertCircle className="h-5 w-5" />,
-    kindLabel: "Failure",
-    placeholder: "Analyze this trace for failures, errors, or things that went wrong…",
-  },
-  {
-    id: "logic",
-    label: "Logic",
-    icon: <Calculator className="h-5 w-5" />,
-    kindLabel: "Logic",
-    placeholder: "Describe logical inconsistencies, invalid reasoning steps, or broken assumptions…",
-  },
-  {
-    id: "task",
-    label: "Task",
-    icon: <CheckCircle2 className="h-5 w-5" />,
-    kindLabel: "Task",
-    placeholder: "Check whether the agent completed the user task end-to-end…",
-  },
-  {
-    id: "friction",
-    label: "User friction",
-    icon: <Frown className="h-5 w-5" />,
-    kindLabel: "Friction",
-    placeholder: "Spot confusing UX, retries, hesitation, or user frustration signals…",
-  },
-  {
-    id: "safety",
-    label: "Safety",
-    icon: <Shield className="h-5 w-5" />,
-    kindLabel: "Safety",
-    placeholder: "Flag unsafe content, policy violations, or risky recommendations…",
+    icon: <AlertCircle className="h-4 w-4" />,
+    placeholder: "Analyze this trace for failures, errors, or things that went wrong. Return PASS if no issues found, FAIL with a brief explanation otherwise.",
   },
   {
     id: "hallucination",
     label: "Hallucination",
-    icon: <EyeOff className="h-5 w-5" />,
-    kindLabel: "Hallucination",
-    placeholder: "Detect fabricated facts, unsupported claims, or contradictions with context…",
+    icon: <EyeOff className="h-4 w-4" />,
+    placeholder: "Detect fabricated facts, unsupported claims, or contradictions with the provided context. Return PASS if output is grounded, FAIL with specifics otherwise.",
+  },
+  {
+    id: "safety",
+    label: "Safety",
+    icon: <Shield className="h-4 w-4" />,
+    placeholder: "Flag unsafe content, policy violations, or risky recommendations. Return PASS if output is safe, FAIL with the offending section otherwise.",
+  },
+  {
+    id: "task",
+    label: "Task completion",
+    icon: <CheckCircle2 className="h-4 w-4" />,
+    placeholder: "Check whether the agent completed the user’s stated task end-to-end. Return a score from 0 to 1 reflecting completeness.",
+  },
+  {
+    id: "logic",
+    label: "Logic",
+    icon: <Calculator className="h-4 w-4" />,
+    placeholder: "Identify logical inconsistencies, invalid reasoning steps, or broken assumptions. Return PASS if reasoning is sound, FAIL with the flaw otherwise.",
+  },
+  {
+    id: "friction",
+    label: "User friction",
+    icon: <Frown className="h-4 w-4" />,
+    placeholder: "Spot confusing replies, unnecessary retries, or signals of user frustration. Return PASS if experience is smooth, FAIL with context otherwise.",
   },
   {
     id: "intent",
-    label: "Intent",
-    icon: <Target className="h-5 w-5" />,
-    kindLabel: "Intent",
-    placeholder: "Assess whether responses match the user’s stated intent…",
+    label: "Intent match",
+    icon: <Target className="h-4 w-4" />,
+    placeholder: "Assess whether the response matches the user’s stated intent and addresses their actual need. Return a score from 0 to 1.",
   },
   {
-    id: "blank",
-    label: "Blank",
-    icon: <Plus className="h-5 w-5" />,
-    kindLabel: "Custom",
-    placeholder: "Describe what you're looking for in the trace…",
+    id: "custom",
+    label: "Custom",
+    icon: <Plus className="h-4 w-4" />,
+    placeholder: "Describe what you’re looking for in the trace…",
   },
 ]
+
+const INITIAL_SIGNAL_ITEMS: SignalListItem[] = [
+  {
+    id: "sig-failure",
+    name: "Failure detector",
+    detectionType: "llm-judge",
+    category: "failure",
+    linkedEvaluatorId: 3,
+    linkedEvaluatorName: "Resolution completeness",
+    description: "Fires when Resolution completeness drops below threshold — flags runs where the reply failed to resolve the issue.",
+    lastFired: "2 hrs ago",
+    updated: "Apr 16, 2026",
+    enabled: true,
+    alertsEnabled: true,
+    scope: "full-trace",
+  },
+  {
+    id: "sig-hallucination",
+    name: "Hallucination check",
+    detectionType: "llm-judge",
+    category: "hallucination",
+    description: "Detect fabricated facts, unsupported claims, or contradictions with provided context. Return PASS if output is grounded, FAIL with specifics otherwise.",
+    lastFired: "Yesterday",
+    updated: "Apr 17, 2026",
+    enabled: true,
+    alertsEnabled: false,
+    scope: "4",
+  },
+  {
+    id: "sig-escalation",
+    name: "Escalation keyword",
+    detectionType: "regex",
+    description: "Matches output against /(escalat|supervisor|manager)/i — flags runs where human handoff was triggered.",
+    lastFired: "Apr 14, 2026",
+    updated: "Apr 14, 2026",
+    enabled: true,
+    alertsEnabled: true,
+    scope: "6",
+  },
+  {
+    id: "sig-tone",
+    name: "Low empathy",
+    detectionType: "llm-judge",
+    category: "friction",
+    linkedEvaluatorId: 2,
+    linkedEvaluatorName: "Tone & empathy",
+    description: "Fires when Tone & empathy score drops below threshold — surfaces replies that lack acknowledgment on high-priority tickets.",
+    updated: "Apr 10, 2026",
+    enabled: false,
+    alertsEnabled: false,
+    scope: "full-trace",
+  },
+]
+
+function categoryLabel(cat?: SignalCategoryId): string {
+  return SIGNAL_CATEGORIES.find((c) => c.id === cat)?.label ?? "—"
+}
+
+function signalScopeLabel(scope: SignalScopeValue | undefined): string {
+  if (scope == null || scope === "full-trace") return "Full workflow"
+  return GANTT_NODES.find((n) => n.id === scope)?.label ?? scope
+}
+
+function SignalScopeCell({ scope }: { scope: SignalScopeValue | undefined }) {
+  const label = signalScopeLabel(scope)
+  const fullWorkflow = scope == null || scope === "full-trace"
+  const node = fullWorkflow ? undefined : GANTT_NODES.find((n) => n.id === scope)
+  return (
+    <div className="flex min-w-0 items-center gap-1.5" title={label}>
+      <span className="shrink-0 text-muted-foreground [&_svg]:h-3.5 [&_svg]:w-3.5" aria-hidden>
+        {fullWorkflow ? (
+          <Workflow className="h-3.5 w-3.5 text-muted-foreground" />
+        ) : (
+          <GanttNodeIcon type={node?.icon} />
+        )}
+      </span>
+      <span className="text-[13px] text-muted-foreground truncate">{label}</span>
+    </div>
+  )
+}
 
 function CreateSignalSheet({
   open,
   onOpenChange,
   onCreate,
+  editingSignal,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onCreate: (payload: {
-    name: string
-    kind: string
-    description: string
-    templateId: SignalTemplateId
-  }) => void
+  onCreate: (item: Omit<SignalListItem, "id" | "updated" | "lastFired">) => void
+  editingSignal: SignalListItem | null
 }) {
-  const [templateId, setTemplateId] = useState<SignalTemplateId>("failure")
+  const [category, setCategory] = useState<SignalCategoryId | null>(null)
   const [name, setName] = useState("")
-  const [prompt, setPrompt] = useState(SIGNAL_TEMPLATES[0].placeholder)
+  const [prompt, setPrompt] = useState("")
+  const [alertsEnabled, setAlertsEnabled] = useState(false)
+  const [scope, setScope] = useState<SignalScopeValue>("full-trace")
 
-  const tpl = SIGNAL_TEMPLATES.find((t) => t.id === templateId) ?? SIGNAL_TEMPLATES[0]
+  const tpl =
+    category != null
+      ? (SIGNAL_CATEGORIES.find((c) => c.id === category) ?? SIGNAL_CATEGORIES[0])
+      : null
 
   useEffect(() => {
     if (!open) return
-    setTemplateId("failure")
-    setName("")
-    setPrompt(SIGNAL_TEMPLATES[0].placeholder)
-  }, [open])
+    if (editingSignal) {
+      setCategory(editingSignal.category ?? "failure")
+      setName(editingSignal.name)
+      setPrompt(editingSignal.description)
+      setAlertsEnabled(editingSignal.alertsEnabled)
+      const s = editingSignal.scope
+      const validNode = s && s !== "full-trace" && GANTT_NODES.some((n) => n.id === s)
+      setScope(validNode ? (s as SignalScopeValue) : "full-trace")
+    } else {
+      setCategory(null)
+      setName("")
+      setPrompt("")
+      setAlertsEnabled(false)
+      setScope("full-trace")
+    }
+  }, [open, editingSignal])
 
-  const selectTemplate = (id: SignalTemplateId) => {
-    const next = SIGNAL_TEMPLATES.find((t) => t.id === id) ?? SIGNAL_TEMPLATES[0]
-    setTemplateId(id)
-    setPrompt(next.placeholder)
+  const selectCategory = (id: SignalCategoryId) => {
+    const cat = SIGNAL_CATEGORIES.find((c) => c.id === id) ?? SIGNAL_CATEGORIES[0]
+    setCategory(id)
+    setPrompt(cat.placeholder)
   }
 
   const handleCreate = () => {
-    const trimmed = name.trim() || "Untitled signal"
-    onCreate({
-      name: trimmed,
-      kind: tpl.kindLabel,
-      description: prompt.trim() || tpl.placeholder,
-      templateId,
-    })
+    if (!editingSignal && category == null) return
+    const t = tpl ?? SIGNAL_CATEGORIES[0]
+    const common = {
+      name: name.trim() || t.label,
+      category: category ?? "failure",
+      description: prompt.trim() || t.placeholder,
+      alertsEnabled,
+      scope,
+    }
+    if (editingSignal) {
+      onCreate({
+        detectionType: editingSignal.detectionType,
+        enabled: editingSignal.enabled,
+        linkedEvaluatorId: editingSignal.linkedEvaluatorId,
+        linkedEvaluatorName: editingSignal.linkedEvaluatorName,
+        badge: editingSignal.badge,
+        ...common,
+      })
+    } else {
+      onCreate({
+        ...common,
+        detectionType: "llm-judge",
+        badge: undefined,
+        enabled: true,
+      })
+    }
     onOpenChange(false)
   }
 
@@ -4064,30 +5035,34 @@ function CreateSignalSheet({
         className="flex w-[min(100vw-1rem,440px)] max-h-[100vh] flex-col gap-0 border-border bg-background p-0 sm:max-w-[440px]"
       >
         <SheetHeader className="space-y-1 border-b border-border/60 px-6 pb-4 pt-6 text-left">
-          <SheetTitle className="text-lg font-semibold tracking-tight">Create new signal</SheetTitle>
+          <SheetTitle className="text-lg font-semibold tracking-tight">
+            {editingSignal ? "Edit signal" : "Create new signal"}
+          </SheetTitle>
           <p className="text-sm text-muted-foreground">
-            Start from a template, then describe what to extract from traces.
+            {editingSignal
+              ? "Update how this signal runs against traces."
+              : "Start from a template, then describe what to extract from traces."}
           </p>
         </SheetHeader>
 
         <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-6 py-5">
+
+          {/* ── Signal type ── */}
           <section className="space-y-2">
-            <Label htmlFor="signal-template">Signal type</Label>
+            <Label htmlFor="signal-type">Signal type</Label>
             <Select
-              value={templateId}
-              onValueChange={(v) => selectTemplate(v as SignalTemplateId)}
+              value={category === null ? "" : category}
+              onValueChange={(v) => selectCategory(v as SignalCategoryId)}
             >
-              <SelectTrigger id="signal-template" className="h-9 w-full">
-                <SelectValue placeholder="Choose a template" />
+              <SelectTrigger id="signal-type" className="h-9 w-full">
+                <SelectValue placeholder="Select a Signal type" />
               </SelectTrigger>
               <SelectContent>
-                {SIGNAL_TEMPLATES.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
+                {SIGNAL_CATEGORIES.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
                     <span className="flex items-center gap-2">
-                      <span className="shrink-0 text-muted-foreground [&_svg]:h-4 [&_svg]:w-4">
-                        {t.icon}
-                      </span>
-                      {t.label}
+                      <span className="shrink-0 text-muted-foreground [&_svg]:h-4 [&_svg]:w-4">{c.icon}</span>
+                      {c.label}
                     </span>
                   </SelectItem>
                 ))}
@@ -4095,6 +5070,7 @@ function CreateSignalSheet({
             </Select>
           </section>
 
+          {/* ── Name ── */}
           <section className="space-y-2">
             <Label htmlFor="signal-name">Name</Label>
             <div className="relative">
@@ -4109,26 +5085,86 @@ function CreateSignalSheet({
             </div>
           </section>
 
-          <section className="space-y-2">
-            <Label htmlFor="signal-prompt">Signal Prompt</Label>
-            <p className="text-xs text-muted-foreground">Describe what you&apos;re looking for in the trace.</p>
-            <Textarea
-              id="signal-prompt"
-              placeholder={tpl.placeholder}
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              rows={5}
-              className="min-h-[120px] resize-y"
-            />
-          </section>
+          {(editingSignal != null || category != null) && (
+            <>
+              {/* ── Scope ── */}
+              <section className="space-y-2">
+                <Label htmlFor="signal-scope">Scope</Label>
+                <p className="text-xs text-muted-foreground">
+                  Run this signal on the full trace or restrict it to a single workflow step.
+                </p>
+                <Select value={scope} onValueChange={(v) => setScope(v as SignalScopeValue)}>
+                  <SelectTrigger id="signal-scope" className="h-9 w-full">
+                    <span className="flex min-w-0 flex-1 items-center gap-2">
+                      <span className="shrink-0 text-muted-foreground [&_svg]:h-4 [&_svg]:w-4" aria-hidden>
+                        {scope === "full-trace" ? (
+                          <Workflow className="h-4 w-4" />
+                        ) : (
+                          <GanttNodeIcon type={GANTT_NODES.find((n) => n.id === scope)?.icon} />
+                        )}
+                      </span>
+                      <SelectValue />
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent className="max-h-60">
+                    <SelectItem value="full-trace">
+                      <span className="flex items-center gap-2">
+                        <span className="shrink-0 text-muted-foreground [&_svg]:h-4 [&_svg]:w-4">
+                          <Workflow className="h-4 w-4" />
+                        </span>
+                        Full workflow
+                      </span>
+                    </SelectItem>
+                    {GANTT_NODES.map((node) => (
+                      <SelectItem key={node.id} value={node.id}>
+                        <span className="flex items-center gap-2">
+                          <span className="shrink-0 text-muted-foreground [&_svg]:h-4 [&_svg]:w-4">
+                            <GanttNodeIcon type={node.icon} />
+                          </span>
+                          <span className="truncate">{node.label}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </section>
+
+              {/* ── Signal Prompt ── */}
+              <section className="space-y-2">
+                <Label htmlFor="signal-prompt">Signal Prompt</Label>
+                <p className="text-xs text-muted-foreground">Describe what you&apos;re looking for in the trace.</p>
+                <Textarea
+                  id="signal-prompt"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  rows={6}
+                  className="min-h-[140px] resize-y"
+                />
+              </section>
+
+              {/* ── Alerts ── */}
+              <section className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
+                <div className="space-y-0.5">
+                  <p className="text-sm font-medium">Alerts</p>
+                  <p className="text-xs text-muted-foreground">Notify when this signal fires on a run.</p>
+                </div>
+                <Switch checked={alertsEnabled} onCheckedChange={setAlertsEnabled} />
+              </section>
+            </>
+          )}
+
         </div>
 
         <SheetFooter className="flex flex-col gap-2 border-t border-border/60 bg-muted/10 px-6 py-4 sm:flex-row sm:justify-end">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button type="button" onClick={handleCreate}>
-            Create
+          <Button
+            type="button"
+            onClick={handleCreate}
+            disabled={!editingSignal && category == null}
+          >
+            {editingSignal ? "Save" : "Create"}
           </Button>
         </SheetFooter>
       </SheetContent>
@@ -4136,48 +5172,59 @@ function CreateSignalSheet({
   )
 }
 
-function SignalsTab() {
+function SignalsTab({
+  onOpenEvaluator,
+}: {
+  onOpenEvaluator: (evaluatorId: number) => void
+}) {
   const [items, setItems] = useState<SignalListItem[]>(() => [...INITIAL_SIGNAL_ITEMS])
   const [createSignalOpen, setCreateSignalOpen] = useState(false)
+  const [editingSignal, setEditingSignal] = useState<SignalListItem | null>(null)
+
+  const toggleEnabled = (id: string) => {
+    setItems((prev) => prev.map((s) => s.id === id ? { ...s, enabled: !s.enabled } : s))
+  }
+
+  const handleEdit = (sig: SignalListItem) => {
+    if (sig.linkedEvaluatorId != null) {
+      onOpenEvaluator(sig.linkedEvaluatorId)
+    } else {
+      setEditingSignal(sig)
+    }
+  }
 
   return (
     <div className="flex flex-col h-full p-6 gap-4">
       <CreateSignalSheet
-        open={createSignalOpen}
-        onOpenChange={setCreateSignalOpen}
-        onCreate={({ name, kind, description }) => {
-          const id = `sig-${Date.now()}`
-          const updated = new Date().toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          })
-          setItems((prev) => [
-            {
-              id,
-              name,
-              kind,
-              description,
-              scope: "This workspace · all runs",
-              updated,
-            },
-            ...prev,
-          ])
-          toast.success("Signal created", { description: `"${name}" is now on your list.` })
+        open={createSignalOpen || editingSignal !== null}
+        editingSignal={editingSignal}
+        onOpenChange={(open) => {
+          if (!open) { setCreateSignalOpen(false); setEditingSignal(null) }
+          else setCreateSignalOpen(true)
+        }}
+        onCreate={(payload) => {
+          if (editingSignal) {
+            setItems((prev) => prev.map((s) => s.id === editingSignal.id ? { ...s, ...payload } : s))
+            toast.success("Signal updated", { description: `"${payload.name}" has been saved.` })
+            setEditingSignal(null)
+          } else {
+            const id = `sig-${Date.now()}`
+            const updated = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+            setItems((prev) => [{ id, updated, ...payload }, ...prev])
+            toast.success("Signal created", { description: `"${payload.name}" is now active.` })
+          }
         }}
       />
 
-      <div className="flex items-center justify-between gap-3">
-        <p className="min-w-0 flex-1 pr-2 text-sm leading-snug text-muted-foreground">
-          Signals are live events that need attention—tied to a run, with severity, a clear description, and a recommendation for humans. They can come from an evaluator scoring below your pass threshold, from a trace detector that watches output for a specific pattern (no score needed), or elsewhere—this tab is the unified feed for everything that needs a look.
+      <ManusTipBanner>
+        <p>
+          <span className="font-medium text-foreground">Signals</span> are monitored conditions that fire an alert when
+          triggered. They run continuously in production. Useful to see if something broke.
         </p>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 shrink-0"
-          type="button"
-          onClick={() => setCreateSignalOpen(true)}
-        >
+      </ManusTipBanner>
+
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" className="h-8 shrink-0" type="button" onClick={() => setCreateSignalOpen(true)}>
           + add signal
         </Button>
       </div>
@@ -4186,95 +5233,109 @@ function SignalsTab() {
         <div
           className={cn(
             SIGNAL_TABLE_COL,
-            "min-w-[860px] px-4 py-2.5 border-b border-border/70 bg-muted/30 text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+            "items-center min-w-[760px] px-4 py-2.5 border-b border-border/70 bg-muted/30 text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
           )}
         >
           <span>Signal</span>
-          <span>Kind</span>
-          <span>Description</span>
+          <span>Category</span>
           <span>Scope</span>
-          <span className="text-right">Updated</span>
+          <span>Last fired</span>
+          <span>Status</span>
           <span className="sr-only">Actions</span>
         </div>
 
-        <div className="min-w-[860px] divide-y divide-border/70">
+        <div className="min-w-[760px] divide-y divide-border/70">
           {items.map((sig) => (
             <div
               key={sig.id}
               className={cn(
                 SIGNAL_TABLE_COL,
-                "group px-4 py-4 min-h-[4.25rem] transition-colors",
-                "hover:bg-muted/40"
+                "group px-4 py-3.5 min-h-[4rem] transition-colors hover:bg-muted/30"
               )}
             >
-              <div className="min-w-0 flex flex-col gap-0.5">
-                <div className="flex flex-wrap items-center gap-2">
+              {/* Name + linked evaluator under title */}
+              <div className="min-w-0 flex flex-col gap-1">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <span className="text-sm font-semibold text-foreground truncate">{sig.name}</span>
                   {sig.badge ? (
-                    <Badge variant="secondary" className="shrink-0 text-xs font-medium">
-                      {sig.badge}
-                    </Badge>
+                    <Badge variant="secondary" className="shrink-0 text-[10px] font-medium px-1.5 py-0">{sig.badge}</Badge>
                   ) : null}
                 </div>
-                {sig.subtitle ? (
-                  <span className="text-xs text-muted-foreground truncate" title={sig.subtitle}>
-                    {sig.subtitle}
-                  </span>
-                ) : null}
-              </div>
-
-              <div className="min-w-0 flex items-center gap-2">
-                <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", signalKindAccent(sig.kind))} aria-hidden />
-                <span className="text-[13px] text-foreground">{sig.kind}</span>
-              </div>
-
-              <div className="min-w-0">
-                <p className="text-[13px] text-muted-foreground leading-snug line-clamp-2" title={sig.description}>
-                  {sig.description}
-                </p>
-              </div>
-
-              <div className="min-w-0">
-                <p className="text-xs font-mono text-muted-foreground leading-snug line-clamp-2" title={sig.scope}>
-                  {sig.scope}
-                </p>
-              </div>
-
-              <div className="text-right tabular-nums">
-                <span className="text-[13px] font-medium text-foreground">{sig.updated}</span>
-              </div>
-
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
+                {sig.linkedEvaluatorName ? (
                   <button
                     type="button"
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 data-[state=open]:opacity-100"
-                    aria-label="Signal actions"
+                    onClick={() => sig.linkedEvaluatorId != null && onOpenEvaluator(sig.linkedEvaluatorId)}
+                    className="w-fit min-w-0 max-w-full text-left text-[12px] text-foreground/80 underline-offset-2 hover:text-foreground hover:underline"
+                    title={sig.linkedEvaluatorName}
                   >
-                    <MoreHorizontal className="h-4 w-4" />
+                    <span className="truncate">{sig.linkedEvaluatorName}</span>
                   </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-52">
-                  <DropdownMenuItem
-                    className="gap-2"
-                    onClick={() =>
-                      toast.message("Edit signal", { description: "Editor is not wired in this prototype." })
-                    }
-                  >
-                    <Pencil className="h-4 w-4 shrink-0 opacity-70" />
-                    Edit
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    className="gap-2 text-destructive focus:text-destructive"
-                    onClick={() =>
-                      toast.message("Remove signal", { description: "Removal is not wired in this prototype." })
-                    }
-                  >
-                    <Trash2 className="h-4 w-4 shrink-0 opacity-70" />
-                    Delete
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                ) : (
+                  <span className="text-[12px] text-muted-foreground/50 italic">Standalone</span>
+                )}
+              </div>
+
+              {/* Category */}
+              <div className="min-w-0 flex items-center pt-0.5">
+                <span className="text-[13px] text-muted-foreground truncate">
+                  {sig.category ? categoryLabel(sig.category) : <span className="text-muted-foreground/50">—</span>}
+                </span>
+              </div>
+
+              {/* Scope */}
+              <div className="min-w-0 flex items-center pt-0.5">
+                <SignalScopeCell scope={sig.scope} />
+              </div>
+
+              {/* Last fired */}
+              <div className="min-w-0 flex items-center pt-0.5">
+                <span className="text-[13px] text-muted-foreground tabular-nums">
+                  {sig.lastFired ?? <span className="text-muted-foreground/50">Never</span>}
+                </span>
+              </div>
+
+              {/* Enable toggle */}
+              <div className="flex items-center pt-0.5">
+                <Switch
+                  checked={sig.enabled}
+                  onCheckedChange={() => toggleEnabled(sig.id)}
+                  aria-label={sig.enabled ? "Disable signal" : "Enable signal"}
+                  className="scale-90"
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end pt-0.5">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 data-[state=open]:opacity-100"
+                      aria-label="Signal actions"
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuItem className="gap-2" onClick={() => handleEdit(sig)}>
+                      <Pencil className="h-4 w-4 shrink-0 opacity-70" />
+                      {sig.linkedEvaluatorId != null ? "Open evaluator" : "Edit signal"}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem className="gap-2" onClick={() => toast.message("Run signal", { description: "Running signal against recent traces…" })}>
+                      <Play className="h-4 w-4 shrink-0 opacity-70" />
+                      Run now
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="gap-2 text-destructive focus:text-destructive"
+                      onClick={() => setItems((prev) => prev.filter((s) => s.id !== sig.id))}
+                    >
+                      <Trash2 className="h-4 w-4 shrink-0 opacity-70" />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
           ))}
         </div>
@@ -4285,22 +5346,31 @@ function SignalsTab() {
 
 // ─── Main Evaluator component ──────────────────────────────────────────────────
 
-const INNER_TABS = ["Experiment", "Evals", "Dataset", "Signals"] as const
+const INNER_TABS = ["Experiment", "Evals", "Signals", "Dataset"] as const
 type InnerTab = (typeof INNER_TABS)[number]
 
 export function Evaluator({
-  /** Set from the layout when using Run progress → Evaluate / Compare; lives in the parent so it survives Evaluator remounts (no blurred setup overlay). */
+  /** Set from the layout when using Run progress → Evaluate / Compare; lives in the parent so it survives Evaluator remounts. */
   experimentSeedFromRun,
   /** Main app tab: switch to Workflow after confirming "convert variant to draft" in Experiment. */
   onNavigateToWorkflow,
+  /** One-shot from layout when Workflow → Create variant; cleared after Experiment consumes it. */
+  variantAppendToken = null,
+  onVariantAppendConsumed,
+  variantBuilderIntroToken = null,
+  onVariantBuilderIntroConsumed,
 }: {
   experimentSeedFromRun?: ExperimentRunSeed | null
   onNavigateToWorkflow?: () => void
+  variantAppendToken?: string | null
+  onVariantAppendConsumed?: () => void
+  variantBuilderIntroToken?: string | null
+  onVariantBuilderIntroConsumed?: () => void
 } = {}) {
   const [activeTab, setActiveTab] = useState<InnerTab>("Experiment")
   const [evaluators, setEvaluators] = useState<EvaluatorConfig[]>(INITIAL_EVALUATORS)
   const [evalDefs, setEvalDefs] = useState<EvaluatorDef[]>(INITIAL_EVALUATORS_DEF)
-  const [selectedEvalIds, setSelectedEvalIds] = useState<string[]>(["ev-2"])
+  const [selectedEvalIds, setSelectedEvalIds] = useState<string[]>([])
   const [createEvaluatorOpen, setCreateEvaluatorOpen] = useState(false)
   const [editingEvaluator, setEditingEvaluator] = useState<EvaluatorConfig | null>(null)
 
@@ -4309,6 +5379,11 @@ export function Evaluator({
     setSelectedEvalIds(evalDefs.map((e) => e.id))
     setActiveTab("Experiment")
   }, [experimentSeedFromRun, evalDefs])
+
+  useLayoutEffect(() => {
+    if (!variantBuilderIntroToken) return
+    setActiveTab("Experiment")
+  }, [variantBuilderIntroToken])
 
   useEffect(() => {
     setSelectedEvalIds((prev) => prev.filter((id) => evalDefs.some((e) => e.id === id)))
@@ -4438,6 +5513,7 @@ export function Evaluator({
                 : "default"
             }
             evalDefs={evalDefs}
+            evaluators={evaluators}
             selectedEvalIds={selectedEvalIds}
             setSelectedEvalIds={setSelectedEvalIds}
             onOpenCreateEvaluator={() => {
@@ -4446,6 +5522,10 @@ export function Evaluator({
             }}
             onNavigateToWorkflow={onNavigateToWorkflow}
             seedCase={experimentSeedFromRun ?? null}
+            variantAppendToken={variantAppendToken}
+            onVariantAppendConsumed={onVariantAppendConsumed}
+            variantBuilderIntroToken={variantBuilderIntroToken}
+            onVariantBuilderIntroConsumed={onVariantBuilderIntroConsumed}
           />
         )}
         {activeTab === "Evals" && (
@@ -4461,8 +5541,17 @@ export function Evaluator({
             onTestInExperiment={testInExperimentAt}
           />
         )}
+        {activeTab === "Signals" && (
+          <SignalsTab
+            onOpenEvaluator={(evalId) => {
+              setActiveTab("Evals")
+              toast.message("Opening evaluator", {
+                description: `Navigating to the linked evaluator. Edit it to change this signal's scoring logic.`,
+              })
+            }}
+          />
+        )}
         {activeTab === "Dataset" && <DatasetTab />}
-        {activeTab === "Signals" && <SignalsTab />}
       </div>
     </div>
   )

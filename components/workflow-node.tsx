@@ -3,7 +3,7 @@
 import type React from "react"
 import { memo } from "react"
 import { type NodeProps, useReactFlow } from "@xyflow/react"
-import { Clock, MoreVertical, Pencil, FileText, Zap, Link, Mic, Play, Box, BookOpen, Code, Wrench, RefreshCw, CheckCircle2, Upload, Loader2, Database, Layers3, Snowflake } from "lucide-react"
+import { Clock, MoreVertical, Pencil, FileText, Zap, Link, Mic, Play, Bot, BookOpen, Code, Wrench, RefreshCw, CheckCircle2, Upload, Loader2, Database, Layers3, Snowflake } from "lucide-react"
 import SlackIconComponent from "./SlackIcon"
 import StackAIIcon from "./StackAIIcon"
 import AnthropicIcon from "./AnthropicIcon"
@@ -32,7 +32,7 @@ export function AppIcon({ appName, className }: { appName: string; className?: s
     audio: <Mic className={className} />,
     action: <Play className={className} />,
     template: <FileText className={className} />,
-    "ai agent": <Box className={className} />,
+    "ai agent": <Bot className={className} />,
     "knowledge base": <BookOpen className={className} />,
     condition: <Code className={className} />,
     loop: <Code className={className} />,
@@ -212,13 +212,8 @@ function WorkflowNode({ data, id }: NodeProps) {
                   <div className="p-4">
                     {/* Custom LLM Layout */}
                     <div className="flex items-center gap-3 mb-3 relative">
-                      {/* OpenAI Logo */}
-                      <div className="w-8 h-8 flex items-center justify-center flex-shrink-0 border border-border rounded">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-foreground">
-                          <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                          <path d="M2 17l10 5 10-5" />
-                          <path d="M2 12l10 5 10-5" />
-                        </svg>
+                      <div className="w-8 h-8 flex items-center justify-center flex-shrink-0 border border-border rounded bg-muted">
+                        <Bot className="w-4 h-4 text-foreground" />
                       </div>
                       <h3 className="text-base font-semibold text-foreground">AI Agent</h3>
                       <DropdownMenu>

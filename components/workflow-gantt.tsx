@@ -17,6 +17,7 @@ import {
   X,
   Loader2,
   GitCompare,
+  Shield,
   Wrench,
   Sparkles,
   MessageSquare,
@@ -27,13 +28,15 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
-/** Sub-steps inside an AI Agent node (tools, thinking, completion) — times are offsets from the parent row’s startSec. */
+/** Sub-steps inside an AI Agent node (tools, thinking, completion, guardrail) — times are offsets from the parent row’s startSec. */
 export interface LlmSpan {
   id: string
   label: string
   startOffset: number
   endOffset: number
-  kind: "thinking" | "tool" | "completion"
+  kind: "thinking" | "tool" | "completion" | "guardrail"
+  /** Only used when kind === "guardrail". */
+  result?: "pass" | "flag" | "block"
 }
 
 export interface GanttNode {
@@ -46,13 +49,18 @@ export interface GanttNode {
   icon?: "play" | "zap" | "file" | "mail" | "check" | "send" | "folder" | "route" | "branch"
   status?: "error" | "success"
   llmSpans?: LlmSpan[]
+  /** 0–100 eval score for this node in a specific run. */
+  score?: number
+  /** True when this node is identified as the root cause of a quality failure. */
+  rootCause?: boolean
 }
 
 const AGENT_SPANS_STANDARD: LlmSpan[] = [
   { id: "think", label: "Reasoning", startOffset: 0.15, endOffset: 1.1, kind: "thinking" },
   { id: "tool1", label: "classify_intent", startOffset: 1.2, endOffset: 2.8, kind: "tool" },
   { id: "tool2", label: "search_kb", startOffset: 2.85, endOffset: 4.2, kind: "tool" },
-  { id: "complete", label: "Completion", startOffset: 4.3, endOffset: 6.6, kind: "completion" },
+  { id: "guardrail-1", label: "PII check", startOffset: 4.21, endOffset: 4.42, kind: "guardrail", result: "pass" },
+  { id: "complete", label: "Completion", startOffset: 4.45, endOffset: 6.6, kind: "completion" },
 ]
 
 export const GANTT_NODES: GanttNode[] = [
@@ -98,7 +106,8 @@ export const GANTT_NODES: GanttNode[] = [
       { id: "think", label: "Reasoning", startOffset: 0.25, endOffset: 1.65, kind: "thinking" },
       { id: "tool1", label: "search_kb", startOffset: 1.75, endOffset: 3.55, kind: "tool" },
       { id: "tool2", label: "check_ticket_history", startOffset: 3.65, endOffset: 4.65, kind: "tool" },
-      { id: "complete", label: "Completion", startOffset: 4.75, endOffset: 4.8, kind: "completion" },
+      { id: "guardrail-1", label: "Policy validator", startOffset: 4.66, endOffset: 4.78, kind: "guardrail", result: "flag" },
+      { id: "complete", label: "Completion", startOffset: 4.79, endOffset: 4.8, kind: "completion" },
     ],
   },
   { id: "7", label: "If / Else", startSec: 14.8, endSec: 15.45, depth: 0, hasChildren: false, icon: "branch" },
@@ -207,7 +216,7 @@ function spanAbsoluteRange(parent: GanttNode, span: LlmSpan): { startSec: number
   }
 }
 
-function LlmSpanKindIcon({ kind }: { kind: LlmSpan["kind"] }) {
+function LlmSpanKindIcon({ kind, result }: { kind: LlmSpan["kind"]; result?: LlmSpan["result"] }) {
   switch (kind) {
     case "thinking":
       return <Sparkles className="h-3 w-3 text-violet-500/90" />
@@ -215,12 +224,19 @@ function LlmSpanKindIcon({ kind }: { kind: LlmSpan["kind"] }) {
       return <Wrench className="h-3 w-3 text-amber-600/90" />
     case "completion":
       return <MessageSquare className="h-3 w-3 text-sky-600/90" />
+    case "guardrail":
+      return (
+        <Shield className={cn(
+          "h-3 w-3",
+          result === "block" ? "text-red-500/90" : result === "flag" ? "text-amber-500/90" : "text-emerald-600/90"
+        )} />
+      )
     default:
       return <Sparkles className="h-3 w-3 text-muted-foreground" />
   }
 }
 
-function llmSpanBarClass(kind: LlmSpan["kind"], selected: boolean): string {
+function llmSpanBarClass(kind: LlmSpan["kind"], selected: boolean, result?: LlmSpan["result"]): string {
   switch (kind) {
     case "thinking":
       return selected
@@ -234,6 +250,10 @@ function llmSpanBarClass(kind: LlmSpan["kind"], selected: boolean): string {
       return selected
         ? "bg-sky-500/35 border-sky-500/60"
         : "bg-sky-500/15 border-sky-500/35 group-hover:bg-sky-500/25"
+    case "guardrail":
+      if (result === "block") return selected ? "bg-red-500/35 border-red-500/60" : "bg-red-500/15 border-red-500/35 group-hover:bg-red-500/25"
+      if (result === "flag") return selected ? "bg-amber-500/35 border-amber-500/60" : "bg-amber-500/15 border-amber-500/35 group-hover:bg-amber-500/25"
+      return selected ? "bg-emerald-500/35 border-emerald-500/60" : "bg-emerald-500/15 border-emerald-500/35 group-hover:bg-emerald-500/25"
     default:
       return "bg-muted border-border"
   }
@@ -284,9 +304,11 @@ interface WorkflowGanttProps {
   onCompareClick?: (node: GanttNode) => void
   /** When set, this node id is marked with a signal warning indicator. */
   signalNodeId?: string | null
+  /** When set, this node id is highlighted as the root cause of a quality failure. */
+  rootCauseNodeId?: string | null
 }
 
-export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = false, isRunning = false, runStartTime = null, nodes: nodesProp, highlightNodeId = null, onCompareClick, signalNodeId = null }: WorkflowGanttProps) {
+export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = false, isRunning = false, runStartTime = null, nodes: nodesProp, highlightNodeId = null, onCompareClick, signalNodeId = null, rootCauseNodeId = null }: WorkflowGanttProps) {
   const sourceNodes = nodesProp ?? MOCK_NODES
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set(["9"]))
   const [expandedLlmAgentIds, setExpandedLlmAgentIds] = useState<Set<string>>(new Set())
@@ -434,7 +456,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                         )}
                       >
                         <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-muted/50 border border-border/40">
-                          <LlmSpanKindIcon kind={span.kind} />
+                          <LlmSpanKindIcon kind={span.kind} result={span.result} />
                         </span>
                         <span className="truncate text-muted-foreground flex-1 min-w-0 font-mono">{span.label}</span>
                       </span>
@@ -622,7 +644,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                                 className={cn(
                                   "absolute rounded-sm border flex-shrink-0 min-w-[2px] flex items-center justify-start pl-0.5 pr-0.5 overflow-hidden cursor-default ml-2",
                                   "top-1/2 -translate-y-1/2",
-                                  llmSpanBarClass(span.kind, isSelected)
+                                  llmSpanBarClass(span.kind, isSelected, span.result)
                                 )}
                                 style={{
                                   left: leftPx,
@@ -859,7 +881,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                         <span className="w-6 shrink-0" aria-hidden />
                         <span className="flex items-center gap-1.5 rounded-md py-0.5 pl-0.5 pr-3 min-w-0 flex-1">
                           <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-muted/50 border border-border/40">
-                            <LlmSpanKindIcon kind={span.kind} />
+                            <LlmSpanKindIcon kind={span.kind} result={span.result} />
                           </span>
                           <span className="truncate text-xs text-muted-foreground flex-1 min-w-0 font-mono">{span.label}</span>
                         </span>
@@ -878,7 +900,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                               <div
                                 className={cn(
                                   "absolute h-4 rounded-sm border flex-shrink-0 min-w-[2px] transition-colors flex items-center justify-start pl-1 pr-0.5 overflow-hidden cursor-default ml-2",
-                                  llmSpanBarClass(span.kind, isSelected)
+                                  llmSpanBarClass(span.kind, isSelected, span.result)
                                 )}
                                 style={{
                                   left: `${leftPctSpan}%`,
@@ -894,7 +916,18 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                             </TooltipTrigger>
                             <TooltipContent side="top" sideOffset={6} className="bg-white dark:bg-card text-foreground border border-border shadow-md" hideArrow>
                               <span className="font-medium">{span.label}</span>
-                              <span className="text-muted-foreground"> · {span.kind} · {durSpan.toFixed(2)}s</span>
+                              {span.kind === "guardrail" ? (
+                                <span className={cn(
+                                  "ml-1.5 inline-flex items-center rounded px-1 py-0.5 text-[10px] font-semibold",
+                                  span.result === "block" && "bg-red-100 text-red-700",
+                                  span.result === "flag" && "bg-amber-100 text-amber-700",
+                                  (!span.result || span.result === "pass") && "bg-emerald-100 text-emerald-700",
+                                )}>
+                                  {span.result === "block" ? "Blocked" : span.result === "flag" ? "Flagged" : "Passed"}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground"> · {span.kind} · {durSpan.toFixed(2)}s</span>
+                              )}
                             </TooltipContent>
                           </Tooltip>
                         ) : null}
@@ -908,6 +941,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                 const isSelected = selectedNodeId === node.id
                 const isHighlighted = highlightNodeId === node.id
                 const isSignaled = signalNodeId === node.id
+                const isRootCause = rootCauseNodeId === node.id
                 const leftPct = (node.startSec / maxSec) * 100
                 const widthPct = Math.max((node.endSec - node.startSec) / maxSec * 100, 1)
                 return (
@@ -919,7 +953,8 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                       rowIdx === 0 && "border-t border-border/30",
                       isSelected && "bg-muted/30 shadow-[inset_2px_0_0_0_hsl(var(--primary))]",
                       isHighlighted && "bg-primary/5 hover:bg-primary/5",
-                      isSignaled && "bg-amber-50/60 shadow-[inset_2px_0_0_0_theme(colors.amber.400)] hover:bg-amber-50/80"
+                      isSignaled && "bg-amber-50/60 shadow-[inset_2px_0_0_0_theme(colors.amber.400)] hover:bg-amber-50/80",
+                      isRootCause && "bg-red-50/50 shadow-[inset_2px_0_0_0_theme(colors.red.400)] hover:bg-red-50/70 dark:bg-red-950/20 dark:shadow-[inset_2px_0_0_0_theme(colors.red.600)]"
                     )}
                     style={{ minHeight: ROW_HEIGHT }}
                     role="button"
@@ -1044,10 +1079,18 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                             <GanttNodeIcon type={node.icon} />
                           </span>
                         )}
-                        <span className={cn("truncate flex-1 min-w-0", isSignaled ? "text-amber-700 font-medium" : "text-foreground")}>
+                        <span className={cn(
+                          "truncate flex-1 min-w-0",
+                          isRootCause ? "text-red-700 dark:text-red-400 font-medium" : isSignaled ? "text-amber-700 font-medium" : "text-foreground"
+                        )}>
                           {node.label}
                         </span>
-                        {isSignaled && (
+                        {isRootCause && (
+                          <span className="shrink-0 inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-400" title="Root cause of quality failure">
+                            Root cause
+                          </span>
+                        )}
+                        {isSignaled && !isRootCause && (
                           <span className="shrink-0 flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-white" title="Signal detected on this node">
                             <span className="text-[9px] font-bold leading-none">!</span>
                           </span>
