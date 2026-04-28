@@ -474,7 +474,7 @@ export function RunProgress({
                 </div>
 
                 {/* Node card */}
-                <div className={`min-w-0 flex-1 flex items-center justify-between bg-white border border-gray-200 rounded-2xl px-4 h-11 ${index < nodeProgress.length - 1 ? "mb-0.5" : ""}`}>
+                <div className={`min-w-0 flex-1 flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 h-11 ${index < nodeProgress.length - 1 ? "mb-0.5" : ""}`}>
                   <div className="flex items-center gap-2 min-w-0">
                     {item.status === "running" ? (
                       <Loader2 className="w-4 h-4 text-purple-500 animate-spin flex-shrink-0" />

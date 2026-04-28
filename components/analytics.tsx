@@ -361,11 +361,13 @@ function SaveToDatasetModal({
   onOpenChange,
   datasets,
   setDatasets,
+  onOpenDataset,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   datasets: SaveDatasetItem[]
   setDatasets: React.Dispatch<React.SetStateAction<SaveDatasetItem[]>>
+  onOpenDataset?: (datasetName: string) => void
 }) {
   const [mode, setMode] = useState<"pick" | "new">("pick")
   const [selectedId, setSelectedId] = useState(datasets[0]?.id ?? "")
@@ -408,6 +410,13 @@ function SaveToDatasetModal({
     const noteSuffix = notes.trim() ? ` ${notes.trim()}` : ""
     toast.success("Saved to dataset", {
       description: `Added to "${targetName}" as ${labelPretty}.${noteSuffix ? ` Notes:${noteSuffix}` : ""}`,
+      cancel: onOpenDataset
+        ? {
+            label: "Open dataset",
+            onClick: () => onOpenDataset(targetName),
+          }
+        : undefined,
+      duration: 10_000,
     })
     onOpenChange(false)
   }
@@ -668,10 +677,12 @@ function resolveRunDetailSignal(
 function SignalInsightCard({
   signal,
   onFixWithAi,
+  onSimulateRun,
   containerClassName,
 }: {
   signal: Pick<RunDetailSignal, "type" | "severity" | "reason">
   onFixWithAi?: () => void
+  onSimulateRun?: () => void
   /** e.g. aside strip uses horizontal inset; General tab is full width inside `px-4`. */
   containerClassName?: string
 }) {
@@ -702,28 +713,6 @@ function SignalInsightCard({
       </AlertTitle>
       <AlertDescription className="flex flex-col gap-2 text-xs leading-relaxed">
         <p>{signal.reason}</p>
-        <div className="flex justify-end pt-0.5">
-          <Button
-            size="sm"
-            variant="secondary"
-            className={cn(
-              "h-8 w-fit gap-1.5 px-3 text-xs font-medium shadow-none",
-              "border-amber-200/80 bg-amber-100/80 text-amber-950 hover:bg-amber-100 dark:border-amber-700/50 dark:bg-amber-900/50 dark:text-amber-50 dark:hover:bg-amber-900/70",
-              isHigh &&
-                "border-amber-300/90 bg-amber-200/85 hover:bg-amber-200 dark:border-amber-600/50 dark:bg-amber-800/55 dark:hover:bg-amber-800/75"
-            )}
-            onClick={() => {
-              if (onFixWithAi) onFixWithAi()
-              else
-                toast.message("Fix with AI", {
-                  description: "This prototype would open the AI assistant with this signal and run context.",
-                })
-            }}
-          >
-            <Bot className="h-3.5 w-3.5 opacity-80" />
-            Fix with AI
-          </Button>
-        </div>
       </AlertDescription>
     </Alert>
   )
@@ -742,6 +731,8 @@ function RunDetailEvalGradingRow({
   latencyLabel,
   tokensLabel,
   signalRow,
+  onFixWithAi,
+  onSimulateRun,
 }: {
   evalLabel: string
   score: number
@@ -750,63 +741,62 @@ function RunDetailEvalGradingRow({
   tokensLabel?: string
   /** Match overview table: yellow score chip when this run has a linked signal (non-error). */
   signalRow?: boolean
+  onFixWithAi?: () => void
+  onSimulateRun?: () => void
 }) {
-  const [expanded, setExpanded] = React.useState(false)
   const full = "Score " + formatRunEvalScoreTenPoint(score) + "/10 \u2014 " + summary
-  const truncated = full.length > 180 ? full.slice(0, 180) + "\u2026" : full
-  const hasMore = full.length > 180
-  const showToggle = hasMore || expanded
   const threshold = EVALUATOR_PASS_THRESHOLDS[evalLabel]
   const pass = threshold == null || score >= threshold
   const showStats = Boolean(latencyLabel && tokensLabel)
   const tokensCountDisplay =
     tokensLabel?.replace(/\s*tokens\s*$/i, "").trim() ?? ""
-  const wrapCls =
-    "flex flex-col gap-1 rounded-lg border border-border/70 bg-muted/40 p-2 text-left dark:border-border dark:bg-muted/30"
   const chipCls = signalRow
-    ? "inline-flex w-fit shrink-0 items-center rounded border border-yellow-200 px-1 py-0.5 tabular-nums text-[11px] font-semibold leading-none bg-yellow-50 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300"
+    ? "inline-flex w-fit shrink-0 items-center rounded border border-amber-500/25 px-1 py-0.5 tabular-nums text-[11px] font-semibold leading-none bg-amber-500/15 text-amber-800 dark:text-amber-200"
     : pass
-      ? "inline-flex w-fit shrink-0 items-center rounded px-1 py-0.5 tabular-nums text-[11px] font-semibold leading-none bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
-      : "inline-flex w-fit shrink-0 items-center rounded px-1 py-0.5 tabular-nums text-[11px] font-semibold leading-none bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400"
+      ? "inline-flex w-fit shrink-0 items-center rounded border border-amber-500/25 px-1 py-0.5 tabular-nums text-[11px] font-semibold leading-none bg-amber-500/15 text-amber-800 dark:text-amber-200"
+      : "inline-flex w-fit shrink-0 items-center rounded border border-amber-500/25 px-1 py-0.5 tabular-nums text-[11px] font-semibold leading-none bg-amber-500/15 text-amber-800 dark:text-amber-200"
   return (
-    <button
-      type="button"
+    <Alert
       className={cn(
-        wrapCls,
-        "w-full cursor-pointer transition-colors hover:bg-muted/55 active:bg-muted/65 dark:hover:bg-muted/40 dark:active:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+        "w-full rounded-xl py-3.5 shadow-none",
+        "border-amber-500/35 bg-amber-50 text-amber-950 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-50 [&>svg]:text-amber-600 dark:[&>svg]:text-amber-400 *:data-[slot=alert-description]:text-amber-900/80 dark:*:data-[slot=alert-description]:text-amber-100/85"
       )}
-      onClick={() => setExpanded((e) => !e)}
-      aria-expanded={showToggle ? expanded : undefined}
-      aria-label={showToggle ? (expanded ? "Show less evaluation detail" : "Show more evaluation detail") : "Evaluation result"}
     >
-      <div className="flex min-w-0 flex-row flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="flex min-w-0 w-fit max-w-full shrink-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-          <span className={chipCls}>{formatRunEvalScoreTenPoint(score)}</span>
-          <span className="min-w-0 text-[11px] font-medium leading-tight text-foreground">{evalLabel}</span>
-        </span>
+      <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />
+      <AlertTitle className="line-clamp-none flex flex-wrap items-center gap-2 text-sm font-semibold leading-tight text-current">
+        <span className="min-w-0">{evalLabel}</span>
+        <span className={chipCls}>{formatRunEvalScoreTenPoint(score)}</span>
         {showStats ? (
-          <span className="flex min-w-0 flex-wrap items-center gap-x-2 text-[9px] font-medium leading-tight tabular-nums text-muted-foreground">
+          <span className="flex min-w-0 flex-wrap items-center gap-x-2 text-[10px] font-medium leading-tight tabular-nums text-amber-900/70 dark:text-amber-100/80">
             <span title="Latency">Latency: {latencyLabel}</span>
-            <span className="text-muted-foreground/35 select-none" aria-hidden>
+            <span className="text-amber-900/35 dark:text-amber-100/35 select-none" aria-hidden>
               ·
             </span>
-            <span title="Tokens used">
-              Tokens: {tokensCountDisplay || tokensLabel}
-            </span>
+            <span title="Tokens used">Tokens: {tokensCountDisplay || tokensLabel}</span>
           </span>
         ) : null}
-      </div>
-      <div className="flex min-w-0 items-start gap-1">
-        <p className={cn("min-w-0 flex-1 text-[12px] leading-snug text-muted-foreground", !expanded && "line-clamp-2")}>
-          {expanded ? full : truncated}
-        </p>
-        {showToggle ? (
-          <span className="shrink-0 rounded-sm p-0.5 text-muted-foreground/60" aria-hidden>
-            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", expanded && "rotate-180")} />
-          </span>
-        ) : null}
-      </div>
-    </button>
+      </AlertTitle>
+      <AlertDescription className="mt-1 flex flex-col gap-2 text-xs leading-relaxed">
+        <p>{full}</p>
+        <div className="flex justify-end gap-2 pt-0.5">
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-8 w-fit gap-1.5 border border-amber-200/80 bg-amber-100/80 px-3 text-xs font-medium text-amber-950 shadow-none hover:bg-amber-100 dark:border-amber-700/50 dark:bg-amber-900/50 dark:text-amber-50 dark:hover:bg-amber-900/70"
+            onClick={() => {
+              if (onSimulateRun) onSimulateRun()
+              else {
+                toast.message("Simulate run", {
+                  description: "This prototype would open a rerun simulation with this evaluator context.",
+                })
+              }
+            }}
+          >
+            Fix and test
+          </Button>
+        </div>
+      </AlertDescription>
+    </Alert>
   )
 }
 
@@ -970,6 +960,19 @@ interface AnalyticsProps {
   onApplyEvalOverride: (runId: string, summary: RunEvaluationSummary) => void
 }
 
+const RERUN_SIMULATION_SUGGESTION = {
+  model: "gpt-4.1",
+  systemPrompt:
+    "You are a senior customer support assistant.\n\nApply the active refund policy strictly:\n- Refund window is 30 days from charge date\n- Requests beyond 30 days must be escalated to billing\n- Do not promise eligibility unless policy conditions are met\n\nAlways confirm policy constraints in plain language before proposing next steps.",
+  userPrompt:
+    "Customer message: {{input.message}}\nCharge age (days): {{input.days_since_charge}}\nRelevant policy: {{knowledge_base.policy}}\n\nRespond with an empathetic answer that follows the 30-day rule. If outside the window, route to billing escalation and explain why.",
+  summary: [
+    "Model switched to GPT-4.1 for stricter policy adherence.",
+    "Instructions now enforce the 30-day refund window and mandatory escalation outside policy.",
+    "Prompt now injects charge age and policy context to reduce hallucinated eligibility decisions.",
+  ],
+}
+
 export function Analytics({
   onSwitchToWorkflow,
   onFixWithAi,
@@ -1005,6 +1008,8 @@ export function Analytics({
   const [rerunNodeSheetOpen, setRerunNodeSheetOpen] = useState(false)
   const [rerunTargetNode, setRerunTargetNode] = useState<GanttNode | null>(null)
   const [rerunNodeValues, setRerunNodeValues] = useState<Record<string, string>>({})
+  const [rerunSimulationSummary, setRerunSimulationSummary] = useState<string[] | null>(null)
+  const [rerunSimulationExpanded, setRerunSimulationExpanded] = useState(false)
   const [rerunPickNodeMode, setRerunPickNodeMode] = useState(false)
   const [forkSteps, setForkSteps] = useState<ForkStepEdit[]>([])
   const [forkAddQuery, setForkAddQuery] = useState("")
@@ -1170,6 +1175,7 @@ export function Analytics({
 
   const [activeMetric, setActiveMetric] = useState("Runs")
   const [tokenView, setTokenView] = useState<"total" | "input" | "output">("total")
+  const [signalTypeView, setSignalTypeView] = useState<"total" | "policy" | "escalation">("total")
   const [analyticsTab, setAnalyticsTab] = useState("overview")
   const [selectedClusterId, setSelectedClusterId] = useState<string | null>(null)
   /** Overview runs table: Evaluator column on by default */
@@ -1197,6 +1203,12 @@ export function Analytics({
       const output = total - input
       return { date, total, input, output }
     })
+    const signalRows = CHART_DATES.map((date, i) => {
+      const policy = Math.max(8, Math.round(19 + Math.sin(i * 1.2) * 9 + (i % 4 === 0 ? 7 : 0)))
+      const escalation = Math.max(6, Math.round(14 + Math.cos(i * 0.9) * 8 + (i % 5 === 0 ? 4 : 0)))
+      const total = policy + escalation
+      return { date, total, policy, escalation }
+    })
     return [
       {
         title: "Runs",
@@ -1214,9 +1226,23 @@ export function Analytics({
         data: CHART_DATES.map((date, i) => ({ date, value: Math.round(Math.max(0, 3 - i * 0.1 + Math.sin(i * 1.5) * 2)) })),
       },
       {
-        title: "Signal Alerts",
+        title: "Signals",
         value: "847",
-        data: CHART_DATES.map((date, i) => ({ date, value: Math.round(35 + Math.sin(i * 1.3) * 20 + Math.cos(i * 0.7) * 15 + (i % 3 === 0 ? 25 : 0)) })),
+        data: signalRows.map(({ date, total }) => ({ date, value: total })),
+        signalBreakdown: {
+          total: {
+            value: "847",
+            data: signalRows.map(({ date, total }) => ({ date, value: total })),
+          },
+          policy: {
+            value: "512",
+            data: signalRows.map(({ date, policy }) => ({ date, value: policy })),
+          },
+          escalation: {
+            value: "335",
+            data: signalRows.map(({ date, escalation }) => ({ date, value: escalation })),
+          },
+        },
       },
       {
         title: "Evaluation",
@@ -1251,8 +1277,12 @@ export function Analytics({
       const b = m.tokenBreakdown[tokenView]
       return { title: m.title, value: b.value, data: b.data }
     }
+    if (m.title === "Signals" && "signalBreakdown" in m && m.signalBreakdown) {
+      const b = m.signalBreakdown[signalTypeView]
+      return { title: m.title, value: b.value, data: b.data }
+    }
     return { title: m.title, value: m.value, data: m.data }
-  }, [activeMetric, tokenView, metrics])
+  }, [activeMetric, tokenView, signalTypeView, metrics])
 
   // Run-specific Gantt data so Previous/Next run show different bar timings.
   // When the run is success, show all nodes as success (no error node in this run).
@@ -1291,6 +1321,34 @@ export function Analytics({
     if (forkRunPhase === "complete") return forkCompletedGanttNodes
     return runGanttNodes
   }, [selectedRunId, forkSourceRun, forkRunPhase, runGanttNodes, forkReplayGanttNodes, forkCompletedGanttNodes])
+
+  const openRerunSheetWithSimulatedAiChanges = React.useCallback(() => {
+    const aiNode =
+      activeRunDetailGanttNodes.find((node) => GANTT_LABEL_TO_WORKFLOW_NODE_ID[node.label] === "ai-agent") ?? null
+    if (!aiNode) {
+      toast.message("No AI Agent node found", {
+        description: "This run does not have an editable AI Agent step to simulate.",
+      })
+      return
+    }
+
+    const baseValues = {
+      ...defaultValuesForNode("ai-agent"),
+      ...(GANTT_NODE_PREFILL[aiNode.label] ?? {}),
+    }
+
+    setRerunPickNodeMode(false)
+    setRerunTargetNode(aiNode)
+    setRerunNodeValues({
+      ...baseValues,
+      model: RERUN_SIMULATION_SUGGESTION.model,
+      system_prompt: RERUN_SIMULATION_SUGGESTION.systemPrompt,
+      user_prompt: RERUN_SIMULATION_SUGGESTION.userPrompt,
+    })
+    setRerunSimulationSummary(RERUN_SIMULATION_SUGGESTION.summary)
+    setRerunSimulationExpanded(false)
+    setRerunNodeSheetOpen(true)
+  }, [activeRunDetailGanttNodes])
 
   // Runs ordered newest first (for table and for Previous = older, Next = more recent)
   const runsNewestFirst = useMemo(() => [...runs].reverse(), [runs])
@@ -1552,6 +1610,8 @@ export function Analytics({
                               onSelect={() => {
                                 setRerunTargetNode(null)
                                 setRerunNodeValues({})
+                                setRerunSimulationSummary(null)
+                                setRerunSimulationExpanded(false)
                                 setRerunPickNodeMode(true)
                                 setRerunNodeSheetOpen(true)
                               }}
@@ -1658,6 +1718,8 @@ export function Analytics({
                     const workflowNodeId = GANTT_LABEL_TO_WORKFLOW_NODE_ID[node.label] ?? "ai-agent"
                     setRerunTargetNode(node)
                     setRerunPickNodeMode(false)
+                    setRerunSimulationSummary(null)
+                    setRerunSimulationExpanded(false)
                     setRerunNodeValues({
                       ...defaultValuesForNode(workflowNodeId),
                       ...(GANTT_NODE_PREFILL[node.label] ?? {}),
@@ -1828,7 +1890,11 @@ export function Analytics({
           {resolvedRunSignal &&
             selectedGanttNode?.id === resolvedRunSignal.nodeId &&
             !sidebarShowGeneral && (
-              <SignalInsightCard signal={resolvedRunSignal} onFixWithAi={onFixWithAi} />
+              <SignalInsightCard
+                signal={resolvedRunSignal}
+                onFixWithAi={onFixWithAi}
+                onSimulateRun={openRerunSheetWithSimulatedAiChanges}
+              />
             )}
           {(() => {
             const isAiAgent = selectedGanttNode?.label === "AI Agent"
@@ -1836,13 +1902,6 @@ export function Analytics({
             if (!selectedGanttNode || sidebarShowGeneral) {
               return (
                 <div key="general-details" className="flex-1 flex flex-col min-h-0 px-4 pb-4 pt-0 overflow-auto">
-                  {resolvedRunSignal ? (
-                    <SignalInsightCard
-                      signal={resolvedRunSignal}
-                      onFixWithAi={onFixWithAi}
-                      containerClassName="mb-4 mt-3 w-full"
-                    />
-                  ) : null}
                   {isForkDraftView && forkSourceRun ? (
                     <div className="mt-3 mb-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-xs">
                       <p className="font-medium text-foreground">Source run</p>
@@ -1952,16 +2011,12 @@ export function Analytics({
                             evalLabel={runEvaluation.evaluatorName}
                             score={runEvaluation.score}
                             summary={runEvaluation.summary}
-                            latencyLabel={selectedRun?.latency}
-                            tokensLabel={
-                              selectedRun != null
-                                ? `${selectedRun.tokens.toLocaleString()} tokens`
-                                : undefined
-                            }
                             signalRow={
                               Boolean(selectedRun && getOverviewSignalForRun(selectedRun.runId)) &&
                               selectedRun.status !== "error"
                             }
+                            onFixWithAi={onFixWithAi}
+                            onSimulateRun={openRerunSheetWithSimulatedAiChanges}
                           />
                         </div>
                       </div>
@@ -2472,7 +2527,16 @@ export function Analytics({
             </>,
             document.body
           )}
-        <Sheet open={rerunNodeSheetOpen} onOpenChange={setRerunNodeSheetOpen}>
+        <Sheet
+          open={rerunNodeSheetOpen}
+          onOpenChange={(open) => {
+            setRerunNodeSheetOpen(open)
+            if (!open) {
+              setRerunSimulationSummary(null)
+              setRerunSimulationExpanded(false)
+            }
+          }}
+        >
           <SheetContent side="right" className="flex h-full w-full max-w-[400px] flex-col gap-0 p-0 overflow-hidden">
             <SheetHeader className="flex-shrink-0 border-b border-border/60 px-5 py-4">
               <div className="flex items-center gap-2 min-w-0">
@@ -2481,7 +2545,7 @@ export function Analytics({
                   {rerunPickNodeMode && !rerunTargetNode ? "Rerun with changes" : (rerunTargetNode?.label ?? "Node")}
                 </SheetTitle>
                 {rerunTargetNode && (
-                  <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">action-node</span>
+                  <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">lllm-0</span>
                 )}
               </div>
             </SheetHeader>
@@ -2497,6 +2561,8 @@ export function Analytics({
                         if (!node) return
                         const wnId = GANTT_LABEL_TO_WORKFLOW_NODE_ID[node.label] ?? "ai-agent"
                         setRerunTargetNode(node)
+                        setRerunSimulationSummary(null)
+                        setRerunSimulationExpanded(false)
                         setRerunNodeValues({
                           ...defaultValuesForNode(wnId),
                           ...(GANTT_NODE_PREFILL[node.label] ?? {}),
@@ -2516,6 +2582,12 @@ export function Analytics({
                       </SelectContent>
                     </Select>
                   </div>
+                  <Alert className="border-blue-200 bg-blue-50/70 text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-100">
+                    <Info className="h-4 w-4" />
+                    <AlertDescription className="text-xs leading-relaxed">
+                      Upstream node outputs will be pinned for this rerun.
+                    </AlertDescription>
+                  </Alert>
                   {rerunTargetNode && (() => {
                     const wnId = GANTT_LABEL_TO_WORKFLOW_NODE_ID[rerunTargetNode.label] ?? "ai-agent"
                     const wn = WORKFLOW_NODES.find(n => n.id === wnId) ?? null
@@ -2532,32 +2604,41 @@ export function Analytics({
                 const wnId = GANTT_LABEL_TO_WORKFLOW_NODE_ID[rerunTargetNode.label] ?? "ai-agent"
                 const wn = WORKFLOW_NODES.find(n => n.id === wnId) ?? null
                 return wn ? (
-                  <VariantNodeConfigFields
-                    selectedNode={wn}
-                    values={rerunNodeValues}
-                    onFieldChange={(key, value) => setRerunNodeValues(prev => ({ ...prev, [key]: value }))}
-                  />
+                  <div className="flex flex-col gap-4">
+                    {wn.id === "ai-agent" && rerunSimulationSummary ? (
+                      <Alert className="border-blue-200 bg-blue-50/70 text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-100">
+                        <Info className="h-4 w-4" />
+                        <AlertDescription className="text-xs leading-relaxed">
+                          <p className="font-medium">Simulated changes applied</p>
+                          <button
+                            type="button"
+                            className="mt-1 text-xs font-medium underline-offset-4 hover:underline"
+                            onClick={() => setRerunSimulationExpanded((prev) => !prev)}
+                          >
+                            {rerunSimulationExpanded ? "Hide changes" : "Show changes"}
+                          </button>
+                          {rerunSimulationExpanded ? (
+                            <ul className="mt-1 list-disc space-y-1 pl-4">
+                              {rerunSimulationSummary.map((item) => (
+                                <li key={item}>{item}</li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </AlertDescription>
+                      </Alert>
+                    ) : null}
+                    <VariantNodeConfigFields
+                      selectedNode={wn}
+                      values={rerunNodeValues}
+                      onFieldChange={(key, value) => setRerunNodeValues(prev => ({ ...prev, [key]: value }))}
+                    />
+                  </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">No configurable settings for this node.</p>
                 )
               })() : null}
             </div>
             <SheetFooter className="flex-shrink-0 border-t border-border/60 px-5 py-4">
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1"
-                onClick={() => {
-                  if (rerunPickNodeMode && rerunTargetNode) {
-                    setRerunTargetNode(null)
-                    setRerunNodeValues({})
-                  } else {
-                    setRerunNodeSheetOpen(false)
-                  }
-                }}
-              >
-                {rerunPickNodeMode && rerunTargetNode ? "Back" : "Cancel"}
-              </Button>
               <Button
                 type="button"
                 className="flex-1 bg-foreground text-background hover:bg-foreground/90"
@@ -2599,6 +2680,25 @@ export function Analytics({
                 }}
               >
                 Simulate run
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  if (rerunPickNodeMode && rerunTargetNode) {
+                    setRerunTargetNode(null)
+                    setRerunNodeValues({})
+                    setRerunSimulationSummary(null)
+                    setRerunSimulationExpanded(false)
+                  } else {
+                    setRerunNodeSheetOpen(false)
+                    setRerunSimulationSummary(null)
+                    setRerunSimulationExpanded(false)
+                  }
+                }}
+              >
+                {rerunPickNodeMode && rerunTargetNode ? "Back" : "Cancel"}
               </Button>
             </SheetFooter>
           </SheetContent>
@@ -2888,6 +2988,13 @@ export function Analytics({
           onOpenChange={setSaveToDatasetOpen}
           datasets={saveDatasets}
           setDatasets={setSaveDatasets}
+          onOpenDataset={(datasetName) => {
+            if (tabContext?.openEvaluatorDataset) {
+              tabContext.openEvaluatorDataset({ datasetName })
+              return
+            }
+            tabContext?.setActiveTab("Evaluator")
+          }}
         />
       </div>
       {evaluateRunDialog}
@@ -2899,9 +3006,26 @@ export function Analytics({
     <>
     <div className="flex flex-col h-full bg-background overflow-hidden">
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {/* Single scroll region: sticky frosted toolbar so content slides underneath */}
+        {/* Single scroll region for analytics content */}
         <div className="min-h-0 flex-1 overflow-auto bg-muted">
-          <div className="sticky top-0 z-20 flex items-center justify-between bg-muted/55 px-6 py-4 backdrop-blur-md backdrop-saturate-150">
+          <div className="px-6 py-4">
+        <Tabs value={analyticsTab} onValueChange={setAnalyticsTab} className="gap-0">
+          <TabsList className="mb-6 h-auto min-h-9 w-full flex-wrap justify-start gap-1 rounded-lg bg-muted p-1 sm:w-fit sm:flex-nowrap">
+            <TabsTrigger value="overview" className="px-3">
+              Overview
+            </TabsTrigger>
+            <TabsTrigger value="conversations" className="px-3">
+              Conversations
+            </TabsTrigger>
+            <TabsTrigger value="clusters" className="px-3">
+              Clusters
+            </TabsTrigger>
+            <TabsTrigger value="guardrails" className="px-3">
+              Guardrails
+            </TabsTrigger>
+          </TabsList>
+
+          <div className="sticky top-0 z-20 -mx-6 mb-6 flex items-center justify-between bg-muted/55 px-6 py-4 backdrop-blur-md backdrop-saturate-150">
             <div className="flex items-center gap-3">
               <Button variant="outline" size="sm" className="gap-2 bg-background/40">
                 <RefreshCw className="h-4 w-4" />
@@ -2943,23 +3067,6 @@ export function Analytics({
             </div>
           </div>
 
-          <div className="px-6 py-4">
-        <Tabs value={analyticsTab} onValueChange={setAnalyticsTab} className="gap-0">
-          <TabsList className="mb-6 h-auto min-h-9 w-full flex-wrap justify-start gap-1 rounded-lg bg-muted p-1 sm:w-fit sm:flex-nowrap">
-            <TabsTrigger value="overview" className="px-3">
-              Overview
-            </TabsTrigger>
-            <TabsTrigger value="conversations" className="px-3">
-              Conversations
-            </TabsTrigger>
-            <TabsTrigger value="clusters" className="px-3">
-              Clusters
-            </TabsTrigger>
-            <TabsTrigger value="guardrails" className="px-3">
-              Guardrails
-            </TabsTrigger>
-          </TabsList>
-
           <TabsContent value="overview" className="mt-0 space-y-0">
         {/* Metrics stat bar + shared chart */}
         <Card className="mb-6 overflow-hidden py-0 gap-0">
@@ -2967,79 +3074,121 @@ export function Analytics({
           <div className="flex border-b border-border">
             {metrics.map((metric) => {
               const isTokens = metric.title === "Tokens"
+              const isSignals = metric.title === "Signals"
               const tokenBreakdown = isTokens && "tokenBreakdown" in metric ? metric.tokenBreakdown : undefined
+              const signalBreakdown = isSignals && "signalBreakdown" in metric ? metric.signalBreakdown : undefined
+              const hasSubSelector = Boolean(tokenBreakdown || signalBreakdown)
               const statValue =
-                tokenBreakdown ? tokenBreakdown[tokenView].value : metric.value
+                tokenBreakdown
+                  ? tokenBreakdown[tokenView].value
+                  : signalBreakdown
+                    ? signalBreakdown[signalTypeView].value
+                    : metric.value
               const tabClass = cn(
                 "flex-1 flex flex-col gap-0.5 px-5 py-4 text-left transition-colors border-b-2 -mb-px",
                 activeMetric === metric.title
                   ? "border-black bg-muted/50 text-foreground"
                   : "border-border/50 bg-background hover:bg-muted/40 text-muted-foreground"
               )
-              if (isTokens) {
+              if (isTokens || isSignals) {
+                const currentViewLabel = isTokens
+                  ? tokenView === "total"
+                    ? "Total"
+                    : tokenView === "input"
+                      ? "Input"
+                      : "Output"
+                  : signalTypeView === "total"
+                    ? "All"
+                    : signalTypeView === "policy"
+                      ? "Policy"
+                      : "Escalation"
                 return (
                   <div
                     key={metric.title}
                     role="button"
                     tabIndex={0}
-                    onClick={() => setActiveMetric("Tokens")}
+                    onClick={() => setActiveMetric(metric.title)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault()
-                        setActiveMetric("Tokens")
+                        setActiveMetric(metric.title)
                       }
                     }}
                     className={cn(tabClass, "cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2")}
                   >
-                    <div className="flex min-w-0 items-center gap-1.5">
-                      <span className={cn("text-xs font-medium leading-none shrink-0", activeMetric === "Tokens" ? "text-muted-foreground" : "text-muted-foreground/60")}>
+                    <div className="flex h-5 min-w-0 items-center gap-1.5">
+                      <span className={cn("text-xs font-medium leading-none shrink-0", activeMetric === metric.title ? "text-muted-foreground" : "text-muted-foreground/60")}>
                         {metric.title}
                       </span>
-                      {tokenBreakdown && (
+                      {hasSubSelector && (
                         <div
-                          className="flex shrink-0 items-center"
-                          onClick={(e) => e.stopPropagation()}
-                          onKeyDown={(e) => e.stopPropagation()}
+                          className={cn(
+                            "flex h-5 shrink-0 items-center",
+                            isTokens ? "w-[4.25rem]" : "w-[5.5rem]"
+                          )}
+                          onClick={(e) => {
+                            if (activeMetric === metric.title) e.stopPropagation()
+                          }}
+                          onKeyDown={(e) => {
+                            if (activeMetric === metric.title) e.stopPropagation()
+                          }}
                         >
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button
-                                type="button"
-                                className={cn(
-                                  "inline-flex h-5 items-center gap-0.5 rounded-sm px-0.5 text-[11px] font-medium leading-none transition-colors cursor-pointer select-none",
-                                  activeMetric === "Tokens"
-                                    ? "text-muted-foreground hover:text-foreground"
-                                    : "text-muted-foreground/90 hover:text-foreground/90"
+                          {activeMetric === metric.title ? (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  className={cn(
+                                    "inline-flex h-5 items-center gap-0.5 rounded-sm px-0.5 text-[11px] font-medium leading-none transition-colors cursor-pointer select-none",
+                                    "text-muted-foreground hover:text-foreground"
+                                  )}
+                                  aria-label={isTokens ? "Token breakdown" : "Signal type"}
+                                >
+                                  {currentViewLabel}
+                                  <ChevronDown
+                                    className="h-2.5 w-2.5 shrink-0 text-muted-foreground"
+                                    aria-hidden
+                                  />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="min-w-[7.5rem]">
+                                {isTokens ? (
+                                  <DropdownMenuRadioGroup
+                                    value={tokenView}
+                                    onValueChange={(v) => {
+                                      if (v === "total" || v === "input" || v === "output") setTokenView(v)
+                                    }}
+                                  >
+                                    <DropdownMenuRadioItem value="total">Total</DropdownMenuRadioItem>
+                                    <DropdownMenuRadioItem value="input">Input</DropdownMenuRadioItem>
+                                    <DropdownMenuRadioItem value="output">Output</DropdownMenuRadioItem>
+                                  </DropdownMenuRadioGroup>
+                                ) : (
+                                  <DropdownMenuRadioGroup
+                                    value={signalTypeView}
+                                    onValueChange={(v) => {
+                                      if (v === "total" || v === "policy" || v === "escalation") setSignalTypeView(v)
+                                    }}
+                                  >
+                                    <DropdownMenuRadioItem value="total">All signals</DropdownMenuRadioItem>
+                                    <DropdownMenuRadioItem value="policy">Policy hallucination</DropdownMenuRadioItem>
+                                    <DropdownMenuRadioItem value="escalation">Missed escalation</DropdownMenuRadioItem>
+                                  </DropdownMenuRadioGroup>
                                 )}
-                                aria-label="Token breakdown"
-                              >
-                                {tokenView === "total" ? "total" : tokenView === "input" ? "input" : "output"}
-                                <ChevronDown
-                                  className="h-2.5 w-2.5 shrink-0 text-muted-foreground"
-                                  aria-hidden
-                                />
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="min-w-[7.5rem]">
-                              <DropdownMenuRadioGroup
-                                value={tokenView}
-                                onValueChange={(v) => {
-                                  if (v === "total" || v === "input" || v === "output") setTokenView(v)
-                                }}
-                              >
-                                <DropdownMenuRadioItem value="total">Total</DropdownMenuRadioItem>
-                                <DropdownMenuRadioItem value="input">Input</DropdownMenuRadioItem>
-                                <DropdownMenuRadioItem value="output">Output</DropdownMenuRadioItem>
-                              </DropdownMenuRadioGroup>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          ) : (
+                            <span aria-hidden className="invisible text-[11px] font-medium leading-none">
+                              {isTokens ? "Output" : "Escalation"}
+                            </span>
+                          )}
                         </div>
                       )}
                     </div>
                     <span
                       className={cn(
                         "text-xl font-semibold tabular-nums",
-                        activeMetric === "Tokens"
+                        activeMetric === metric.title
                           ? "text-foreground"
                           : "text-muted-foreground"
                       )}
@@ -3320,7 +3469,7 @@ export function Analytics({
                                         <span className={cn(
                                           "shrink-0 rounded px-1.5 py-0.5 text-[11px] tabular-nums font-semibold",
                                           signalRowChip
-                                            ? "border border-yellow-200 bg-yellow-50 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300"
+                                            ? "border border-amber-500/25 bg-amber-500/15 text-amber-800 dark:text-amber-200"
                                             : pass
                                               ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
                                               : "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400",
@@ -3413,6 +3562,8 @@ export function Analytics({
                                     setSelectedGanttNode(null)
                                     setRerunTargetNode(null)
                                     setRerunNodeValues({})
+                                    setRerunSimulationSummary(null)
+                                    setRerunSimulationExpanded(false)
                                     setRerunPickNodeMode(true)
                                     setRerunNodeSheetOpen(true)
                                   }}
@@ -3788,6 +3939,13 @@ export function Analytics({
         onOpenChange={setSaveToDatasetOpen}
         datasets={saveDatasets}
         setDatasets={setSaveDatasets}
+        onOpenDataset={(datasetName) => {
+          if (tabContext?.openEvaluatorDataset) {
+            tabContext.openEvaluatorDataset({ datasetName })
+            return
+          }
+          tabContext?.setActiveTab("Evaluator")
+        }}
       />
     </div>
     {evaluateRunDialog}

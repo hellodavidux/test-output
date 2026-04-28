@@ -7,6 +7,7 @@ import { AgentInstructionsCard, AgentPromptCard, AgentPlaceholderSections, Agent
 import { appDetails, PROVIDERS, type ActionItem } from "@/lib/app-data"
 
 const AGENT_INSTRUCTIONS_PLACEHOLDER = "You are a helpful assistant…"
+const AGENT_INSTRUCTIONS_DEFAULT = "You are a helpful assistant…"
 const AGENT_PROMPT_PLACEHOLDER = "Add prompt text…"
 
 interface NodeSettingsSidebarProps {
@@ -43,7 +44,7 @@ export function NodeSettingsSidebar({
   const [selectedAction, setSelectedAction] = useState<string>("")
   const [providerOpen, setProviderOpen] = useState(false)
   const [actionOpen, setActionOpen] = useState(false)
-  const [agentInstructions, setAgentInstructions] = useState("")
+  const [agentInstructions, setAgentInstructions] = useState(AGENT_INSTRUCTIONS_DEFAULT)
   const [agentPrompt, setAgentPrompt] = useState("")
 
   // Sync state with nodeData when it changes
@@ -62,7 +63,7 @@ export function NodeSettingsSidebar({
 
   useEffect(() => {
     if (!nodeData || nodeData.appName !== "AI Agent") return
-    setAgentInstructions("")
+    setAgentInstructions(AGENT_INSTRUCTIONS_DEFAULT)
     setAgentPrompt("")
   }, [nodeData?.id, nodeData?.appName])
 

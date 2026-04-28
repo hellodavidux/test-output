@@ -32,13 +32,13 @@ export function AgentInstructionsCard({
       <span className="w-fit border-b border-dashed border-gray-400 pb-0.5 text-xs font-medium text-gray-700">
         Instructions
       </span>
-      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
         <textarea
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           rows={6}
-          className="min-h-[132px] w-full resize-none border-0 bg-white px-3 py-3 text-sm leading-relaxed text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-0"
+          className="min-h-[132px] w-full resize-none overflow-y-auto border-0 bg-white px-3 py-3 text-sm leading-relaxed text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
         />
         <div className="flex items-center justify-between gap-2 border-t border-gray-100 bg-gray-50/90 px-2 py-1.5">
           <div className="flex items-center gap-1">
@@ -114,7 +114,7 @@ export function AgentPromptCard({
           </button>
         </div>
       </div>
-      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
         {view === "edit" ? (
           <>
             <div className="flex min-h-[92px] flex-col gap-1.5 px-3 py-3">
@@ -129,7 +129,7 @@ export function AgentPromptCard({
                 onChange={(e) => onChange(e.target.value)}
                 placeholder={placeholder}
                 rows={4}
-                className="min-h-[72px] w-full min-w-0 flex-1 resize-none border-0 bg-transparent p-0 text-sm leading-relaxed text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-0"
+                className="min-h-[72px] w-full min-w-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent p-0 text-sm leading-relaxed text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
               />
             </div>
             <div className="flex items-center justify-end gap-0.5 border-t border-gray-100 bg-gray-50/90 px-2 py-1.5 text-gray-500">
@@ -193,7 +193,7 @@ export function AgentPlaceholderSections() {
       {AGENT_PLACEHOLDER_SECTIONS.map(({ label, Icon }) => (
         <div
           key={label}
-          className="flex items-center justify-between rounded-lg px-3 py-2.5 text-sm text-gray-600"
+          className="flex items-center justify-between rounded-lg py-2.5 text-sm text-gray-600"
         >
           <span className="flex min-w-0 items-center gap-2.5">
             <Icon className="size-4 shrink-0 text-gray-500" aria-hidden />

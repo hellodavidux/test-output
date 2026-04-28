@@ -12,6 +12,7 @@ import {
   Globe,
   HelpCircle,
   Home,
+  ListChecks,
   Play,
   Plug,
   Plus,
@@ -24,8 +25,6 @@ const sidebarIconBtn =
   "flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
 const sidebarIconBtnActive = "bg-neutral-100 text-neutral-900"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Label } from "@/components/ui/label"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
@@ -71,6 +70,8 @@ export const TabContext = React.createContext<{
   openEvaluateRunFromWorkflow: (runId: string) => void
   /** Persist a completed “Run evaluation” result so Run Details shows it (Workflow modal + Analytics). */
   applyRunEvaluationOverride: (runId: string, summary: RunEvaluationSummary) => void
+  /** Open Evaluator directly on Dataset tab (optionally with a dataset name to auto-open). */
+  openEvaluatorDataset: (payload?: { datasetName?: string }) => void
 } | null>(null)
 
 interface DashboardLayoutProps {
@@ -98,6 +99,8 @@ export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLa
   const [pendingOpenRunId, setPendingOpenRunId] = React.useState<string | null>(null)
   /** Run progress ⋯ → Evaluate Run: Analytics opens the evaluator picker dialog once mounted. */
   const [pendingEvaluateRunId, setPendingEvaluateRunId] = React.useState<string | null>(null)
+  /** Analytics "Saved to dataset" toast action: ask Evaluator to open Dataset tab (optionally a specific dataset). */
+  const [pendingOpenDatasetName, setPendingOpenDatasetName] = React.useState<string | null>(null)
   /** Persists in layout so Experiment keeps the seeded row after Evaluator remounts (Evaluate / Compare from Run progress). */
   const [experimentSeedFromRun, setExperimentSeedFromRun] = React.useState<ExperimentRunSeed | null>(null)
   /** Handed to Analytics once to open fork draft + drawer (Run progress / table Fork). */
@@ -114,7 +117,6 @@ export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLa
   /** One-shot token to open the variant-builder intro modal from Run progress / Analytics / etc. */
   const [variantBuilderIntroToken, setVariantBuilderIntroToken] = React.useState<string | null>(null)
   const [publishMenuOpen, setPublishMenuOpen] = React.useState(false)
-  const [runEvaluatorOnPublish, setRunEvaluatorOnPublish] = React.useState(true)
   const [runEvaluationOverrides, setRunEvaluationOverrides] = React.useState<
     Record<string, RunEvaluationSummary>
   >({})
@@ -237,9 +239,19 @@ export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLa
     setPendingEvaluateRunId(null)
   }, [])
 
+  const clearPendingOpenDatasetName = React.useCallback(() => {
+    setPendingOpenDatasetName(null)
+  }, [])
+
   const openEvaluateRunFromWorkflow = React.useCallback((runId: string) => {
     setPendingEvaluateRunId(runId)
     setActiveTab("Analytics")
+  }, [setActiveTab])
+
+  const openEvaluatorDataset = React.useCallback((payload?: { datasetName?: string }) => {
+    const datasetName = payload?.datasetName?.trim() ?? ""
+    setPendingOpenDatasetName(datasetName.length > 0 ? datasetName : null)
+    setActiveTab("Evaluator")
   }, [setActiveTab])
 
   const clearPendingForkFromRun = React.useCallback(() => {
@@ -359,28 +371,23 @@ export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLa
                       <GitBranch className="size-4 shrink-0 opacity-70" strokeWidth={1.75} />
                       Review changes
                     </button>
-                    <div className="flex items-center gap-2.5 px-2.5 py-2.5">
-                      <Checkbox
-                        id="publish-run-evaluator"
-                        checked={runEvaluatorOnPublish}
-                        onCheckedChange={(v) => setRunEvaluatorOnPublish(v === true)}
-                      />
-                      <Label
-                        htmlFor="publish-run-evaluator"
-                        className="cursor-pointer text-sm font-normal text-muted-foreground hover:text-foreground"
-                      >
-                        Run evaluator before publishing
-                      </Label>
-                    </div>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                      onClick={() => {
+                        setPublishMenuOpen(false)
+                        setActiveTab("Evaluator")
+                      }}
+                    >
+                      <ListChecks className="size-4 shrink-0 opacity-70" strokeWidth={1.75} />
+                      Evaluate changes
+                    </button>
                     <div className="border-t border-border p-2">
                       <Button
                         type="button"
                         className="h-10 w-full rounded-md bg-foreground text-sm font-semibold text-background hover:bg-foreground/90"
                         onClick={() => {
                           setPublishMenuOpen(false)
-                          if (runEvaluatorOnPublish) {
-                            setActiveTab("Evaluator")
-                          }
                         }}
                       >
                         Publish Version
@@ -577,6 +584,8 @@ export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLa
               onVariantAppendConsumed={clearVariantAppendToken}
               variantBuilderIntroToken={variantBuilderIntroToken}
               onVariantBuilderIntroConsumed={clearVariantBuilderIntroToken}
+              pendingOpenDatasetName={pendingOpenDatasetName}
+              onPendingOpenDatasetConsumed={clearPendingOpenDatasetName}
             />
           ) : activeTab === "Export" ? (
             <div className="h-full w-full bg-background" aria-label="Export" />
@@ -604,6 +613,7 @@ export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLa
         openExperimentVariantBuilderIntro,
         openEvaluateRunFromWorkflow,
         applyRunEvaluationOverride,
+        openEvaluatorDataset,
       }}
     >
       <div

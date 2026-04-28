@@ -233,27 +233,8 @@ function LlmSpanKindIcon({ kind }: { kind: LlmSpan["kind"]; result?: LlmSpan["re
   }
 }
 
-function llmSpanBarClass(kind: LlmSpan["kind"], selected: boolean, result?: LlmSpan["result"]): string {
-  switch (kind) {
-    case "thinking":
-      return selected
-        ? "bg-violet-500/35 border-violet-500/60"
-        : "bg-violet-500/15 border-violet-500/35 group-hover:bg-violet-500/25"
-    case "tool":
-      return selected
-        ? "bg-amber-500/35 border-amber-500/60"
-        : "bg-amber-500/15 border-amber-500/35 group-hover:bg-amber-500/25"
-    case "completion":
-      return selected
-        ? "bg-sky-500/35 border-sky-500/60"
-        : "bg-sky-500/15 border-sky-500/35 group-hover:bg-sky-500/25"
-    case "guardrail":
-      if (result === "block") return selected ? "bg-red-500/35 border-red-500/60" : "bg-red-500/15 border-red-500/35 group-hover:bg-red-500/25"
-      if (result === "flag") return selected ? "bg-amber-500/35 border-amber-500/60" : "bg-amber-500/15 border-amber-500/35 group-hover:bg-amber-500/25"
-      return selected ? "bg-emerald-500/35 border-emerald-500/60" : "bg-emerald-500/15 border-emerald-500/35 group-hover:bg-emerald-500/25"
-    default:
-      return "bg-muted border-border"
-  }
+function llmSpanBarClass(_kind: LlmSpan["kind"], _selected: boolean, _result?: LlmSpan["result"]): string {
+  return "bg-muted border-border group-hover:bg-muted-foreground/20"
 }
 
 type GanttDisplayRow =
@@ -709,7 +690,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                             className={cn(
                               "absolute rounded-sm border flex-shrink-0 min-w-[2px] transition-[width] duration-150 flex items-center justify-start pl-1 pr-0.5 overflow-hidden cursor-default ml-2",
                               "top-1/2 -translate-y-1/2",
-                              displayStatus === "error" && "bg-destructive/20 border-destructive/40",
+                              displayStatus === "error" && "bg-amber-100 border-amber-300",
                               displayStatus === "success" && (isSelected ? "bg-primary border-primary" : "bg-muted border-border"),
                               displayStatus === "running" && "bg-purple-500/30 border-purple-500/50",
                               displayStatus === "skipped" && "bg-muted-foreground/20 border-muted-foreground/30"
@@ -940,7 +921,6 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                 const isSelected = selectedNodeId === node.id
                 const isHighlighted = highlightNodeId === node.id
                 const isSignaled = signalNodeId === node.id
-                const isRootCause = rootCauseNodeId === node.id
                 const leftPct = (node.startSec / maxSec) * 100
                 const widthPct = Math.max((node.endSec - node.startSec) / maxSec * 100, 1)
                 return (
@@ -952,8 +932,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                       rowIdx === 0 && "border-t border-border/30",
                       isSelected && "bg-muted/30 shadow-[inset_2px_0_0_0_hsl(var(--primary))]",
                       isHighlighted && "bg-primary/5 hover:bg-primary/5",
-                      isSignaled && "bg-amber-50/60 shadow-[inset_2px_0_0_0_theme(colors.amber.400)] hover:bg-amber-50/80",
-                      isRootCause && ""
+                      isSignaled && "bg-amber-50/60 shadow-[inset_2px_0_0_0_theme(colors.amber.400)] hover:bg-amber-50/80"
                     )}
                     style={{ minHeight: ROW_HEIGHT }}
                     role="button"
@@ -1084,11 +1063,6 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                         )}>
                           {node.label}
                         </span>
-                        {isRootCause && (
-                          <span className="shrink-0 inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide bg-yellow-100 text-yellow-800 dark:bg-yellow-950/60 dark:text-yellow-400" title="Root cause of quality failure">
-                            Root cause
-                          </span>
-                        )}
                         <Tooltip delayDuration={200}>
                           <TooltipTrigger asChild>
                             <Button
@@ -1134,7 +1108,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                         <span
                           className={cn(
                             "flex shrink-0 items-center justify-center rounded-full",
-                            effectiveStatus === "error" && "h-3 w-3 bg-red-500",
+                            effectiveStatus === "error" && "h-3 w-3 bg-amber-400",
                             !isSignaled &&
                               effectiveStatus === "success" &&
                               "h-3 w-3 bg-green-500",
@@ -1212,8 +1186,8 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                                 "absolute h-5 rounded-sm border flex-shrink-0 min-w-[2px] transition-colors flex items-center justify-start pl-1.5 pr-1 overflow-hidden cursor-default ml-2",
                                 effectiveStatus === "error"
                                   ? isSelected
-                                    ? "bg-destructive/25 border-destructive/50 group-hover:bg-destructive/35"
-                                    : "bg-destructive/20 border-destructive/40 group-hover:bg-destructive/30"
+                                    ? "bg-amber-200 border-amber-400 group-hover:bg-amber-300"
+                                    : "bg-amber-100 border-amber-300 group-hover:bg-amber-200"
                                   : isSelected
                                     ? "bg-primary border-primary group-hover:bg-primary/90"
                                     : "bg-muted border-border group-hover:bg-muted-foreground/20"
@@ -1228,7 +1202,7 @@ export function WorkflowGantt({ selectedNodeId = null, onNodeSelect, compact = f
                                   className={cn(
                                     "text-[10px] font-medium tabular-nums whitespace-nowrap",
                                     effectiveStatus === "error"
-                                      ? "text-destructive"
+                                      ? "text-amber-800"
                                       : isSelected
                                         ? "text-primary-foreground/80"
                                         : "text-muted-foreground"

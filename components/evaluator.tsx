@@ -15,7 +15,6 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  ChevronUp,
   CloudDownload,
   CloudUpload,
   Copy,
@@ -55,6 +54,9 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuCheckboxItem,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import {
@@ -89,6 +91,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
   Drawer,
   DrawerClose,
@@ -1333,7 +1336,6 @@ function emptyNewVariantDraft(): { nodeId: string; values: Record<string, string
 
 /** Cell detail sheet — output block styled like structured output viewer (tabs, copy, expand). */
 function CellSheetOutputPanel({ output, sourceLabel }: { output: string; sourceLabel: string }) {
-  const [collapsed, setCollapsed] = useState(false)
   const [view, setView] = useState<"formatted" | "text">("formatted")
   const [expandOpen, setExpandOpen] = useState(false)
 
@@ -1361,25 +1363,11 @@ function CellSheetOutputPanel({ output, sourceLabel }: { output: string; sourceL
     <div className="flex flex-col gap-0 px-5 py-4">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2 text-gray-600">
-          <FileOutput className="h-4 w-4 shrink-0 text-gray-500" aria-hidden />
-          <span className="text-sm font-medium text-gray-700">Output</span>
-          <span className="truncate text-xs font-normal text-gray-400">· {sourceLabel}</span>
+          <span className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Output</span>
         </div>
-        <button
-          type="button"
-          onClick={() => setCollapsed((c) => !c)}
-          className="shrink-0 rounded-md p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-          aria-expanded={!collapsed}
-          aria-label={collapsed ? "Expand output section" : "Collapse output section"}
-        >
-          <ChevronUp className={cn("h-4 w-4 transition-transform", collapsed && "rotate-180")} aria-hidden />
-        </button>
       </div>
 
-      {!collapsed && (
-        <>
-          <p className="mt-3 text-xs text-gray-400">Output</p>
-          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
             <div className="inline-flex rounded-lg bg-gray-100/90 p-0.5">
               <button
                 type="button"
@@ -1426,15 +1414,13 @@ function CellSheetOutputPanel({ output, sourceLabel }: { output: string; sourceL
                 <Copy className="h-3.5 w-3.5" aria-hidden />
               </Button>
             </div>
-          </div>
+      </div>
 
-          <div className="relative mt-3 min-h-[120px] max-h-[min(42vh,300px)] resize-y overflow-y-auto rounded-lg border border-gray-200 bg-[#f5f5f6] p-3 [scrollbar-width:thin]">
-            <pre className="m-0 whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-gray-700">
-              {displayContent || "—"}
-            </pre>
-          </div>
-        </>
-      )}
+      <div className="relative mt-3 min-h-[120px] max-h-[min(42vh,300px)] resize-y overflow-y-auto rounded-lg border border-gray-200 bg-[#f5f5f6] p-3 [scrollbar-width:thin]">
+        <pre className="m-0 whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-gray-700">
+          {displayContent || "—"}
+        </pre>
+      </div>
 
       <Dialog open={expandOpen} onOpenChange={setExpandOpen}>
         <DialogContent className="flex max-h-[min(90vh,720px)] max-w-3xl flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
@@ -1511,8 +1497,9 @@ function ExperimentTab({
   const [sheetRunId, setSheetRunId] = useState<string | null>(null)
   /** Side sheet: manual typing/samples vs dataset vs logged run (mutually exclusive). */
   const [inputSheetSource, setInputSheetSource] = useState<"manual" | "dataset" | "run">("manual")
-  /** Dataset tab: which mock dataset is selected (submenus are unreliable inside the portaled sheet). */
-  const [inputSheetDatasetId, setInputSheetDatasetId] = useState(() => MOCK_DATASETS[0]?.id ?? "")
+  const [inputSheetDatasetId, setInputSheetDatasetId] = useState<string | null>(null)
+  const [inputSheetCaseIdx, setInputSheetCaseIdx] = useState<number | null>(null)
+  const [inputSheetSelectedCases, setInputSheetSelectedCases] = useState<Record<string, Set<number>>>({})
   const [nodeSheet, setNodeSheet]       = useState<{ variantId: string; variantLabel: string } | null>(null)
   /** Side sheet: first pick whether to bind a saved workflow version or edit node overrides. */
   const [nodeSheetMode, setNodeSheetMode] = useState<"workflow-version" | "node-config">("node-config")
@@ -1546,7 +1533,8 @@ function ExperimentTab({
 
   useEffect(() => {
     if (!inputSheet) return
-    setInputSheetDatasetId(MOCK_DATASETS[0]?.id ?? "")
+    setInputSheetDatasetId("")
+    setInputSheetCaseIdx(null)
   }, [inputSheet])
 
   useEffect(() => {
@@ -1636,6 +1624,37 @@ function ExperimentTab({
     if (id === BASELINE_VARIANT_ID) return
     setVariants((prev) => prev.filter((v) => v.id !== id))
   }
+
+  const appendVariantColumn = useCallback(() => {
+    setVariants((prev) => {
+      const baseline = prev.find((v) => v.id === BASELINE_VARIANT_ID) ?? prev[0]
+      if (!baseline) return prev
+      const nextLen = prev.length + 1
+      const label = nextLen === 2 ? "Variant Output" : `Variant ${nextLen}`
+      const id =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? `v-${crypto.randomUUID()}`
+          : `v-${Date.now()}-${Math.random().toString(16).slice(2)}`
+      return [
+        ...prev,
+        {
+          id,
+          label,
+          workflow: {
+            nodeId: baseline.workflow.nodeId,
+            values: { ...baseline.workflow.values },
+          },
+        },
+      ]
+    })
+  }, [])
+
+  const handleAddVariantColumnClick = useCallback(() => {
+    appendVariantColumn()
+    window.setTimeout(() => {
+      setVariantWorkflowIntroOpen(true)
+    }, 420)
+  }, [appendVariantColumn])
 
   const setVariantColumnOutput = useCallback((variantId: string, columnOutput: ExperimentColumnOutput) => {
     setVariants((prev) => prev.map((v) => (v.id === variantId ? { ...v, columnOutput } : v)))
@@ -1789,8 +1808,7 @@ function ExperimentTab({
               <Alert className="border-violet-200 bg-violet-50/90 text-left text-violet-950 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-50 sm:text-left">
                 <Info className="h-4 w-4 text-violet-600 dark:text-violet-300" aria-hidden />
                 <AlertDescription className="text-pretty text-violet-900/90 dark:text-violet-100/90">
-                  You&apos;ll open the Workflow tab to change prompts and settings. Run progress stays hidden in variant mode. When you&apos;re done, click{" "}
-                  <span className="font-medium text-violet-950 dark:text-violet-50">Create variant</span> in the top bar to add a matrix column and return here.
+                  You&apos;ll open the Workflow tab to change prompts and settings. When you&apos;re done, click on save variant.
                 </AlertDescription>
               </Alert>
             </DialogDescription>
@@ -1848,7 +1866,7 @@ function ExperimentTab({
                     variant="outline"
                     size="sm"
                     className="h-7 gap-1.5 rounded-md px-3 text-xs font-medium text-foreground shadow-none bg-white hover:bg-gray-50"
-                    onClick={() => setVariantWorkflowIntroOpen(true)}
+                    onClick={handleAddVariantColumnClick}
                   >
                     <Plus className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
                     Add variant column
@@ -2480,88 +2498,140 @@ function ExperimentTab({
           closeDatasetSheet()
         }
 
-        const selectedDataset =
-          MOCK_DATASETS.find((d) => d.id === inputSheetDatasetId) ?? MOCK_DATASETS[0] ?? null
+        const selectedDataset = inputSheetDatasetId
+          ? MOCK_DATASETS.find((d) => d.id === inputSheetDatasetId) ?? null
+          : null
+
+        const selectedCasesForDataset = inputSheetDatasetId ? (inputSheetSelectedCases[inputSheetDatasetId] ?? new Set<number>()) : new Set<number>()
+        const totalSelectedCases = selectedCasesForDataset.size
+
+        const toggleDatasetCase = (dsId: string, rowIdx: number) => {
+          setInputSheetSelectedCases((prev) => {
+            const existing = new Set(prev[dsId] ?? [])
+            if (existing.has(rowIdx)) existing.delete(rowIdx)
+            else existing.add(rowIdx)
+            return { ...prev, [dsId]: existing }
+          })
+        }
+
+        const addCaseFromDataset = (ds: Dataset, rowIdx: number) => {
+          const row = ds.rows[rowIdx]
+          if (!row) return
+          setCases((prev) => [...prev, {
+            id: `c-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            input: row.input,
+            expected: row.expected,
+          }])
+        }
+
+        const addAllCasesFromDataset = (ds: Dataset) => {
+          const newCases: TestCase[] = ds.rows.map((row) => ({
+            id: `c-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            input: row.input,
+            expected: row.expected,
+          }))
+          setCases((prev) => [...prev, ...newCases])
+        }
 
         const datasetPanelJsx = (
           <div className="mt-1 flex flex-col gap-3">
-            <div className="flex items-start justify-between gap-2">
-              <p className="min-w-0 text-xs leading-relaxed text-gray-500">
-                {isTrigger
-                  ? "Each row replaces this case’s trigger payload (and expected if present)."
-                  : "Each row replaces this case’s workflow input (and expected if present)."}
-              </p>
+            <p className="min-w-0 text-xs leading-relaxed text-gray-500">
+              {isTrigger
+                ? "Each row replaces this case's trigger payload (and expected if present)."
+                : "Each row replaces this case's workflow input (and expected if present)."}
+            </p>
+
+            {/* Dataset select */}
+            <div className="flex flex-col gap-1.5">
+              <p className="text-xs font-medium text-gray-600">Dataset</p>
+              <Select
+                value={inputSheetDatasetId ?? ""}
+                onValueChange={(val) => {
+                  setInputSheetDatasetId(val || null)
+                  setInputSheetCaseIdx(null)
+                }}
+              >
+                <SelectTrigger className="h-9 w-full rounded-lg border-gray-200 bg-white text-sm text-gray-900 focus:ring-2 focus:ring-gray-300">
+                  <SelectValue placeholder="Select a dataset…" />
+                </SelectTrigger>
+                <SelectContent className="z-[200]">
+                  {MOCK_DATASETS.map((ds) => (
+                    <SelectItem key={ds.id} value={ds.id}>
+                      <span className="flex items-center gap-2">
+                        <Database className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                        <span>{ds.name}</span>
+                        <span className="text-xs text-gray-400">{ds.rows.length} cases</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            {selectedDataset ? (
-              <div className="flex flex-col gap-2">
-                <p className="text-xs font-medium text-gray-500">Dataset</p>
-                <Select value={selectedDataset.id} onValueChange={setInputSheetDatasetId}>
-                  <SelectTrigger
-                    aria-label="Choose dataset"
-                    className="h-auto min-h-10 w-full border-gray-200 bg-gray-50/50 py-2.5 text-left text-sm text-gray-900 shadow-none hover:bg-gray-50/80 [&_svg]:shrink-0"
-                  >
-                    <span className="flex min-w-0 flex-1 items-center gap-2">
-                      <Database className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
-                      <SelectValue placeholder="Select a dataset…" />
-                    </span>
-                  </SelectTrigger>
-                  <SelectContent
-                    side="left"
-                    align="start"
-                    position="popper"
-                    className="z-[100] w-[var(--radix-select-trigger-width)] max-w-[min(100vw-2rem,var(--radix-select-trigger-width))]"
-                  >
-                    {MOCK_DATASETS.map((ds) => (
-                      <SelectItem key={ds.id} value={ds.id} textValue={ds.name} className="cursor-pointer py-2.5">
-                        <span className="flex w-full min-w-0 items-center justify-between gap-2">
-                          <span className="font-medium text-gray-800">{ds.name}</span>
-                          <span className="shrink-0 text-xs text-muted-foreground">{ds.rows.length} cases</span>
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-auto min-h-10 w-full justify-start gap-2 border-gray-200 bg-white py-2.5 text-left text-sm font-normal hover:bg-gray-50"
-                  onClick={() => {
-                    const newCases: TestCase[] = selectedDataset.rows.map((row) => ({
-                      id: `c-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-                      input: row.input,
-                      expected: row.expected,
-                    }))
-                    setCases((prev) => [...prev, ...newCases])
-                    closeDatasetSheet()
-                  }}
-                >
-                  <Plus className="h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden />
-                  <span className="font-medium text-gray-800">
-                    Add all {selectedDataset.rows.length} cases as new rows
-                  </span>
-                </Button>
-                <div className="rounded-md border border-gray-200 bg-gray-50/30">
-                  <p className="border-b border-gray-100 px-2.5 py-1.5 text-[11px] font-medium text-gray-500">
-                    Or pick one row to replace this case
-                  </p>
-                  <div className="max-h-52 space-y-0.5 overflow-y-auto p-1">
-                    {selectedDataset.rows.map((row, ri) => (
+
+            {/* Case picker — only when dataset selected */}
+            {selectedDataset && (() => {
+              const ds = selectedDataset
+              return (
+                <div className="flex flex-col gap-1.5">
+                  <p className="text-xs font-medium text-gray-600">Case</p>
+                  <Popover>
+                    <PopoverTrigger asChild>
                       <button
-                        key={ri}
                         type="button"
-                        onClick={() => applyDatasetRowToCurrentCase(row)}
-                        className="flex w-full cursor-pointer flex-col items-start gap-0.5 rounded-sm px-2 py-2.5 text-left transition-colors hover:bg-accent"
+                        className="flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 text-left text-sm text-gray-900 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-300"
                       >
-                        <span className="line-clamp-2 w-full text-xs leading-snug text-gray-700">{row.input}</span>
-                        {row.expected ? (
-                          <span className="w-full truncate font-mono text-[10px] text-gray-400">{row.expected}</span>
-                        ) : null}
+                        <span className={cn("truncate", inputSheetCaseIdx === null ? "text-gray-400" : "text-gray-900")}>
+                          {inputSheetCaseIdx === null
+                            ? "Select a case…"
+                            : `Case ${inputSheetCaseIdx + 1} — ${ds.rows[inputSheetCaseIdx]?.input.slice(0, 40)}…`}
+                        </span>
+                        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-400" />
                       </button>
-                    ))}
-                  </div>
+                    </PopoverTrigger>
+                    <PopoverContent align="start" className="z-[200] w-[var(--radix-popover-trigger-width)] p-0" sideOffset={4}>
+                      {/* Add all */}
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2 border-b border-gray-100 px-3 py-2.5 text-left text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+                        onClick={() => {
+                          addAllCasesFromDataset(ds)
+                          toast.success(`Added all ${ds.rows.length} cases`)
+                        }}
+                      >
+                        <Plus className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                        Add all {ds.rows.length} cases
+                      </button>
+                      {/* Individual cases */}
+                      <div className="max-h-52 overflow-y-auto py-1">
+                        {ds.rows.map((row, ri) => (
+                          <button
+                            key={ri}
+                            type="button"
+                            className={cn(
+                              "flex w-full items-start gap-2 px-3 py-2 text-left transition-colors hover:bg-gray-50",
+                              inputSheetCaseIdx === ri ? "bg-gray-50" : ""
+                            )}
+                            onClick={() => {
+                              setInputSheetCaseIdx(ri)
+                              addCaseFromDataset(ds, ri)
+                              toast.success(`Case ${ri + 1} added`)
+                            }}
+                          >
+                            <span className="mt-0.5 shrink-0 rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] text-gray-500">{ri + 1}</span>
+                            <span className="min-w-0 flex-1">
+                              <span className="line-clamp-2 text-xs leading-snug text-gray-700">{row.input}</span>
+                              {row.expected && (
+                                <span className="mt-0.5 block truncate font-mono text-[10px] text-gray-400">{row.expected.slice(0, 60)}</span>
+                              )}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                 </div>
-              </div>
-            ) : null}
+              )
+            })()}
           </div>
         )
 
@@ -2956,7 +3026,6 @@ function ExperimentTab({
                         setCellSheet(null)
                       }}
                     >
-                      <BarChart3 className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
                       View run timeline in Analytics
                     </Button>
                   </div>
@@ -3286,11 +3355,6 @@ const LLM_JUDGE_MODEL_OPTIONS: { value: string; label: string }[] = [
   { value: "o3-mini", label: "o3-mini" },
   { value: "claude-sonnet-4", label: "Claude Sonnet 4" },
 ]
-
-function judgeModelDisplayLabel(value: string | undefined): string {
-  if (!value) return LLM_JUDGE_MODEL_OPTIONS[0]?.label ?? DEFAULT_LLM_JUDGE_MODEL
-  return LLM_JUDGE_MODEL_OPTIONS.find((o) => o.value === value)?.label ?? value
-}
 
 function CreateEvaluatorDialog({
   open,
@@ -3630,13 +3694,53 @@ sentiment: frustrated  →  tone_score >= 4`,
             </section>
           )}
 
+          {evalType != null && (
+            <div className="space-y-3 rounded-lg border border-border/60 bg-muted/30 px-4 py-3.5 dark:border-border/50 dark:bg-muted/15">
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="eval-signal-threshold-slider" className="text-xs font-medium text-foreground/80">
+                  Fail threshold
+                </Label>
+                <span className="text-xs font-semibold tabular-nums text-foreground">
+                  {alertThreshold}.0 / 10
+                </span>
+              </div>
+              <input
+                id="eval-signal-threshold-slider"
+                type="range"
+                min={1}
+                max={9}
+                step={1}
+                value={alertThreshold}
+                onChange={(e) => setAlertThreshold(e.target.value)}
+                className="w-full accent-primary h-1.5 cursor-pointer"
+              />
+            </div>
+          )}
+
           <Separator />
 
           <section className="space-y-4">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1 pr-2">
-                <p className="text-sm font-medium">Run automatically in production</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Score real runs automatically and emit a signal when quality drops.</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-sm font-medium">Run automatically in production</p>
+                  <TooltipProvider delayDuration={200}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="inline-flex h-4 w-4 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                          aria-label="Why enable automatic run scoring"
+                        >
+                          <Info className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" align="start" className="max-w-[280px] text-xs leading-relaxed">
+                        Score real runs automatically and emit a signal when quality drops.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
               </div>
               <Switch checked={autoRun} onCheckedChange={setAutoRun} />
             </div>
@@ -3734,7 +3838,7 @@ sentiment: frustrated  →  tone_score >= 4`,
                       </div>
                       <div className="min-w-0 pt-0.5">
                         <h3 id="eval-signal-threshold-title" className="text-sm font-semibold leading-tight tracking-tight">
-                          Emit signal when score drops below
+                          Emit Signal when score drops below
                         </h3>
                         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                           Creates an entry in the Signals tab for any failing run.
@@ -3748,33 +3852,6 @@ sentiment: frustrated  →  tone_score >= 4`,
                       aria-labelledby="eval-signal-threshold-title"
                     />
                   </header>
-                  {alertEnabled && (
-                    <div className="space-y-3 bg-muted/30 px-4 py-3.5 dark:bg-muted/15">
-                      <div className="flex items-center justify-between gap-2">
-                        <Label htmlFor="eval-signal-threshold-slider" className="text-xs font-medium text-foreground/80">
-                          Fail threshold
-                        </Label>
-                        <span className="text-xs font-semibold tabular-nums text-foreground">
-                          {alertThreshold}.0 / 10
-                        </span>
-                      </div>
-                      <input
-                        id="eval-signal-threshold-slider"
-                        type="range"
-                        min={1}
-                        max={9}
-                        step={1}
-                        value={alertThreshold}
-                        onChange={(e) => setAlertThreshold(e.target.value)}
-                        className="w-full accent-primary h-1.5 cursor-pointer"
-                      />
-                      <p className="text-xs leading-relaxed text-muted-foreground">
-                        Runs scoring below{" "}
-                        <span className="font-medium text-foreground">{alertThreshold}.0</span> will
-                        appear in Signals with the run ID, score, and evaluator explanation attached.
-                      </p>
-                    </div>
-                  )}
                 </section>
               </div>
             )}
@@ -3840,13 +3917,13 @@ const INITIAL_EVALUATORS: EvaluatorConfig[] = [
   },
 ]
 
-/** Evaluators tab table — 7 tracks (one per cell); Criteria gets the most flex; Mode stays narrow. */
+/** Evaluators tab table — 6 tracks (Type merged into Eval); Criteria gets the most flex; Mode stays narrow. */
 const EVALUATOR_TABLE_COL =
-  "grid w-full grid-cols-[minmax(176px,1.25fr)_minmax(104px,0.78fr)_minmax(100px,0.72fr)_minmax(200px,2.35fr)_minmax(80px,0.52fr)_minmax(84px,0.62fr)_44px] gap-4 items-center"
+  "grid w-full grid-cols-[minmax(176px,1.25fr)_minmax(104px,0.78fr)_minmax(200px,2.35fr)_minmax(80px,0.52fr)_minmax(84px,0.62fr)_44px] gap-4 items-center"
 
 /** Signals tab — linked evaluator sits under signal name (no separate Evaluator column) */
 const SIGNAL_TABLE_COL =
-  "grid grid-cols-[minmax(200px,1.55fr)_minmax(100px,0.7fr)_minmax(128px,0.85fr)_minmax(100px,0.65fr)_minmax(60px,0.5fr)_40px] gap-4 items-start"
+  "grid grid-cols-[minmax(200px,1.55fr)_minmax(100px,0.7fr)_minmax(128px,0.85fr)_minmax(100px,0.65fr)_minmax(60px,0.5fr)_40px] gap-4 items-center"
 
 function datasetFormatAccent(format: string): string {
   const f = format.toLowerCase()
@@ -3931,7 +4008,7 @@ function EvaluatorsTab({
         </Button>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-border/80 bg-background shadow-sm">
+      <div className="overflow-x-auto rounded-lg border border-border/80 bg-background shadow-sm">
         {/* Table header — Vercel-style: horizontal rules only, muted labels */}
         <div
           className={cn(
@@ -3941,7 +4018,6 @@ function EvaluatorsTab({
         >
           <span>Eval</span>
           <span>What to evaluate</span>
-          <span>Type</span>
           <span>Criteria</span>
           <span>Mode</span>
           <span className="text-right">Runs</span>
@@ -3971,11 +4047,10 @@ function EvaluatorsTab({
                 ) : (
                   <span className="text-sm text-muted-foreground">—</span>
                 )}
-                {ev.passThreshold != null && (
-                  <span className="inline-flex w-fit items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:border-amber-800/40 dark:bg-amber-950/30 dark:text-amber-400">
-                    <Target className="h-2.5 w-2.5 shrink-0" aria-hidden />
-                    pass &ge; {(ev.passThreshold / 10).toFixed(1)}
-                  </span>
+                {ev.type ? (
+                  <span className="text-[13px] text-foreground">{ev.type}</span>
+                ) : (
+                  <span className="text-[13px] text-muted-foreground/50">—</span>
                 )}
               </div>
 
@@ -3987,19 +4062,8 @@ function EvaluatorsTab({
               </div>
 
               <div className="min-w-0">
-                {ev.type ? (
-                  <span className="text-[13px] text-foreground">{ev.type}</span>
-                ) : (
-                  <span className="text-[13px] text-muted-foreground/50">—</span>
-                )}
-              </div>
-
-              <div className="min-w-0">
                 {ev.type === "LLM judge" ? (
                   <div className="flex flex-col gap-1">
-                    <span className="text-[11px] font-medium text-foreground/85">
-                      {judgeModelDisplayLabel(ev.judgeModel)}
-                    </span>
                     {ev.expected && ev.expected !== "—" ? (
                       <p
                         className="text-[13px] text-muted-foreground leading-snug line-clamp-2"
@@ -4010,6 +4074,12 @@ function EvaluatorsTab({
                     ) : (
                       <span className="text-[12px] text-muted-foreground/60">No rubric</span>
                     )}
+                    {ev.passThreshold != null && (
+                      <span className="inline-flex w-fit items-center gap-1 rounded border border-border/70 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        <Target className="h-2.5 w-2.5 shrink-0" aria-hidden />
+                        pass &ge; {(ev.passThreshold / 10).toFixed(1)}
+                      </span>
+                    )}
                   </div>
                 ) : ev.expected && ev.expected !== "—" ? (
                   <div className="flex flex-col gap-1">
@@ -4019,6 +4089,12 @@ function EvaluatorsTab({
                     >
                       {ev.expected}
                     </p>
+                    {ev.passThreshold != null && (
+                      <span className="inline-flex w-fit items-center gap-1 rounded border border-border/70 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        <Target className="h-2.5 w-2.5 shrink-0" aria-hidden />
+                        pass &ge; {(ev.passThreshold / 10).toFixed(1)}
+                      </span>
+                    )}
                   </div>
                 ) : (
                   <span className="text-[13px] text-muted-foreground/50">—</span>
@@ -4553,14 +4629,14 @@ function AddCasesModal({ open, onOpenChange, dataset, onSave }: {
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
-        <DialogHeader className="px-6 pt-6 pb-4 border-b border-border/60 space-y-1">
-          <DialogTitle>Add test cases</DialogTitle>
-          <DialogDescription>
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="w-full sm:max-w-lg flex flex-col gap-0 p-0 overflow-hidden">
+        <SheetHeader className="px-6 pt-6 pb-4 border-b border-border/60 space-y-1 text-left shrink-0">
+          <SheetTitle>Add test cases</SheetTitle>
+          <SheetDescription>
             Adding to <span className="font-medium text-foreground">{dataset?.name}</span> — {dataset?.cases.length ?? 0} existing row{(dataset?.cases.length ?? 0) !== 1 ? "s" : ""}
-          </DialogDescription>
-        </DialogHeader>
+          </SheetDescription>
+        </SheetHeader>
         <div className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-4">
           <div className="space-y-2">
             <Label htmlFor="add-cases-source">Add cases from</Label>
@@ -4654,22 +4730,41 @@ function AddCasesModal({ open, onOpenChange, dataset, onSave }: {
             </div>
           )}
         </div>
-        <DialogFooter className="px-6 py-4 border-t border-border/60 bg-muted/10 gap-2 sm:gap-2 flex-col sm:flex-row sm:justify-end">
+        <div className="px-6 py-4 border-t border-border/60 bg-muted/10 flex items-center justify-end gap-2 shrink-0">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={handleSave} disabled={cases.every(c => !c.input.trim())}>Save test cases</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </SheetContent>
+    </Sheet>
   )
 }
 
-function DatasetTab() {
+function DatasetTab({
+  openDatasetName = null,
+  onOpenDatasetHandled,
+}: {
+  openDatasetName?: string | null
+  onOpenDatasetHandled?: () => void
+} = {}) {
   const [datasets, setDatasets] = useState<DatasetItem[]>(INITIAL_DATASET_ITEMS)
   const [openDatasetId, setOpenDatasetId] = useState<string | null>(null)
   const [newDatasetOpen, setNewDatasetOpen] = useState(false)
   const [addCasesOpen, setAddCasesOpen] = useState(false)
 
   const openDataset = datasets.find(d => d.id === openDatasetId) ?? null
+
+  useEffect(() => {
+    if (!openDatasetName) return
+    const match = datasets.find((d) => d.name.toLowerCase() === openDatasetName.toLowerCase())
+    if (match) {
+      setOpenDatasetId(match.id)
+    } else {
+      toast.message("Dataset not found", {
+        description: `Could not find "${openDatasetName}" in Evaluator datasets.`,
+      })
+    }
+    onOpenDatasetHandled?.()
+  }, [datasets, onOpenDatasetHandled, openDatasetName])
 
   function handleNewDataset(ds: DatasetItem) {
     setDatasets(prev => [ds, ...prev])
@@ -4716,7 +4811,7 @@ function DatasetTab() {
 
         {/* Cases table */}
         <div className="flex-1 overflow-auto p-6">
-          <div className="overflow-x-auto rounded-xl border border-border/80 bg-background shadow-sm">
+          <div className="overflow-x-auto rounded-lg border border-border/80 bg-background shadow-sm">
             {/* Header */}
             <div className="grid grid-cols-[2rem_2fr_3fr_2rem] min-w-[560px] gap-6 px-4 py-2.5 border-b border-border/70 bg-muted/30 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
               <span>#</span>
@@ -4773,7 +4868,7 @@ function DatasetTab() {
         </Button>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-border/80 bg-background shadow-sm">
+      <div className="overflow-x-auto rounded-lg border border-border/80 bg-background shadow-sm">
         {/* Table header */}
         <div className="grid grid-cols-[2fr_1fr_2fr_1fr_2rem] min-w-[640px] gap-4 px-4 py-2.5 border-b border-border/70 bg-muted/30 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           <span>Dataset</span>
@@ -5003,6 +5098,7 @@ const INITIAL_SIGNAL_ITEMS: SignalListItem[] = [
     id: "sig-escalation",
     name: "Escalation keyword",
     detectionType: "regex",
+    category: "task",
     description: "Matches output against /(escalat|supervisor|manager)/i — flags runs where human handoff was triggered.",
     lastFired: "Apr 14, 2026",
     updated: "Apr 14, 2026",
@@ -5027,6 +5123,10 @@ const INITIAL_SIGNAL_ITEMS: SignalListItem[] = [
 
 function categoryLabel(cat?: SignalCategoryId): string {
   return SIGNAL_CATEGORIES.find((c) => c.id === cat)?.label ?? "—"
+}
+
+function categoryMeta(cat?: SignalCategoryId) {
+  return SIGNAL_CATEGORIES.find((c) => c.id === cat)
 }
 
 function signalScopeLabel(scope: SignalScopeValue | undefined): string {
@@ -5422,7 +5522,7 @@ function SignalsTab({
         </Button>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-border/80 bg-background shadow-sm">
+      <div className="overflow-x-auto rounded-lg border border-border/80 bg-background shadow-sm">
         <div
           className={cn(
             SIGNAL_TABLE_COL,
@@ -5430,7 +5530,7 @@ function SignalsTab({
           )}
         >
           <span>Signal</span>
-          <span>Category</span>
+          <span>Type</span>
           <span>Scope</span>
           <span>Last fired</span>
           <span>Status</span>
@@ -5472,10 +5572,30 @@ function SignalsTab({
               </div>
 
               {/* Category */}
-              <div className="min-w-0 flex items-center pt-0.5">
-                <span className="text-[13px] text-muted-foreground truncate">
-                  {sig.category ? categoryLabel(sig.category) : <span className="text-muted-foreground/50">—</span>}
-                </span>
+              <div className="min-w-0 flex flex-col gap-1 pt-0.5">
+                {sig.linkedEvaluatorName ? (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); if (sig.linkedEvaluatorId != null) onOpenEvaluator(sig.linkedEvaluatorId) }}
+                    className="w-fit flex items-center gap-1 rounded-md border border-border bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-muted/80"
+                    title={`Linked evaluator: ${sig.linkedEvaluatorName}`}
+                  >
+                    <span className="truncate max-w-[10rem]">{sig.linkedEvaluatorName}</span>
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    {sig.category ? (
+                      <>
+                        <span className="shrink-0 text-muted-foreground [&_svg]:h-3.5 [&_svg]:w-3.5" aria-hidden>
+                          {categoryMeta(sig.category)?.icon}
+                        </span>
+                        <span className="text-[13px] text-muted-foreground truncate">{categoryLabel(sig.category)}</span>
+                      </>
+                    ) : (
+                      <span className="text-[13px] text-muted-foreground/50">—</span>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Scope */}
@@ -5555,6 +5675,8 @@ export function Evaluator({
   onVariantAppendConsumed,
   variantBuilderIntroToken = null,
   onVariantBuilderIntroConsumed,
+  pendingOpenDatasetName = null,
+  onPendingOpenDatasetConsumed,
 }: {
   experimentSeedFromRun?: ExperimentRunSeed | null
   onNavigateToWorkflow?: () => void
@@ -5562,8 +5684,11 @@ export function Evaluator({
   onVariantAppendConsumed?: () => void
   variantBuilderIntroToken?: string | null
   onVariantBuilderIntroConsumed?: () => void
+  pendingOpenDatasetName?: string | null
+  onPendingOpenDatasetConsumed?: () => void
 } = {}) {
   const [activeTab, setActiveTab] = useState<InnerTab>("Experiment")
+  const [datasetAutoOpenName, setDatasetAutoOpenName] = useState<string | null>(null)
   const [evaluators, setEvaluators] = useState<EvaluatorConfig[]>(INITIAL_EVALUATORS)
   const [evalDefs, setEvalDefs] = useState<EvaluatorDef[]>(INITIAL_EVALUATORS_DEF)
   const [selectedEvalIds, setSelectedEvalIds] = useState<string[]>([])
@@ -5580,6 +5705,13 @@ export function Evaluator({
     if (!variantBuilderIntroToken) return
     setActiveTab("Experiment")
   }, [variantBuilderIntroToken])
+
+  useEffect(() => {
+    if (!pendingOpenDatasetName) return
+    setDatasetAutoOpenName(pendingOpenDatasetName)
+    setActiveTab("Dataset")
+    onPendingOpenDatasetConsumed?.()
+  }, [onPendingOpenDatasetConsumed, pendingOpenDatasetName])
 
   useEffect(() => {
     setSelectedEvalIds((prev) => prev.filter((id) => evalDefs.some((e) => e.id === id)))
@@ -5747,7 +5879,12 @@ export function Evaluator({
             }}
           />
         )}
-        {activeTab === "Dataset" && <DatasetTab />}
+        {activeTab === "Dataset" && (
+          <DatasetTab
+            openDatasetName={datasetAutoOpenName}
+            onOpenDatasetHandled={() => setDatasetAutoOpenName(null)}
+          />
+        )}
       </div>
     </div>
   )

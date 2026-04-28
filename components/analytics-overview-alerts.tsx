@@ -50,8 +50,6 @@ type UnifiedAlertsProps = {
 export function UnifiedAlertsPanel({
   signals,
   clusters,
-  signalsHighCount,
-  clustersHighCount,
   onReviewRun,
   onSignalAction,
   onOpenCluster,
@@ -71,24 +69,14 @@ export function UnifiedAlertsPanel({
         <span className="flex shrink-0 items-center gap-1.5 text-sm">
           <TriangleAlert className="h-3.5 w-3.5 text-yellow-500" />
           <span className="font-medium text-foreground">{signals.length} signal{signals.length !== 1 ? "s" : ""}</span>
-          {signalsHighCount > 0 && (
-            <span className="rounded-full bg-yellow-100 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-800">
-              {signalsHighCount} high
-            </span>
-          )}
         </span>
 
         <span className="text-border shrink-0">·</span>
 
         {/* Clusters count */}
         <span className="flex shrink-0 items-center gap-1.5 text-sm">
-          <Layers className="h-3.5 w-3.5 text-amber-500" />
+          <Layers className="h-3.5 w-3.5 text-yellow-500" />
           <span className="font-medium text-foreground">{clusters.length} cluster{clusters.length !== 1 ? "s" : ""}</span>
-          {clustersHighCount > 0 && (
-            <span className="rounded-full bg-yellow-100 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-800">
-              {clustersHighCount} high
-            </span>
-          )}
         </span>
 
         <ChevronDown
@@ -115,7 +103,7 @@ export function UnifiedAlertsPanel({
                 >
                   <span className={cn(
                     "h-1.5 w-1.5 shrink-0 rounded-full",
-                    item.severity === "high" ? "bg-red-500" : "bg-amber-400"
+                    item.severity === "high" ? "bg-yellow-500" : "bg-amber-400"
                   )} />
                   <div className="min-w-0 flex-1 flex items-baseline gap-2">
                     <span className="shrink-0 text-sm font-medium text-foreground">{item.name}</span>
@@ -149,7 +137,7 @@ export function UnifiedAlertsPanel({
                   >
                     <span className={cn(
                       "h-1.5 w-1.5 shrink-0 rounded-full",
-                      item.severity === "high" ? "bg-red-500" : "bg-amber-400"
+                      item.severity === "high" ? "bg-yellow-500" : "bg-amber-400"
                     )} />
                     {/* Name + why — same line */}
                     <div className="min-w-0 flex-1 flex items-baseline gap-2">
