@@ -423,8 +423,8 @@ function SaveToDatasetModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md gap-0 p-0 overflow-hidden">
-        <DialogHeader className="px-6 pt-6 pb-4 space-y-1.5 border-b border-border/60">
+      <DialogContent className="h-auto gap-0 overflow-hidden p-0 sm:max-w-md">
+        <DialogHeader className="px-6 pt-6 pb-4 space-y-1.5">
           <DialogTitle>Save Run to dataset</DialogTitle>
           <DialogDescription>
             Choose a dataset or create one, set a label, and add optional notes.
@@ -625,6 +625,8 @@ const RUN_GUARDRAIL_EVENTS: Record<string, GuardrailEvent[]> = {
 }
 
 const SHOW_RUN_SIDEBAR_GUARDRAILS = false
+const SHOW_ANALYTICS_CLUSTERS_TAB = false
+const SHOW_ANALYTICS_GUARDRAILS_TAB = false
 
 type RunDetailSignal = {
   nodeId: string
@@ -744,7 +746,6 @@ function RunDetailEvalGradingRow({
   onFixWithAi?: () => void
   onSimulateRun?: () => void
 }) {
-  const full = "Score " + formatRunEvalScoreTenPoint(score) + "/10 \u2014 " + summary
   const threshold = EVALUATOR_PASS_THRESHOLDS[evalLabel]
   const pass = threshold == null || score >= threshold
   const showStats = Boolean(latencyLabel && tokensLabel)
@@ -777,7 +778,7 @@ function RunDetailEvalGradingRow({
         ) : null}
       </AlertTitle>
       <AlertDescription className="mt-1 flex flex-col gap-2 text-xs leading-relaxed">
-        <p>{full}</p>
+        <p>{summary}</p>
         <div className="flex justify-end gap-2 pt-0.5">
           <Button
             size="sm"
@@ -972,6 +973,11 @@ const RERUN_SIMULATION_SUGGESTION = {
     "Prompt now injects charge age and policy context to reduce hallucinated eligibility decisions.",
   ],
 }
+
+const ANALYTICS_TAB_LIST_CLASS =
+  "mb-6 inline-flex h-auto w-fit items-center gap-0.5 rounded-md border border-border bg-muted p-0.5"
+const ANALYTICS_TAB_TRIGGER_CLASS =
+  "h-auto flex-none px-3 py-1 text-[13px] font-medium rounded-[5px] text-muted-foreground hover:text-foreground data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-sm dark:data-[state=active]:bg-background"
 
 export function Analytics({
   onSwitchToWorkflow,
@@ -1456,7 +1462,7 @@ export function Analytics({
         if (!open) setEvaluateRunTargetId(null)
       }}
     >
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="h-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Evaluate run</DialogTitle>
           <DialogDescription>
@@ -2937,7 +2943,7 @@ export function Analytics({
             if (!open) setApplyWorkflowDraftModalOpen(false)
           }}
         >
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="h-auto sm:max-w-md">
             <DialogHeader>
               <DialogTitle>Apply changes to workflow draft</DialogTitle>
               <DialogDescription asChild>
@@ -3010,19 +3016,23 @@ export function Analytics({
         <div className="min-h-0 flex-1 overflow-auto bg-muted">
           <div className="px-6 py-4">
         <Tabs value={analyticsTab} onValueChange={setAnalyticsTab} className="gap-0">
-          <TabsList className="mb-6 h-auto min-h-9 w-full flex-wrap justify-start gap-1 rounded-lg bg-muted p-1 sm:w-fit sm:flex-nowrap">
-            <TabsTrigger value="overview" className="px-3">
+          <TabsList className={ANALYTICS_TAB_LIST_CLASS}>
+            <TabsTrigger value="overview" className={ANALYTICS_TAB_TRIGGER_CLASS}>
               Overview
             </TabsTrigger>
-            <TabsTrigger value="conversations" className="px-3">
+            <TabsTrigger value="conversations" className={ANALYTICS_TAB_TRIGGER_CLASS}>
               Conversations
             </TabsTrigger>
-            <TabsTrigger value="clusters" className="px-3">
-              Clusters
-            </TabsTrigger>
-            <TabsTrigger value="guardrails" className="px-3">
-              Guardrails
-            </TabsTrigger>
+            {SHOW_ANALYTICS_CLUSTERS_TAB && (
+              <TabsTrigger value="clusters" className={ANALYTICS_TAB_TRIGGER_CLASS}>
+                Clusters
+              </TabsTrigger>
+            )}
+            {SHOW_ANALYTICS_GUARDRAILS_TAB && (
+              <TabsTrigger value="guardrails" className={ANALYTICS_TAB_TRIGGER_CLASS}>
+                Guardrails
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <div className="sticky top-0 z-20 -mx-6 mb-6 flex items-center justify-between bg-muted/55 px-6 py-4 backdrop-blur-md backdrop-saturate-150">
@@ -3269,13 +3279,13 @@ export function Analytics({
                 tabContext?.openExperimentWithRun({ runId: item.runId, caseInput: runs.find(r => r.runId === item.runId)?.input })
               } else if (action.kind === "workflow") {
                 tabContext?.setActiveTab("Workflow")
-              } else if (action.kind === "guardrail") {
+              } else if (action.kind === "guardrail" && SHOW_ANALYTICS_GUARDRAILS_TAB) {
                 setAnalyticsTab("guardrails")
               }
             }}
             onOpenCluster={(clusterId) => {
               setSelectedClusterId(clusterId)
-              setAnalyticsTab("clusters")
+              if (SHOW_ANALYTICS_CLUSTERS_TAB) setAnalyticsTab("clusters")
             }}
           />
         </div>
@@ -3704,13 +3714,13 @@ export function Analytics({
             </Card>
           </TabsContent>
 
+          {SHOW_ANALYTICS_CLUSTERS_TAB && (
           <TabsContent value="clusters" className="mt-0">
             {selectedClusterId == null ? (
               <>
                 <ManusTipBanner className="mb-3">
                   <p className="text-muted-foreground">
-                    <span className="font-semibold text-foreground">Clusters</span>{" "}
-                    are groups of runs that failed in the same way — automatically detected by comparing outputs semantically, so you can spot recurring problems without reviewing every run individually.
+                    Clusters are groups of runs that failed in the same way — automatically detected by comparing outputs semantically, so you can spot recurring problems without reviewing every run individually.
                   </p>
                 </ManusTipBanner>
                 {/* ── Cluster list ── */}
@@ -3925,10 +3935,13 @@ export function Analytics({
               )
             })()}
           </TabsContent>
+          )}
 
+          {SHOW_ANALYTICS_GUARDRAILS_TAB && (
           <TabsContent value="guardrails" className="mt-0">
             <Guardrails />
           </TabsContent>
+          )}
 
         </Tabs>
           </div>

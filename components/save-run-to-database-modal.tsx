@@ -93,7 +93,7 @@ export function SaveRunToDatabaseModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md" data-save-run-modal="">
+      <DialogContent className="h-auto sm:max-w-md" data-save-run-modal="">
         <DialogHeader>
           <DialogTitle>Save run to Dataset</DialogTitle>
           <DialogDescription>

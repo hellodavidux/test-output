@@ -4,7 +4,7 @@ import React, { useState, useMemo } from "react"
 import {
   ChevronDown,
   ChevronRight,
-  Play,
+  PencilLine,
   Bot,
   FileText,
   Mail,
@@ -244,7 +244,7 @@ type GanttDisplayRow =
 export function GanttNodeIcon({ type }: { type?: GanttNode["icon"] }) {
   switch (type) {
     case "play":
-      return <Play className="h-3.5 w-3.5 text-muted-foreground" />
+      return <PencilLine className="h-3.5 w-3.5 text-muted-foreground" />
     case "zap":
       return <Bot className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
     case "file":

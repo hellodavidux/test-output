@@ -515,7 +515,7 @@ export function RunProgress({
           setWorkflowEvaluateOpen(open)
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="h-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Evaluate run</DialogTitle>
             <DialogDescription>
