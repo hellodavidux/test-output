@@ -1,3 +1,10 @@
+import { OuterLayout } from "@/components/outer-layout"
+import { OrgAnalytics } from "@/components/org-analytics"
+
 export default function AnalyticsPage() {
-  return <div className="h-screen w-screen bg-background" aria-label="Analytics" />
+  return (
+    <OuterLayout activeNavKey="analytics">
+      <OrgAnalytics />
+    </OuterLayout>
+  )
 }

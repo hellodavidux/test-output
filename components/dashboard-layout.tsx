@@ -276,7 +276,7 @@ export function DashboardLayout({ children, onActionSelect, onRun }: DashboardLa
       key: "analytics",
       label: "Analytics",
       Icon: BarChart,
-      onSelect: () => setActiveTab("Analytics"),
+      onSelect: () => router.push("/analytics"),
     },
     {
       key: "org-evaluator",

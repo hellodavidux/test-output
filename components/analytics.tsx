@@ -3368,7 +3368,7 @@ export function Analytics({
                         <Search className="h-3 w-3" />
                       </div>
                     </TableHead>
-                    <TableHead className="sticky right-0 z-20 w-12 min-w-12 border-l border-border/80 bg-white p-2 pr-3 text-right align-middle shadow-[-8px_0_16px_-8px_rgba(0,0,0,0.12)] dark:bg-card dark:shadow-[-8px_0_16px_-8px_rgba(0,0,0,0.35)]">
+                    <TableHead className="sticky right-0 z-20 w-12 min-w-12 border-l border-border/80 bg-muted/60 p-2 pr-3 text-right align-middle shadow-[-8px_0_16px_-8px_rgba(0,0,0,0.12)] dark:bg-muted/60 dark:shadow-[-8px_0_16px_-8px_rgba(0,0,0,0.35)]">
                       <span className="sr-only">Row actions</span>
                     </TableHead>
                   </TableRow>
@@ -3889,7 +3889,7 @@ export function Analytics({
                             <TableHead className="text-xs font-medium text-muted-foreground max-w-[200px]">Input</TableHead>
                             <TableHead className="text-xs font-medium text-muted-foreground max-w-[200px]">Actual output</TableHead>
                             <TableHead className="text-xs font-medium text-muted-foreground max-w-[200px]">Expected</TableHead>
-                            <TableHead className="sticky right-0 z-20 w-12 border-l border-border/80 bg-white p-2 pr-3 shadow-[-8px_0_16px_-8px_rgba(0,0,0,0.12)] dark:bg-card"><span className="sr-only">Actions</span></TableHead>
+                            <TableHead className="sticky right-0 z-20 w-12 border-l border-border/80 bg-muted/60 p-2 pr-3 shadow-[-8px_0_16px_-8px_rgba(0,0,0,0.12)] dark:bg-muted/60"><span className="sr-only">Actions</span></TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>

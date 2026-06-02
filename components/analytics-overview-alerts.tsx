@@ -1,8 +1,101 @@
 "use client"
 
 import { useState } from "react"
-import { ChevronDown, TriangleAlert } from "lucide-react"
+import { Bell, ChevronDown, Mail, TriangleAlert, User } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { GroupedCombobox, type EntityGroup } from "@/components/ui/combobox/grouped-combobox"
+import { Switch } from "@/components/ui/switch"
+import { Label } from "@/components/ui/label"
+
+// ─── Mock org members (prototype only) ───────────────────────────────────────
+
+const MOCK_ORG_MEMBERS: EntityGroup[] = [
+  {
+    key: "users",
+    label: "Members",
+    icon: User,
+    entities: [
+      { id: "user-1", label: "Alice Chen", description: "alice@company.com" },
+      { id: "user-2", label: "Bob Martinez", description: "bob@company.com" },
+      { id: "user-3", label: "Caro Williams", description: "caro@company.com" },
+      { id: "user-4", label: "David Kim", description: "david@company.com" },
+    ],
+  },
+]
+
+// ─── Notifications section ────────────────────────────────────────────────────
+
+type NotificationChannel = "email" | "in_app"
+
+type SignalNotificationsConfig = {
+  userIds: Array<{ groupKey: string; entityId: string }>
+  channels: Record<NotificationChannel, boolean>
+}
+
+function SignalNotificationsSection() {
+  const [config, setConfig] = useState<SignalNotificationsConfig>({
+    userIds: [],
+    channels: { email: true, in_app: true },
+  })
+
+  const toggleChannel = (channel: NotificationChannel) => {
+    setConfig((prev) => ({
+      ...prev,
+      channels: { ...prev.channels, [channel]: !prev.channels[channel] },
+    }))
+  }
+
+  return (
+    <div className="px-4 py-3 space-y-3">
+      <div className="flex items-center gap-1.5">
+        <Bell className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Notifications</span>
+      </div>
+
+      {/* Users to notify */}
+      <div className="space-y-1.5">
+        <Label className="text-xs text-foreground">Users to notify</Label>
+        <GroupedCombobox
+          groups={MOCK_ORG_MEMBERS}
+          selected={config.userIds}
+          onChange={(userIds) => setConfig((prev) => ({ ...prev, userIds }))}
+          placeholder="Select users"
+          searchPlaceholder="Search users…"
+          emptyMessage="No members found"
+        />
+      </div>
+
+      {/* Channels */}
+      <div className="space-y-1.5">
+        <Label className="text-xs text-foreground">Notify via</Label>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm text-foreground/80">
+              <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+              Email
+            </div>
+            <Switch
+              checked={config.channels.email}
+              onCheckedChange={() => toggleChannel("email")}
+              className="scale-90"
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm text-foreground/80">
+              <Bell className="h-3.5 w-3.5 text-muted-foreground" />
+              In-app
+            </div>
+            <Switch
+              checked={config.channels.in_app}
+              onCheckedChange={() => toggleChannel("in_app")}
+              className="scale-90"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -114,6 +207,8 @@ export function UnifiedAlertsPanel({
             </div>
           </div>
 
+          {/* Notifications section */}
+          <SignalNotificationsSection />
 
         </div>
       )}

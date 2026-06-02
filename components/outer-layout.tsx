@@ -59,7 +59,7 @@ export function OuterLayout({ children, activeNavKey }: OuterLayoutProps) {
     { key: "prompts", label: "Prompts", Icon: PenBoxIcon, href: null },
     { key: "environments", label: "Environments", Icon: GlobeIcon, href: null },
     { key: "pull-requests", label: "Pull Requests", Icon: GitBranchIcon, href: null },
-    { key: "analytics", label: "Analytics", Icon: BarChart, href: null },
+    { key: "analytics", label: "Analytics", Icon: BarChart, href: "/analytics" },
     { key: "org-evaluator", label: "Evaluator", Icon: ListChecks, href: "/org-evaluator" },
     { key: "ai-agents", label: "AI Agents", Icon: BotIcon, href: null },
   ]
