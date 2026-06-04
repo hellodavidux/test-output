@@ -1,10 +1,5 @@
-import { OuterLayout } from "@/components/outer-layout"
-import { OrgEvaluator } from "@/components/org-evaluator"
+import { redirect } from "next/navigation"
 
 export default function OrgEvaluatorPage() {
-  return (
-    <OuterLayout activeNavKey="org-evaluator">
-      <OrgEvaluator />
-    </OuterLayout>
-  )
+  redirect("/org-evaluator/evals")
 }

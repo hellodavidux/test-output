@@ -90,6 +90,7 @@ import { toast } from "sonner"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -103,6 +104,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
@@ -424,58 +426,65 @@ function SaveToDatasetModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="h-auto gap-0 overflow-hidden p-0 sm:max-w-md">
-        <DialogHeader className="px-6 pt-6 pb-4 space-y-1.5">
+        <DialogHeader className="px-6 pt-6 pb-4 space-y-1.5 bg-white">
           <DialogTitle>Save Run to dataset</DialogTitle>
           <DialogDescription>
             Choose a dataset or create one, set a label, and add optional notes.
           </DialogDescription>
         </DialogHeader>
-        <div className="px-6 py-5 space-y-5">
+        <div className="px-6 py-5 space-y-5 bg-white">
           <div className="space-y-2">
             <Label className="text-sm font-medium">Dataset</Label>
-            <div className="flex items-stretch gap-2 min-w-0">
-              {mode === "pick" ? (
-                <Select value={selectedId} onValueChange={setSelectedId}>
-                  <SelectTrigger size="sm" className="flex-1 min-w-0 w-full min-h-9">
-                    <SelectValue placeholder="Select a dataset" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {datasets.map((d) => (
-                      <SelectItem key={d.id} value={d.id}>
-                        {d.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
+            {mode === "pick" ? (
+              <Select
+                value={selectedId}
+                onValueChange={(v) => {
+                  if (v === "__new__") {
+                    setMode("new")
+                    setNewName("")
+                  } else {
+                    setSelectedId(v)
+                  }
+                }}
+              >
+                <SelectTrigger size="sm" className="w-full min-h-9">
+                  <SelectValue placeholder="Select a dataset" />
+                </SelectTrigger>
+                <SelectContent>
+                  {datasets.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>
+                      {d.name}
+                    </SelectItem>
+                  ))}
+                  <SelectSeparator />
+                  <SelectItem value="__new__">
+                    <span className="flex items-center gap-1.5">
+                      <Plus className="h-3.5 w-3.5" />
+                      New dataset
+                    </span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="flex items-center gap-2">
                 <Input
                   className="flex-1 min-w-0 h-9"
                   placeholder="New dataset name"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
+                  autoFocus
                 />
-              )}
-              <Separator orientation="vertical" className="h-auto shrink-0" />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="shrink-0 gap-1 px-3"
-                onClick={() => {
-                  setMode((m) => (m === "pick" ? "new" : "pick"))
-                  setNewName("")
-                }}
-              >
-                {mode === "pick" ? (
-                  <>
-                    <Plus className="h-3.5 w-3.5" />
-                    New
-                  </>
-                ) : (
-                  "Pick"
-                )}
-              </Button>
-            </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 px-2 text-muted-foreground"
+                  onClick={() => { setMode("pick"); setNewName("") }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -512,7 +521,7 @@ function SaveToDatasetModal({
             />
           </div>
         </div>
-        <DialogFooter className="px-6 py-4 border-t border-border/60 gap-2 sm:gap-2 sm:justify-end bg-muted/20">
+        <DialogFooter className="px-6 py-4 border-t border-border/60 gap-2 sm:gap-2 sm:justify-end bg-muted/40">
           <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
@@ -1469,7 +1478,7 @@ export function Analytics({
             Pick an evaluator, run it against this run, and see the score in the run sidebar under Evaluation.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-2 py-1">
+        <DialogBody className="space-y-2 pt-1">
           <Label htmlFor="evaluate-preset" className="text-sm text-muted-foreground">
             Evaluator
           </Label>
@@ -1506,7 +1515,7 @@ export function Analytics({
               ))}
             </SelectContent>
           </Select>
-        </div>
+        </DialogBody>
         <DialogFooter className="gap-2 sm:gap-2">
           <Button
             type="button"
@@ -2588,7 +2597,7 @@ export function Analytics({
                       </SelectContent>
                     </Select>
                   </div>
-                  <Alert className="border-blue-200 bg-blue-50/70 text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-100">
+                  <Alert>
                     <Info className="h-4 w-4" />
                     <AlertDescription className="text-xs leading-relaxed">
                       Upstream node outputs will be pinned for this rerun.
@@ -2612,7 +2621,7 @@ export function Analytics({
                 return wn ? (
                   <div className="flex flex-col gap-4">
                     {wn.id === "ai-agent" && rerunSimulationSummary ? (
-                      <Alert className="border-blue-200 bg-blue-50/70 text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-100">
+                      <Alert>
                         <Info className="h-4 w-4" />
                         <AlertDescription className="text-xs leading-relaxed">
                           <p className="font-medium">Simulated changes applied</p>
@@ -2644,7 +2653,7 @@ export function Analytics({
                 )
               })() : null}
             </div>
-            <SheetFooter className="flex-shrink-0 border-t border-border/60 px-5 py-4">
+            <SheetFooter className="flex-shrink-0 px-5 py-4">
               <Button
                 type="button"
                 className="flex-1 bg-foreground text-background hover:bg-foreground/90"
@@ -2687,25 +2696,21 @@ export function Analytics({
               >
                 Simulate run
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1"
-                onClick={() => {
-                  if (rerunPickNodeMode && rerunTargetNode) {
+              {rerunPickNodeMode && rerunTargetNode && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
                     setRerunTargetNode(null)
                     setRerunNodeValues({})
                     setRerunSimulationSummary(null)
                     setRerunSimulationExpanded(false)
-                  } else {
-                    setRerunNodeSheetOpen(false)
-                    setRerunSimulationSummary(null)
-                    setRerunSimulationExpanded(false)
-                  }
-                }}
-              >
-                {rerunPickNodeMode && rerunTargetNode ? "Back" : "Cancel"}
-              </Button>
+                  }}
+                >
+                  Back
+                </Button>
+              )}
             </SheetFooter>
           </SheetContent>
         </Sheet>

@@ -344,12 +344,13 @@ export function RunProgress({
                         runStatus === "running" && "opacity-50",
                       )}
                       aria-disabled={runStatus === "running"}
+                      disabled={workflowEvaluateBusy}
                       onClick={() => {
-                        if (runStatus === "running") return
-                        setWorkflowEvaluatePresetId(EVAL_RUN_PRESET_LIST[0]!.id)
-                        setWorkflowEvaluateOpen(true)
+                        if (runStatus === "running" || workflowEvaluateBusy) return
+                        confirmWorkflowEvaluate()
                       }}
                     >
+                      {workflowEvaluateBusy && <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />}
                       Evaluate Run
                     </Button>
                   </TooltipTrigger>
@@ -430,13 +431,12 @@ export function RunProgress({
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <DropdownMenuItem
-                          className={cn("cursor-pointer gap-2", runStatus === "running" && "opacity-50")}
-                          aria-disabled={runStatus === "running"}
+                          className={cn("cursor-pointer gap-2", (runStatus === "running" || workflowEvaluateBusy) && "opacity-50")}
+                          aria-disabled={runStatus === "running" || workflowEvaluateBusy}
                           onSelect={(e) => {
                             e.preventDefault()
-                            if (runStatus === "running") return
-                            tabContext.openEvaluateRunFromWorkflow(effectiveRunId)
-                            handleExpandChange(false)
+                            if (runStatus === "running" || workflowEvaluateBusy) return
+                            confirmWorkflowEvaluate()
                           }}
                         >
                           <ListChecks className="h-4 w-4" />

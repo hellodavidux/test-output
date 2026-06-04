@@ -12,25 +12,24 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { cn } from "@/lib/utils"
+import { Textarea } from "@/components/ui/textarea"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { Plus } from "lucide-react"
 import { toast } from "sonner"
 
-/** Matches Experiment mock datasets (evaluator) — prototype only */
 const MOCK_DATASETS = [
   { id: "ds-1", name: "Billing disputes" },
   { id: "ds-2", name: "Technical issues" },
   { id: "ds-3", name: "Account & access" },
 ]
-
-const LABEL_OPTIONS = ["Good", "Failure", "Edge case"] as const
 
 export type SaveRunToDatabaseModalProps = {
   open: boolean
@@ -41,156 +40,155 @@ export type SaveRunToDatabaseModalProps = {
 export function SaveRunToDatabaseModal({
   open,
   onOpenChange,
-  runId,
 }: SaveRunToDatabaseModalProps) {
-  const [datasetMode, setDatasetMode] = useState<"existing" | "new">("existing")
-  const [existingDatasetId, setExistingDatasetId] = useState(MOCK_DATASETS[0].id)
-  const [newDatasetName, setNewDatasetName] = useState("")
-  const [runName, setRunName] = useState("")
-  const [selectedLabels, setSelectedLabels] = useState<Set<string>>(() => new Set())
+  const [datasets, setDatasets] = useState(MOCK_DATASETS)
+  const [mode, setMode] = useState<"pick" | "new">("pick")
+  const [selectedId, setSelectedId] = useState(MOCK_DATASETS[0].id)
+  const [newName, setNewName] = useState("")
+  const [rowLabel, setRowLabel] = useState<"good" | "fail" | "edge">("good")
+  const [notes, setNotes] = useState("")
 
   useEffect(() => {
     if (!open) return
-    const short =
-      runId && runId.length > 8 ? runId.slice(0, 8) : runId ?? `run-${Date.now().toString(36)}`
-    setRunName(`Test case ${short}`)
-    setDatasetMode("existing")
-    setExistingDatasetId(MOCK_DATASETS[0].id)
-    setNewDatasetName("")
-    setSelectedLabels(new Set())
-  }, [open, runId])
-
-  function toggleLabel(label: string) {
-    setSelectedLabels((prev) => {
-      const next = new Set(prev)
-      if (next.has(label)) next.delete(label)
-      else next.add(label)
-      return next
-    })
-  }
+    setMode("pick")
+    setSelectedId(datasets[0]?.id ?? "")
+    setNewName("")
+    setRowLabel("good")
+    setNotes("")
+  }, [open])
 
   function handleSave() {
-    const trimmedRun = runName.trim()
-    if (!trimmedRun) {
-      toast.error("Please name this test case run.")
-      return
+    let targetName: string
+    if (mode === "new") {
+      const trimmed = newName.trim()
+      if (!trimmed) {
+        toast.error("Enter a name for the new dataset")
+        return
+      }
+      const id = `ds-${Date.now()}`
+      setDatasets((prev) => [...prev, { id, name: trimmed }])
+      targetName = trimmed
+    } else {
+      const ds = datasets.find((d) => d.id === selectedId)
+      if (!ds) {
+        toast.error("Select a dataset")
+        return
+      }
+      targetName = ds.name
     }
-    if (datasetMode === "new" && !newDatasetName.trim()) {
-      toast.error("Please enter a name for the new dataset.")
-      return
-    }
-    const datasetSummary =
-      datasetMode === "existing"
-        ? MOCK_DATASETS.find((d) => d.id === existingDatasetId)?.name ?? existingDatasetId
-        : newDatasetName.trim()
-    const labelsSummary =
-      selectedLabels.size > 0 ? ` · ${[...selectedLabels].join(", ")}` : ""
-    toast.success("Saved to Dataset", {
-      description: `“${trimmedRun}” → ${datasetSummary}${labelsSummary} (prototype — not persisted).`,
+    const labelPretty = rowLabel === "good" ? "Good" : rowLabel === "fail" ? "Fail" : "Edge"
+    toast.success("Saved to dataset", {
+      description: `Added to "${targetName}" as ${labelPretty}.${notes.trim() ? ` Notes: ${notes.trim()}` : ""}`,
+      duration: 10_000,
     })
     onOpenChange(false)
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="h-auto sm:max-w-md" data-save-run-modal="">
-        <DialogHeader>
-          <DialogTitle>Save run to Dataset</DialogTitle>
+      <DialogContent className="h-auto gap-0 overflow-hidden p-0 sm:max-w-md">
+        <DialogHeader className="px-6 pt-6 pb-4 space-y-1.5 bg-white">
+          <DialogTitle>Save Run to dataset</DialogTitle>
           <DialogDescription>
-            Save this run’s outputs to a dataset. Name the test case and add labels so you can filter
-            and revisit it later.
+            Choose a dataset or create one, set a label, and add optional notes.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 py-1">
-          <div className="grid gap-2">
-            <Label htmlFor="save-run-name">Test case run name</Label>
-            <Input
-              id="save-run-name"
-              value={runName}
-              onChange={(e) => setRunName(e.target.value)}
-              placeholder="e.g. Billing dispute — double charge"
-            />
+        <div className="px-6 py-5 space-y-5 bg-white">
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Dataset</Label>
+            {mode === "pick" ? (
+              <Select
+                value={selectedId}
+                onValueChange={(v) => {
+                  if (v === "__new__") {
+                    setMode("new")
+                    setNewName("")
+                  } else {
+                    setSelectedId(v)
+                  }
+                }}
+              >
+                <SelectTrigger size="sm" className="w-full min-h-9">
+                  <SelectValue placeholder="Select a dataset" />
+                </SelectTrigger>
+                <SelectContent>
+                  {datasets.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>
+                      {d.name}
+                    </SelectItem>
+                  ))}
+                  <SelectSeparator />
+                  <SelectItem value="__new__">
+                    <span className="flex items-center gap-1.5">
+                      <Plus className="h-3.5 w-3.5" />
+                      New dataset
+                    </span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Input
+                  className="flex-1 min-w-0 h-9"
+                  placeholder="New dataset name"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  autoFocus
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 px-2 text-muted-foreground"
+                  onClick={() => { setMode("pick"); setNewName("") }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            )}
           </div>
 
-          <div className="grid gap-3">
-            <Label>Dataset</Label>
-            <RadioGroup
-              value={datasetMode}
-              onValueChange={(v) => setDatasetMode(v as "existing" | "new")}
-              className="grid gap-3"
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Label</Label>
+            <ToggleGroup
+              type="single"
+              value={rowLabel}
+              onValueChange={(v) => {
+                if (v) setRowLabel(v as "good" | "fail" | "edge")
+              }}
+              variant="outline"
+              size="sm"
+              className="w-full justify-stretch"
             >
-              <div className="flex items-start gap-3 rounded-lg border border-border p-3">
-                <RadioGroupItem value="existing" id="ds-existing" className="mt-0.5" />
-                <div className="grid flex-1 gap-2">
-                  <Label htmlFor="ds-existing" className="font-medium cursor-pointer">
-                    Existing dataset
-                  </Label>
-                  {datasetMode === "existing" && (
-                    <Select value={existingDatasetId} onValueChange={setExistingDatasetId}>
-                      <SelectTrigger className="h-9 w-full">
-                        <SelectValue placeholder="Choose a dataset" />
-                      </SelectTrigger>
-                      <SelectContent position="popper" align="start">
-                        {MOCK_DATASETS.map((d) => (
-                          <SelectItem key={d.id} value={d.id}>
-                            {d.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-start gap-3 rounded-lg border border-border p-3">
-                <RadioGroupItem value="new" id="ds-new" className="mt-0.5" />
-                <div className="grid flex-1 gap-2">
-                  <Label htmlFor="ds-new" className="font-medium cursor-pointer">
-                    New dataset
-                  </Label>
-                  {datasetMode === "new" && (
-                    <Input
-                      value={newDatasetName}
-                      onChange={(e) => setNewDatasetName(e.target.value)}
-                      placeholder="e.g. Q2 escalation runs"
-                    />
-                  )}
-                </div>
-              </div>
-            </RadioGroup>
+              <ToggleGroupItem value="good" className="flex-1">
+                Good
+              </ToggleGroupItem>
+              <ToggleGroupItem value="fail" className="flex-1">
+                Fail
+              </ToggleGroupItem>
+              <ToggleGroupItem value="edge" className="flex-1">
+                Edge
+              </ToggleGroupItem>
+            </ToggleGroup>
           </div>
 
-          <div className="grid gap-2">
-            <Label>Labels</Label>
-            <p className="text-xs text-muted-foreground">Select any that apply — helps categorize this run.</p>
-            <div className="flex flex-wrap gap-2">
-              {LABEL_OPTIONS.map((label) => {
-                const on = selectedLabels.has(label)
-                return (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => toggleLabel(label)}
-                    className={cn(
-                      "rounded-full border px-3 py-1 text-sm font-medium transition-colors",
-                      on
-                        ? "border-primary bg-primary/10 text-foreground"
-                        : "border-border bg-background text-muted-foreground hover:bg-muted/50",
-                    )}
-                  >
-                    {label}
-                  </button>
-                )
-              })}
-            </div>
+          <div className="space-y-2">
+            <Label className="text-sm font-medium text-muted-foreground">Notes (optional)</Label>
+            <Textarea
+              placeholder="Add context for this row…"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="min-h-[88px] resize-y"
+            />
           </div>
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-0">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="px-6 py-4 border-t border-border/60 gap-2 sm:gap-2 sm:justify-end bg-muted/40">
+          <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button type="button" onClick={handleSave}>
+          <Button type="button" size="sm" onClick={handleSave}>
             Save
           </Button>
         </DialogFooter>

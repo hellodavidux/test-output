@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useCallback } from "react"
 import {
   AlertCircle,
   ArrowUpDown,
@@ -21,6 +21,7 @@ import {
   Search,
   Settings2,
   Signal,
+  Target,
   Timer,
   Trash2,
   TrendingDown,
@@ -72,6 +73,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+import { useRouter } from "next/navigation"
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -95,9 +97,10 @@ interface EvalDef {
 interface SignalDef {
   id: string
   signal: string
-  source: string
-  aggregation: string
-  threshold: string
+  type: string
+  scope: string
+  prompt: string
+  lastFired?: string
   usedIn: string
   usedInNames: string[]
   status: SignalStatus
@@ -127,14 +130,14 @@ const EVALS: EvalDef[] = [
 ]
 
 const SIGNALS: SignalDef[] = [
-  { id: "s1", signal: "PII Detected", source: "Regex", aggregation: "Per Run", threshold: "= 0", usedIn: "9 projects", usedInNames: ["Support Bot", "HR Assistant", "Medical Triage", "Finance Assistant", "Legal Advisor", "Compliance Bot", "Customer Portal", "IT Helpdesk", "Recruiting Bot"], status: "Active" },
-  { id: "s2", signal: "Latency Spike", source: "Runtime Metrics", aggregation: "P95", threshold: "> 8s", usedIn: "6 workflows", usedInNames: ["Ticket Resolution", "Lead Enrichment", "Data Ingestion", "Report Generator", "API Gateway", "Email Draft"], status: "Active" },
-  { id: "s3", signal: "Tool Failure Rate", source: "Runtime Metrics", aggregation: "Rolling 1h", threshold: "> 5%", usedIn: "4 projects", usedInNames: ["Data Pipeline", "Sales Copilot", "Finance Assistant", "Dev Assistant"], status: "Active" },
-  { id: "s4", signal: "Escalation Risk", source: "LLM Judge", aggregation: "Per Run", threshold: "> 0.7", usedIn: "3 workflows", usedInNames: ["Ticket Resolution", "Customer Portal", "Medical Triage"], status: "Active" },
-  { id: "s5", signal: "High Cost Run", source: "Metadata", aggregation: "Per Run", threshold: "> $0.50", usedIn: "7 projects", usedInNames: ["Sales Copilot", "Legal Advisor", "Medical Triage", "Executive Briefing", "Finance Assistant", "Dev Assistant", "Marketing Bot"], status: "Paused" },
-  { id: "s6", signal: "Low CSAT Proxy", source: "LLM Judge", aggregation: "Daily", threshold: "< 3.5", usedIn: "2 workflows", usedInNames: ["Post-Chat Survey", "Feedback Loop"], status: "Draft" },
-  { id: "s7", signal: "Context Window Near Limit", source: "Runtime Metrics", aggregation: "Per Run", threshold: "> 90%", usedIn: "5 projects", usedInNames: ["Legal Advisor", "Executive Briefing", "Medical Triage", "Dev Assistant", "Compliance Bot"], status: "Active" },
-  { id: "s8", signal: "Negative User Feedback", source: "User Feedback", aggregation: "Daily", threshold: "> 10%", usedIn: "4 workflows", usedInNames: ["Post-Chat Survey", "Feedback Loop", "NPS Collection", "Customer Portal"], status: "Active" },
+  { id: "s1", signal: "PII Detected", type: "Regex", scope: "Full workflow", prompt: "Match output against PII patterns (email, SSN, phone, credit card). Flag any run where PII appears in the final response.", lastFired: "2 hrs ago", usedIn: "9 projects", usedInNames: ["Support Bot", "HR Assistant", "Medical Triage", "Finance Assistant", "Legal Advisor", "Compliance Bot", "Customer Portal", "IT Helpdesk", "Recruiting Bot"], status: "Active" },
+  { id: "s2", signal: "Latency Spike", type: "Code", scope: "Full workflow", prompt: "Check whether end-to-end latency exceeds 8 s. Return FAIL with the measured value if so, PASS otherwise.", lastFired: "Yesterday", usedIn: "6 workflows", usedInNames: ["Ticket Resolution", "Lead Enrichment", "Data Ingestion", "Report Generator", "API Gateway", "Email Draft"], status: "Active" },
+  { id: "s3", signal: "Tool Failure Rate", type: "Code", scope: "Full workflow", prompt: "Compute the ratio of failed tool calls to total tool calls. Fire if the failure rate exceeds 5 % in the rolling 1-hour window.", lastFired: "Apr 14, 2026", usedIn: "4 projects", usedInNames: ["Data Pipeline", "Sales Copilot", "Finance Assistant", "Dev Assistant"], status: "Active" },
+  { id: "s4", signal: "Escalation Risk", type: "LLM Judge", scope: "Full workflow", prompt: "Analyze this trace and estimate the likelihood of user escalation (0–1). Fire if the score exceeds 0.7. Consider repeated failures, expressed frustration, or unresolved issues.", lastFired: "3 days ago", usedIn: "3 workflows", usedInNames: ["Ticket Resolution", "Customer Portal", "Medical Triage"], status: "Active" },
+  { id: "s5", signal: "High Cost Run", type: "Code", scope: "Full workflow", prompt: "Check whether the total token cost for this run exceeds $0.50. Return FAIL with the actual cost if so.", usedIn: "7 projects", usedInNames: ["Sales Copilot", "Legal Advisor", "Medical Triage", "Executive Briefing", "Finance Assistant", "Dev Assistant", "Marketing Bot"], status: "Paused" },
+  { id: "s6", signal: "Low CSAT Proxy", type: "LLM Judge", scope: "Full workflow", prompt: "Estimate the likely customer satisfaction score (1–5) based on the assistant's response quality and tone. Fire if the estimated score falls below 3.5.", usedIn: "2 workflows", usedInNames: ["Post-Chat Survey", "Feedback Loop"], status: "Draft" },
+  { id: "s7", signal: "Context Window Near Limit", type: "Code", scope: "Full workflow", prompt: "Check whether token usage exceeded 90 % of the model's context window. Return FAIL with the percentage if so.", lastFired: "5 hrs ago", usedIn: "5 projects", usedInNames: ["Legal Advisor", "Executive Briefing", "Medical Triage", "Dev Assistant", "Compliance Bot"], status: "Active" },
+  { id: "s8", signal: "Negative User Feedback", type: "LLM Judge", scope: "Full workflow", prompt: "Detect signals of negative user sentiment in the conversation: explicit complaints, expressions of frustration, or abandonment phrases. Fire if negative feedback exceeds 10 % of daily sessions.", lastFired: "Today", usedIn: "4 workflows", usedInNames: ["Post-Chat Survey", "Feedback Loop", "NPS Collection", "Customer Portal"], status: "Active" },
 ]
 
 // ─── Signal Templates ────────────────────────────────────────────────────────
@@ -213,6 +216,7 @@ const RUNS: RunRow[] = [
 // ─── Used In Tooltip ────────────────────────────────────────────────────────
 
 function UsedInTooltip({ label, names }: { label: string; names: string[] }) {
+  const router = useRouter()
   return (
     <TooltipProvider delayDuration={200}>
       <Tooltip>
@@ -224,8 +228,13 @@ function UsedInTooltip({ label, names }: { label: string; names: string[] }) {
         <TooltipContent side="top" align="start" className="p-0 overflow-hidden max-w-[220px]">
           <ul className="flex flex-col py-1">
             {names.map((name) => (
-              <li key={name} className="px-3 py-1 text-[12px] text-foreground">
-                {name}
+              <li key={name}>
+                <button
+                  className="w-full px-3 py-1 text-[12px] text-foreground text-left hover:bg-muted/60 transition-colors"
+                  onClick={(e) => { e.stopPropagation(); router.push("/?tab=analytics") }}
+                >
+                  {name}
+                </button>
               </li>
             ))}
           </ul>
@@ -237,7 +246,7 @@ function UsedInTooltip({ label, names }: { label: string; names: string[] }) {
 
 // ─── Shared badge components ────────────────────────────────────────────────
 
-function StatusBadge({ status }: { status: EvalStatus | SignalStatus | RunResult }) {
+function StatusBadge({ status }: { status: SignalStatus | RunResult }) {
   const styles: Record<string, string> = {
     Active: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900",
     Draft: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-900",
@@ -439,6 +448,9 @@ function RunDetailsDrawer({ run, open, onOpenChange }: { run: RunRow | null; ope
 const INNER_TABS = ["Evals", "Signals", "Runs"] as const
 type InnerTab = (typeof INNER_TABS)[number]
 
+const TAB_SLUG: Record<InnerTab, string> = { Evals: "evals", Signals: "signals", Runs: "runs" }
+const SLUG_TAB: Record<string, InnerTab> = { evals: "Evals", signals: "Signals", runs: "Runs" }
+
 function EvalsContent() {
   const [search, setSearch] = useState("")
   const [selectedEval, setSelectedEval] = useState<EvalDef | null>(null)
@@ -486,9 +498,9 @@ function EvalsContent() {
                 <button className="flex items-center gap-1 hover:text-foreground">Name <ArrowUpDown className="h-3 w-3" /></button>
               </TableHead>
               <TableHead className="text-xs font-medium text-muted-foreground">Type</TableHead>
-              <TableHead className="text-xs font-medium text-muted-foreground hidden lg:table-cell">Target</TableHead>
+              <TableHead className="text-xs font-medium text-muted-foreground hidden lg:table-cell">Target Node</TableHead>
               <TableHead className="text-xs font-medium text-muted-foreground hidden md:table-cell">Used In</TableHead>
-              <TableHead className="text-xs font-medium text-muted-foreground hidden lg:table-cell w-16">Version</TableHead>
+              <TableHead className="text-xs font-medium text-muted-foreground hidden lg:table-cell">Criteria</TableHead>
               <TableHead className="w-10" />
             </TableRow>
           </TableHeader>
@@ -503,8 +515,22 @@ function EvalsContent() {
                 <TableCell className="text-[13px] text-muted-foreground hidden md:table-cell">
                   <UsedInTooltip label={e.usedIn} names={e.usedInNames} />
                 </TableCell>
-                <TableCell className="hidden lg:table-cell">
-                  <code className="text-[11px] font-mono bg-muted px-1.5 py-0.5 rounded">{e.version}</code>
+                <TableCell className="px-3 py-3 align-top hidden lg:table-cell">
+                  <div className="flex flex-col gap-1">
+                    {e.criteria ? (
+                      <p className="text-xs text-muted-foreground leading-snug line-clamp-2" title={e.criteria}>
+                        {e.criteria}
+                      </p>
+                    ) : (
+                      <span className="text-xs text-muted-foreground/50">—</span>
+                    )}
+                    {e.threshold != null && (
+                      <span className="inline-flex w-fit items-center gap-1 rounded border border-border/70 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        <Target className="h-2.5 w-2.5 shrink-0" aria-hidden />
+                        pass ≥ {e.threshold.toFixed(1)}
+                      </span>
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell>
                   <DropdownMenu>
@@ -519,7 +545,7 @@ function EvalsContent() {
                       <DropdownMenuItem className="text-[12px]"><Copy className="h-3.5 w-3.5" />Duplicate</DropdownMenuItem>
                       <DropdownMenuItem className="text-[12px]"><History className="h-3.5 w-3.5" />View Runs</DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem className="text-[12px] text-muted-foreground"><AlertCircle className="h-3.5 w-3.5" />Deprecate</DropdownMenuItem>
+                      <DropdownMenuItem className="text-[12px] text-destructive focus:text-destructive"><Trash2 className="h-3.5 w-3.5" />Delete</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </TableCell>
@@ -538,9 +564,10 @@ function EvalsContent() {
 // ─── Signals Content ─────────────────────────────────────────────────────────
 
 function SignalsContent() {
+  const router = useRouter()
   const [search, setSearch] = useState("")
   const filtered = SIGNALS.filter((s) =>
-    !search || s.signal.toLowerCase().includes(search.toLowerCase()) || s.source.toLowerCase().includes(search.toLowerCase())
+    !search || s.signal.toLowerCase().includes(search.toLowerCase()) || s.type.toLowerCase().includes(search.toLowerCase())
   )
 
   return (
@@ -563,11 +590,12 @@ function SignalsContent() {
           <TableHeader className="bg-muted/60">
             <TableRow className="border-b border-border hover:bg-transparent">
               <TableHead className="pl-6 text-xs font-medium text-muted-foreground w-[200px]">Signal</TableHead>
-              <TableHead className="text-xs font-medium text-muted-foreground">Source</TableHead>
-              <TableHead className="text-xs font-medium text-muted-foreground hidden md:table-cell">Aggregation</TableHead>
-              <TableHead className="text-xs font-medium text-muted-foreground hidden md:table-cell">Threshold</TableHead>
-              <TableHead className="text-xs font-medium text-muted-foreground hidden lg:table-cell">Used In</TableHead>
-              <TableHead className="text-xs font-medium text-muted-foreground">Status</TableHead>
+              <TableHead className="text-xs font-medium text-muted-foreground w-28">Type</TableHead>
+              <TableHead className="text-xs font-medium text-muted-foreground hidden md:table-cell w-32">Scope</TableHead>
+              <TableHead className="text-xs font-medium text-muted-foreground hidden lg:table-cell">Signal prompt</TableHead>
+              <TableHead className="text-xs font-medium text-muted-foreground hidden md:table-cell w-28">Last fired</TableHead>
+              <TableHead className="text-xs font-medium text-muted-foreground w-20">Status</TableHead>
+              <TableHead className="text-xs font-medium text-muted-foreground w-24">Projects</TableHead>
               <TableHead className="w-10" />
             </TableRow>
           </TableHeader>
@@ -575,20 +603,24 @@ function SignalsContent() {
             {filtered.map((s) => (
               <TableRow key={s.id} className="group cursor-default hover:bg-muted/50">
                 <TableCell className="pl-6">
-                  <div className="flex items-center gap-2">
-                    <Signal className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <span className="text-[13px] font-medium text-foreground">{s.signal}</span>
-                  </div>
+                  <span className="text-[13px] font-medium text-foreground">{s.signal}</span>
                 </TableCell>
-                <TableCell className="text-[13px] text-muted-foreground">{s.source}</TableCell>
-                <TableCell className="text-[13px] text-muted-foreground hidden md:table-cell">{s.aggregation}</TableCell>
-                <TableCell className="hidden md:table-cell">
-                  <code className="text-[11px] font-mono bg-muted px-1.5 py-0.5 rounded">{s.threshold}</code>
+                <TableCell>
+                  <span className="inline-flex items-center rounded-md border border-border bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                    {s.type}
+                  </span>
                 </TableCell>
-                <TableCell className="text-[13px] text-muted-foreground hidden lg:table-cell">
-                  <UsedInTooltip label={s.usedIn} names={s.usedInNames} />
+                <TableCell className="text-[13px] text-muted-foreground hidden md:table-cell">{s.scope}</TableCell>
+                <TableCell className="hidden lg:table-cell">
+                  <span className="text-xs text-muted-foreground">{s.prompt}</span>
+                </TableCell>
+                <TableCell className="text-[12px] text-muted-foreground hidden md:table-cell tabular-nums">
+                  {s.lastFired ?? <span className="text-muted-foreground/40">Never</span>}
                 </TableCell>
                 <TableCell><StatusBadge status={s.status} /></TableCell>
+                <TableCell className="text-[13px] text-muted-foreground cursor-pointer" onClick={() => router.push("/analytics")}>
+                  <UsedInTooltip label={s.usedIn} names={s.usedInNames} />
+                </TableCell>
                 <TableCell>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -619,108 +651,8 @@ function SignalsContent() {
 // ─── Runs Content ────────────────────────────────────────────────────────────
 
 function RunsContent() {
-  const [search, setSearch] = useState("")
-  const [failedOnly, setFailedOnly] = useState(false)
-  const [timeRange, setTimeRange] = useState("24h")
-  const [selectedRun, setSelectedRun] = useState<RunRow | null>(null)
-  const [drawerOpen, setDrawerOpen] = useState(false)
-
-  const filtered = RUNS.filter((r) => {
-    const matchSearch = !search || r.id.toLowerCase().includes(search.toLowerCase()) || r.project.toLowerCase().includes(search.toLowerCase())
-    return matchSearch && (!failedOnly || r.result === "Failed")
-  })
-
   return (
-    <>
-      <div className="flex items-center gap-2 px-6 py-3 border-b border-border flex-wrap">
-        <div className="relative w-56">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search runs, projects…" className="h-8 pl-8 text-[13px] bg-transparent border-0 rounded-none focus-visible:ring-0 px-8 placeholder:text-muted-foreground" />
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="h-8 gap-1.5 text-[13px]">
-                Production<ChevronDown className="h-3.5 w-3.5 opacity-60" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-36">
-              <DropdownMenuLabel className="text-[11px]">Environment</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {["Production", "Staging", "Development"].map((e) => <DropdownMenuItem key={e} className="text-[12px]">{e}</DropdownMenuItem>)}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="h-8 gap-1.5 text-[13px]">
-                <Clock className="h-3.5 w-3.5" />Last {timeRange}<ChevronDown className="h-3.5 w-3.5 opacity-60" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-36">
-              <DropdownMenuLabel className="text-[11px]">Time range</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuRadioGroup value={timeRange} onValueChange={setTimeRange}>
-                {["1h", "6h", "24h", "7d", "30d"].map((t) => <DropdownMenuRadioItem key={t} value={t} className="text-[12px]">Last {t}</DropdownMenuRadioItem>)}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <button
-            onClick={() => setFailedOnly((v) => !v)}
-            className={cn("flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[13px] transition-colors h-8", failedOnly ? "border-red-300 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400" : "border-border bg-background text-muted-foreground hover:bg-muted/60")}
-          >
-            <AlertCircle className="h-3.5 w-3.5" />Failed only
-          </button>
-        </div>
-      </div>
-      <div className="flex-1 overflow-y-auto px-6 py-4">
-        <Card className="gap-0 py-0 overflow-hidden">
-          <CardContent className="p-0">
-        <Table>
-          <TableHeader className="bg-muted/60">
-            <TableRow className="border-b border-border hover:bg-transparent">
-              <TableHead className="pl-6 text-xs font-medium text-muted-foreground w-28">Run ID</TableHead>
-              <TableHead className="text-xs font-medium text-muted-foreground hidden md:table-cell">Project</TableHead>
-              <TableHead className="text-xs font-medium text-muted-foreground hidden lg:table-cell">Workflow</TableHead>
-              <TableHead className="text-xs font-medium text-muted-foreground hidden xl:table-cell">Eval Set</TableHead>
-              <TableHead className="text-xs font-medium text-muted-foreground">Result</TableHead>
-              <TableHead className="text-xs font-medium text-muted-foreground hidden md:table-cell">Duration</TableHead>
-              <TableHead className="text-xs font-medium text-muted-foreground hidden lg:table-cell">Cost</TableHead>
-              <TableHead className="text-xs font-medium text-muted-foreground">
-                <button className="flex items-center gap-1 hover:text-foreground">Timestamp <ArrowUpDown className="h-3 w-3" /></button>
-              </TableHead>
-              <TableHead className="w-10" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.map((r) => (
-              <TableRow key={r.id} className="cursor-pointer group hover:bg-muted/50" onClick={() => { setSelectedRun(r); setDrawerOpen(true) }}>
-                <TableCell className="pl-6"><code className="text-[12px] font-mono text-foreground">{r.id}</code></TableCell>
-                <TableCell className="text-[13px] text-muted-foreground hidden md:table-cell">{r.project}</TableCell>
-                <TableCell className="text-[13px] text-muted-foreground hidden lg:table-cell">{r.workflow}</TableCell>
-                <TableCell className="text-[13px] text-muted-foreground hidden xl:table-cell max-w-[200px] truncate">{r.evalSet}</TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-1.5">
-                    {r.result === "Running" && <RefreshCw className="h-3 w-3 animate-spin text-blue-500" />}
-                    <StatusBadge status={r.result} />
-                  </div>
-                </TableCell>
-                <TableCell className="text-[13px] text-muted-foreground hidden md:table-cell font-mono">{r.duration}</TableCell>
-                <TableCell className="text-[13px] text-muted-foreground hidden lg:table-cell font-mono">{r.cost}</TableCell>
-                <TableCell className="text-[13px] text-muted-foreground">{r.timestamp}</TableCell>
-                <TableCell>
-                  <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-                    <MoreHorizontal className="h-3.5 w-3.5" />
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-          </CardContent>
-        </Card>
-      </div>
-      <RunDetailsDrawer run={selectedRun} open={drawerOpen} onOpenChange={setDrawerOpen} />
-    </>
+    <div className="flex-1 flex items-center justify-center bg-[#f7f7f8]" />
   )
 }
 
@@ -838,8 +770,14 @@ function CreateSignalSheet({ open, onOpenChange, template }: {
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-export function OrgEvaluator() {
-  const [activeTab, setActiveTab] = useState<InnerTab>("Evals")
+export function OrgEvaluator({ defaultTab = "evals" }: { defaultTab?: string }) {
+  const router = useRouter()
+  const [activeTab, setActiveTab] = useState<InnerTab>(SLUG_TAB[defaultTab] ?? "Evals")
+
+  const handleTabChange = useCallback((tab: InnerTab) => {
+    setActiveTab(tab)
+    router.push(`/org-evaluator/${TAB_SLUG[tab]}`)
+  }, [router])
   const [evalLibraryPickerOpen, setEvalLibraryPickerOpen] = useState(false)
   const [evalLibrarySearch, setEvalLibrarySearch] = useState("")
   const [signalLibraryPickerOpen, setSignalLibraryPickerOpen] = useState(false)
@@ -902,7 +840,7 @@ export function OrgEvaluator() {
             ) : filteredSignalLibrary.map((s) => (
               <button key={s.id} type="button" className="flex flex-col gap-0.5 px-3 py-2.5 rounded-md text-left hover:bg-muted/60 transition-colors" onClick={() => setSignalLibraryPickerOpen(false)}>
                 <span className="text-[13px] font-medium text-foreground">{s.signal}</span>
-                <span className="text-[11px] text-muted-foreground">{s.source}</span>
+                <span className="text-[11px] text-muted-foreground">{s.type}</span>
               </button>
             ))}
           </div>
@@ -934,7 +872,7 @@ export function OrgEvaluator() {
           {INNER_TABS.map((tab) => (
             <button
               key={tab}
-              onClick={() => setActiveTab(tab)}
+              onClick={() => handleTabChange(tab)}
               className={cn(
                 "px-3 py-1 text-[13px] font-medium transition-all rounded-[5px]",
                 activeTab === tab
@@ -948,23 +886,9 @@ export function OrgEvaluator() {
         </div>
         <div className="flex items-center gap-2">
           {activeTab === "Signals" && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size="sm" className="h-8 gap-1.5 text-[13px] bg-foreground text-background hover:bg-foreground/90">
-                  <Plus className="h-3.5 w-3.5" />New Signal<ChevronDown className="h-3.5 w-3.5 opacity-70" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem className="text-[13px] gap-2" onClick={() => setSignalTemplatePickerOpen(true)}>
-                  <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-                  From template
-                </DropdownMenuItem>
-                <DropdownMenuItem className="text-[13px] gap-2" onClick={() => setSignalLibraryPickerOpen(true)}>
-                  <CloudDownload className="h-3.5 w-3.5 text-muted-foreground" />
-                  Import from library
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button size="sm" className="h-8 gap-1.5 text-[13px] bg-foreground text-background hover:bg-foreground/90">
+              <Plus className="h-3.5 w-3.5" />New Signal
+            </Button>
           )}
           {activeTab === "Evals" && (
             <DropdownMenu>
