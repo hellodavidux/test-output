@@ -3,7 +3,12 @@
 import { useState, useEffect } from "react"
 import { X, RefreshCw, ChevronDown, Zap, Play } from "lucide-react"
 import { AppIcon } from "./workflow-node"
+import { AgentInstructionsCard, AgentPromptCard, AgentPlaceholderSections, AgentGuardrailsSection } from "@/components/agent-node-config-cards"
 import { appDetails, PROVIDERS, type ActionItem } from "@/lib/app-data"
+
+const AGENT_INSTRUCTIONS_PLACEHOLDER = "You are a helpful assistant…"
+const AGENT_INSTRUCTIONS_DEFAULT = "You are a helpful assistant…"
+const AGENT_PROMPT_PLACEHOLDER = "Add prompt text…"
 
 interface NodeSettingsSidebarProps {
   isOpen: boolean
@@ -39,6 +44,8 @@ export function NodeSettingsSidebar({
   const [selectedAction, setSelectedAction] = useState<string>("")
   const [providerOpen, setProviderOpen] = useState(false)
   const [actionOpen, setActionOpen] = useState(false)
+  const [agentInstructions, setAgentInstructions] = useState(AGENT_INSTRUCTIONS_DEFAULT)
+  const [agentPrompt, setAgentPrompt] = useState("")
 
   // Sync state with nodeData when it changes
   useEffect(() => {
@@ -54,8 +61,15 @@ export function NodeSettingsSidebar({
     }
   }, [nodeData])
 
+  useEffect(() => {
+    if (!nodeData || nodeData.appName !== "AI Agent") return
+    setAgentInstructions(AGENT_INSTRUCTIONS_DEFAULT)
+    setAgentPrompt("")
+  }, [nodeData?.id, nodeData?.appName])
+
   if (!isOpen || !nodeData) return null
 
+  const isAIAgentNode = nodeData.appName === "AI Agent"
   const nodeSlug = `action-${nodeData.id.split("-").pop() || "0"}`
   // Always use OpenAI as the provider (dropdown is disabled)
   const providerDetails = appDetails["OpenAI"] || appDetails[selectedProvider]
@@ -118,7 +132,7 @@ export function NodeSettingsSidebar({
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <div className="flex items-center gap-3">
           <div className="w-6 h-6 flex items-center justify-center">
-            <AppIcon appName="OpenAI" className="w-5 h-5" />
+            <AppIcon appName={nodeData.appName} className="w-5 h-5" />
           </div>
           <span className="font-semibold text-foreground truncate max-w-[160px]">
             {selectedAction || "Select an action"}
@@ -251,6 +265,24 @@ export function NodeSettingsSidebar({
             )}
           </div>
         </div>
+
+        {isAIAgentNode && (
+          <div className="space-y-4 border-t border-border pt-5">
+            <p className="text-xs font-medium text-muted-foreground">Agent configuration</p>
+            <AgentInstructionsCard
+              value={agentInstructions}
+              onChange={setAgentInstructions}
+              placeholder={AGENT_INSTRUCTIONS_PLACEHOLDER}
+            />
+            <AgentPromptCard
+              value={agentPrompt}
+              onChange={setAgentPrompt}
+              placeholder={AGENT_PROMPT_PLACEHOLDER}
+            />
+            <AgentPlaceholderSections />
+            <AgentGuardrailsSection />
+          </div>
+        )}
       </div>
     </div>
   )
